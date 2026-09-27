@@ -131,8 +131,24 @@
   }
 
   /* ---- 核心: 播放队列里的某一首 ---- */
+  // Linux 的 WebKitGTK 缺 GStreamer 组件时, 创建播放管线会卡死整个页面
+  // (实测 Ubuntu 24.04: appsink/appsrc/autoaudiosink not found →
+  //  WebProcess 假死只能重启)。UA 精确含 "WebKitGTK" 不会误伤正常浏览器;
+  // 默认拦截, 装好插件后 Shift+点歌可强制一次并记住选择。
+  const IS_WEBKIT_GTK = /WebKitGTK/.test(navigator.userAgent);
+  let webkitWarned = false;
+
   async function playIndex(idx) {
     if (!mstate.queue.length) return;
+    if (IS_WEBKIT_GTK && !pref.webkitAudioForce) {
+      if (!webkitWarned) {
+        webkitWarned = true;
+        toastFn("Linux WebKit 缺 GStreamer 音频组件时播放会卡死页面, 已停用; "
+          + "装好 gstreamer1.0-plugins-base/good/libav 后, 按住 Shift 点击歌曲强制播放");
+      }
+      setPlayingUi(false);
+      return;
+    }
     mstate.index = ((idx % mstate.queue.length) + mstate.queue.length) % mstate.queue.length;
     savePref();   // 记住听到哪首, 重启恢复
     const s = mstate.queue[mstate.index];
@@ -520,7 +536,12 @@
         onDelete: () => removeQueueAt(i),
       });
       if (i === mstate.index) row.classList.add("playing");
-      row.onclick = () => playIndex(i);
+      // Shift+点击 = 无视 WebKitGTK 守卫强制播放 (装好 gstreamer 后的逃生门),
+      // 选择会记住, 之后普通点击也直连
+      row.onclick = (ev) => {
+        if (ev.shiftKey) { pref.webkitAudioForce = true; savePref(); }
+        playIndex(i);
+      };
       list.appendChild(row);
     });
     body.appendChild(list);
