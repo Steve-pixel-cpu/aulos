@@ -702,33 +702,20 @@
     // ---- 交互: 按住拖动(宠物随鼠标跑动) / 点击打招呼 ----
     const bridge = () => window.xcodeDesktopPet;
     const floatEl = $("pet-float");
-    let hitTimer = null;                  // 轮询兜底的定时器句柄 (可见期才转)
-    const stopHitPolling = () => {
-      if (hitTimer) { clearInterval(hitTimer); hitTimer = null; }
-      floatEl.classList.remove("pointer-inside");
+    // 指针显隐 = 轮询式状态机: Linux WebKitGTK 的指针 enter/leave 投递
+    // 不可靠 (程序化挪窗丢 leave、被遮挡丢 enter), 纯事件驱动会卡在错误
+    // 状态。每 500ms 用 pet_hit_test (全局光标坐标 vs 桌宠窗口矩形, 进程
+    // 内 IPC + 一次坐标查询, <1ms) 重新推导一次真相, 事件丢了也不影响。
+    // 输入框持焦期间恒显示 (打字/IME 不打断)。CSS :hover 规则保留, 在
+    // 事件可靠的平台 (Windows) 提供即时响应, 两者真相一致不打架。
+    let hitTimer = null;
+    const syncPointerInside = async () => {
+      let inside = false;
+      try { inside = (await bridge()?.petHitTest?.()) ?? false; } catch { return; }
+      const focused = document.activeElement === inputEl;
+      floatEl.classList.toggle("pointer-inside", inside || focused);
     };
-    // 指针在悬浮窗内的显式管理: Linux WebKitGTK 的 :hover 依赖可靠的指针
-    // enter/leave 投递, Wayland 会话/程序化挪窗时不可靠, 框会卡在错误
-    // 状态 (该出现不出现/该隐藏不隐藏)。JS 切 pointer-inside 类, 与
-    // CSS :hover 并列生效 —— 收到任何指针事件就能正确显隐; 窗口失焦
-    // (常见于被其他窗口压住) 时收框兜底。Windows 上与 :hover 同语义,
-    // 行为不变。
-    floatEl.addEventListener("pointerenter", () => {
-      floatEl.classList.add("pointer-inside");
-      // 轮询兜底: pointerleave 在 Linux WebKitGTK 上会丢 (程序化挪窗后
-      // 尤其), 输入框可见期间每 350ms 问一次壳"光标还在不在窗内"
-      // (pet_hit_test, 进程内 IPC + 一次坐标查询, <1ms), 不在就收框。
-      // 开销只在可见期存在; 打字聚焦时跳过, 不打断 IME。
-      if (!hitTimer && document.activeElement !== inputEl) {
-        hitTimer = setInterval(async () => {
-          let inside = true;
-          try { inside = (await bridge()?.petHitTest?.()) ?? true; } catch { return; }
-          if (!inside) stopHitPolling();
-        }, 350);
-      }
-    });
-    floatEl.addEventListener("pointerleave", () => stopHitPolling());
-    window.addEventListener("blur", () => stopHitPolling());
+    hitTimer = setInterval(syncPointerInside, 500);
     // drag.acc: 反向行程累计器(饱和区间 ±DIR_REV_PX)。每个 move 事件的
     // 增量与当前朝向相反时累计、同向时清零, 越过阈值立刻掉头——转向跟随
     // 鼠标的"最近运动方向", 而不是相对起点的累计位移(旧法: 先右拖 100px
