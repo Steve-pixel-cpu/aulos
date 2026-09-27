@@ -832,6 +832,25 @@ fn start_drag_pet(app: AppHandle) {
     }
 }
 
+/// 光标是否悬停在桌宠窗口内: Linux WebKitGTK 的 pointerleave 会丢
+/// (程序化挪窗/XWayland 场景), 前端对输入框显隐做轮询兜底时不依赖
+/// 事件投递, 直接以全局光标坐标对窗口矩形做命中测试。
+/// 开销: 进程内 IPC + 一次光标坐标查询 + 矩形比较, 合计 <1ms; 前端
+/// 350ms 一轮, 且仅在输入框可见期间轮询, 平时定时器停转零开销。
+#[tauri::command]
+fn pet_hit_test(app: AppHandle) -> Result<bool, String> {
+    let Some(win) = app.get_webview_window("pet") else {
+        return Ok(false);
+    };
+    let cursor = win.cursor_position().map_err(|e| e.to_string())?;
+    let pos = win.outer_position().map_err(|e| e.to_string())?;
+    let size = win.outer_size().map_err(|e| e.to_string())?;
+    let (cx, cy) = (cursor.x, cursor.y);
+    let (px, py) = (pos.x as f64, pos.y as f64);
+    let (w, h) = (size.width as f64, size.height as f64);
+    Ok(cx >= px && cx < px + w && cy >= py && cy < py + h)
+}
+
 /// 鼠标穿透开关: 右键开启后点宠物以外的区域都落到下层窗口;
 /// 恢复靠主窗的召唤按钮（open_pet_window 会先关穿透）
 #[tauri::command]
@@ -991,6 +1010,7 @@ const BRIDGE_JS: &str = r#"
       startDragPet: () => petInvoke('start_drag_pet'),
       setClickThrough: (ignore) => petInvoke('set_pet_click_through', { ignore: !!ignore }),
       focusPet: () => petInvoke('focus_pet'),
+      petHitTest: () => petInvoke('pet_hit_test'),
       movePet: (x, y) => petInvoke('move_pet_window', { x: Number(x), y: Number(y) }),
       resizePet: (scale) => petInvoke('resize_pet_window', { scale: Number(scale) || 1 }),
     };
@@ -1085,7 +1105,8 @@ fn main() {
             set_pet_click_through,
             focus_pet,
             move_pet_window,
-            resize_pet_window
+            resize_pet_window,
+            pet_hit_test
         ])
         .setup(|app| {
             // 资源目录一次性注入: 之后 sidecar_exe/端口判定全走它
