@@ -410,11 +410,17 @@ glob_spec = {
 from tools import (todo_spec as _todo_spec,     # noqa: E402  (spec 与实现同源)
                    web_fetch_spec, web_search_spec)
 
-TOOLS = [bash_spec, powershell_spec, read_file_spec, write_file_spec,
-         edit_file_spec, grep_spec, glob_spec, task_output_spec, task_stop_spec,
-         present_plan_spec, _todo_spec,
-         web_search_spec, web_fetch_spec, MUSIC_PLAY_SPEC] + MEMORY_TOOL_SPECS \
-        + BROWSER_TOOL_SPECS + AGENT_TOOL_SPECS
+# PowerShell 兜底外壳只在 Windows 存在 (mac/Linux 上 pwsh/powershell 均无,
+# 模型调用必然 FileNotFoundError 白烧一轮) —— 不注册, 工具清单保持全可用
+_ON_WINDOWS = platform.system() == "Windows"
+
+_TOOLS_BASE = [bash_spec, read_file_spec, write_file_spec, edit_file_spec,
+               grep_spec, glob_spec, task_output_spec, task_stop_spec,
+               present_plan_spec, _todo_spec,
+               web_search_spec, web_fetch_spec, MUSIC_PLAY_SPEC]
+
+TOOLS = (_TOOLS_BASE + [powershell_spec] if _ON_WINDOWS else _TOOLS_BASE) \
+    + MEMORY_TOOL_SPECS + BROWSER_TOOL_SPECS + AGENT_TOOL_SPECS
 
 
 # --- 终端视觉规范: 调色板 + 版式 ---
