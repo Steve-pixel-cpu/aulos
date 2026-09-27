@@ -352,11 +352,17 @@ def _git_bash() -> Optional[str]:
 GIT_DOWNLOAD_URL = "https://git-scm.com/download/win"
 
 def git_bash_unavailable_reason() -> Optional[str]:
-    """Git Bash 不可用时返回给用户看的说明; 可用返回 None。
+    """命令执行器不可用时返回给用户看的说明; 可用返回 None。
 
-    启动入口调用: 没有它就没有默认执行器（也没有中文 UTF-8 直通保证）,
-    宁可拒绝启动也不静默降级——降级后的乱码输出用户看不懂, 更难排查。
-    """
+    启动入口调用: 没有它就没有默认执行器, 宁可拒绝启动也不静默降级。
+    Windows: 命令执行器依赖 Git Bash（并靠它保证中文输出不乱码）。
+    POSIX: bash_tool 走系统 bash/sh, 系统自带——只要存在其一即可,
+    不做 Git Bash 式检查（那查的是 Windows 安装布局, 在 POSIX 上
+    是"检查错了东西但侥幸通过"）。"""
+    if platform.system() != "Windows":
+        if shutil.which("bash") or shutil.which("sh"):
+            return None
+        return "未找到 bash/sh（系统 shell 异常）, 命令执行器无法工作。"
     if _git_bash():
         return None
     return ("未检测到 Git Bash（Git for Windows）, x-code 的命令执行器依赖它, "
@@ -404,7 +410,10 @@ def bash_tool(params: dict, workdir: Optional[str] = None) -> str:
         # -l 登录壳: 拿到 MSYS2 的完整 PATH（/usr/bin 下的 coreutils）
         argv = [bash, "-lc", cmd]
     else:
-        argv = ["sh", "-lc", cmd]
+        # POSIX: 优先 bash —— Ubuntu 的 /bin/sh 是 dash, [[ ]]/数组等
+        # bashism 直接语法报错; mac 的 sh 也是 POSIX 模式。两者都系统自带。
+        bash = shutil.which("bash") or shutil.which("sh") or "sh"
+        argv = [bash, "-lc", cmd]
     if params.get("background"):
         return _start_background(argv, cwd)
     return _run_command(argv, cwd, _clamp_timeout(params.get("timeout")))
