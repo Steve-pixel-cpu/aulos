@@ -254,11 +254,17 @@ class McpConnection:
             self.status.status = "disconnected"
 
 
-async def _http_streams(server: McpServerConfig):
+def _http_streams(server: McpServerConfig):
     """http/sse 传输的流构造。两个客户端上下文签名不同, 但都产出
     (read, write[, extra]) 三元组, 取前两个即可。
-    http 的自定义 headers 经 create_mcp_http_client 注入(2.x 的
-    streamable_http_client 只收预构建的 httpx client)。"""
+    注意必须是普通同步函数: 调用方把本函数的返回值直接交给
+    enter_async_context, 若声明成 async def 则拿到的是 coroutine 而非
+    context manager, 报 "'coroutine' object does not support the
+    asynchronous context manager protocol"。
+    http 的自定义 headers 经 create_mcp_http_client 注入(mcp 2.x 的
+    streamable_http_client 只收预构建的 httpx client); 2.x 里
+    streamable_http_client/sse_client 仍带 @asynccontextmanager,
+    调用即返回 CM, 无需 await。"""
     if server.transport == "http":
         from mcp.client.streamable_http import (create_mcp_http_client,
                                                 streamable_http_client)

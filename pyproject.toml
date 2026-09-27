@@ -13,7 +13,7 @@ dependencies = [
     "trafilatura>=2.0",
     "websearch-py>=0.1.0",
     "playwright>=1.49",
-    "mcp>=1.9",
+    "mcp>=2",
     "pyyaml>=6.0",
 ]
 
