@@ -162,40 +162,52 @@
     return URL.createObjectURL(new Blob([buf], { type: "audio/wav" }));
   }
 
-  let webkitAudioProbe = null;               // 会话内只探一次
+  let webkitAudioProbe = null;   // { at, ok, promise } — 失败进冷却, 到期允许重探
+  const PROBE_RETRY_MS = 45000;  // 失败冷却 45s: 冷启动/瞬时故障的误判不该钉死整晚
+  const PROBE_TIMEOUT_MS = 6000; // 首次管线创建含 GStreamer 冷初始化, 看门狗放宽到 6s
 
   function probeWebkitAudio() {
-    if (!webkitAudioProbe) {
-      webkitAudioProbe = (async () => {
-        const url = silentWavUrl();
-        const a = new Audio(url);
-        a.volume = 0;
-        try {
-          // 2.5s 看门狗: 坏管线时 play() 可能永不回调, 不能干等
-          await Promise.race([
-            a.play(),
-            new Promise((_, rej) => setTimeout(() => rej(new Error("probe timeout")), 2500)),
-          ]);
+    if (webkitAudioProbe) {
+      if (webkitAudioProbe.ok) return webkitAudioProbe.promise;   // 已确认可用
+      if (Date.now() - webkitAudioProbe.at < PROBE_RETRY_MS) {    // 冷却期内沿用上次结论
+        return webkitAudioProbe.promise;
+      }
+    }
+    const record = { at: Date.now(), ok: false };
+    const attempt = (async () => {
+      const url = silentWavUrl();
+      const a = new Audio(url);
+      a.volume = 0;
+      try {
+        await Promise.race([
+          a.play(),
+          new Promise((_, rej) => setTimeout(() => rej(new Error("probe timeout")), PROBE_TIMEOUT_MS)),
+        ]);
+        pref.webkitAudioOk = true; savePref();
+        return true;
+      } catch (e) {
+        // NotAllowedError = 自动播放策略拒绝 —— 管线建到策略检查这步, 说明是通的
+        if (e && e.name === "NotAllowedError") {
           pref.webkitAudioOk = true; savePref();
           return true;
-        } catch (e) {
-          // NotAllowedError = 自动播放策略拒绝 —— 管线本身是通的, 不算坏
-          if (e && e.name === "NotAllowedError") {
-            pref.webkitAudioOk = true; savePref();
-            return true;
-          }
-          pref.webkitAudioOk = false; savePref();
-          toastFn("Linux WebKit 音频管线不可用: 请安装 gstreamer1.0-plugins-base/good/libav; "
-            + "AppImage 下先在系统终端确认 gst-inspect-1.0 --version 正常, 再重启应用");
-          return false;
-        } finally {
-          try { a.pause(); a.removeAttribute("src"); } catch { /* 已清理 */ }
-          URL.revokeObjectURL(url);
         }
-      })();
-    }
-    return webkitAudioProbe;
+        pref.webkitAudioOk = false; savePref();
+        toastFn("Linux WebKit 音频管线探测失败: 请确认 gstreamer1.0-plugins-base/good/libav 已安装; "
+          + "约 1 分钟后点歌会自动重试");
+        return false;
+      } finally {
+        try { a.pause(); a.removeAttribute("src"); } catch { /* 已清理 */ }
+        URL.revokeObjectURL(url);
+      }
+    })();
+    webkitAudioProbe = record;
+    attempt.then(ok => { record.ok = ok; });
+    return attempt;
   }
+
+  // 页面加载即后台预热探测: 别让用户第一次点歌去撞 GStreamer 冷初始化
+  // (延迟 1.5s 避开页面初始化期的 toast/依赖未就绪)
+  if (IS_WEBKIT_GTK) setTimeout(() => probeWebkitAudio(), 1500);
 
   async function playIndex(idx) {
     if (!mstate.queue.length) return;
