@@ -128,7 +128,13 @@ fn sanitize_media_env() {
     }
 }
 
-/// Wayland 会话下桌宠的两个问题: 置顶失效 (被其他窗口遮挡) 与拖不动 ——
+/// Linux 显示兼容: 两件事都在 main() 最前处理 (GTK/WebKit 初始化之前)。
+/// ① DMABUF 渲染器: WebKitGTK 2.42+ 默认的 DMABUF 渲染路径在 VMware 等
+///    无 3D 加速的虚拟机里失效——窗口停留在过期帧 (loading 页), 而页面
+///    网络活动一切正常, Ubuntu 24.04 实测。恒设
+///    WEBKIT_DISABLE_DMABUF_RENDERER=1 回退非 DMABUF 渲染路径; 文本
+///    应用观感无差, 用户显式设置过该变量则尊重。
+/// ② Wayland 会话下桌宠的两个问题: 置顶失效 (被其他窗口遮挡) 与拖不动 ——
 /// Wayland 协议不允许客户端置顶/编程挪窗, GTK 的 set_keep_above 与
 /// gtk_window_move 在原生 Wayland 后端上是空操作。检测到 Wayland 且有
 /// XWayland (DISPLAY 存在) 时强制 GDK_BACKEND=x11 走 XWayland, 恢复 X11
@@ -141,6 +147,11 @@ fn sanitize_media_env() {
 /// 时机在 gdk 初始化)。
 #[cfg(target_os = "linux")]
 fn apply_linux_gdk_backend() {
+    // ① DMABUF 渲染器回退 (见函数文档): 用户显式设置过则尊重
+    if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
+        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+    }
+    // ② Wayland 桌宠置顶/拖动
     let on_wayland = std::env::var_os("WAYLAND_DISPLAY").is_some()
         || std::env::var("XDG_SESSION_TYPE")
             .map(|t| t.eq_ignore_ascii_case("wayland"))

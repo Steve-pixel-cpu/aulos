@@ -294,6 +294,9 @@ git push origin v3.3.9
   `GDK_BACKEND=x11` 走 XWayland 恢复该行为 (决策记录在 `~/.x-code/boot.log`)。
   想回原生 Wayland: 启动前 `export XCODE_GDK_BACKEND=wayland`, 代价是桌宠
   可能被遮挡、拖不动。
+- VMware 等无 3D 加速环境: 应用自动设置 `WEBKIT_DISABLE_DMABUF_RENDERER=1`
+  回退 WebKitGTK 的非加速渲染路径——否则窗口会停留在过期帧/空白 (页面
+  实际正常)。已显式设置该变量的环境不受影响。
 
 ## 测试
 
