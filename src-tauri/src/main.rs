@@ -851,11 +851,12 @@ fn pet_hit_test(app: AppHandle) -> Result<bool, String> {
     // 比较会永远对不上 (VM 宸测: 输入框不消失)。
     let sf = win.scale_factor().unwrap_or(1.0);
     let (cx, cy) = (cursor.x * sf, cursor.y * sf);
-    let hit = cx >= pos.x as f64 && cx < (pos.x + size.width) as f64
-        && cy >= pos.y as f64 && cy < (pos.y + size.height) as f64;
+    // Position 是 i32 / Size 是 u32, 先归一 f64 再算右/下边界
+    let (px, py, rw, rh) = (pos.x as f64, pos.y as f64,
+                            size.width as f64, size.height as f64);
+    let hit = cx >= px && cx < px + rw && cy >= py && cy < py + rh;
     boot_log("pet", &format!(
-        "hit_test: cursor=({cx:.0},{cy:.0}) rect=({},{},{}x{}) sf={sf} -> {hit}",
-        pos.x, pos.y, size.width, size.height,
+        "hit_test: cursor=({cx:.0},{cy:.0}) rect=({px:.0},{py:.0},{rw:.0}x{rh:.0}) sf={sf} -> {hit}",
     ));
     Ok(hit)
 }
