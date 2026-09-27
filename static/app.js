@@ -480,26 +480,21 @@ function notifyTurnEnd(msg, sid) {
  * ============================================================ */
 const THEME_KEY = "xc-theme";
 const mqDark = window.matchMedia("(prefers-color-scheme: dark)");
-/* 值: dark | light | system | acrylic（亚克力深色） | acrylic-light（亚克力浅色） */
-function themePref() { return localStorage.getItem(THEME_KEY) || "system"; }
-function themeIsAcrylic() { return themePref().startsWith("acrylic"); }
+function themePref() {
+  const p = localStorage.getItem(THEME_KEY) || "system";
+  // 旧亚克力主题值(acrylic/acrylic-light 已删)迁移到对应深浅主题
+  if (p === "acrylic") { localStorage.setItem(THEME_KEY, "dark"); return "dark"; }
+  if (p === "acrylic-light") { localStorage.setItem(THEME_KEY, "light"); return "light"; }
+  return p;
+}
 function resolvedTheme() {
   const pref = themePref();
-  if (pref === "acrylic" || pref === "acrylic-light") return pref === "acrylic" ? "dark" : "light";
   return pref === "system" ? (mqDark.matches ? "dark" : "light") : pref;
 }
-/* 亚克力主题: 半透明表面 + 窗口级 DWM 材质(桌面透出) + 壁纸透出。
- * 是否亚克力由主题值直接派生(acrylic / acrylic-light), 无独立开关。 */
-/* 背景图开关状态: applyFx 启动早期就会经 syncBgLayers 读到, 必须先于此初始化 */
+/* 背景图开关状态: 启动早期就会经 syncBgLayers 读到, 必须先于此初始化 */
 const BG_KEY = "xc-bg";
 let bgVer = 0;
 function applyFx() {
-  // 注意: 不能引入独立开关再读它——曾有过只读不写的 xc-fx key, 导致
-  // applyFx 恒走 else 分支把 head 预绘制脚本设置的 data-fx 删掉,
-  // 亚克力主题永远不生效。data-fx 的唯一事实来源 = 主题值。
-  if (themeIsAcrylic()) document.documentElement.dataset.fx = "acrylic";
-  else delete document.documentElement.dataset.fx;
-  // 背景图逻辑声明在文件后部; 函数声明会提升, 此时其状态变量已就绪, 可直接调
   syncBgLayers();
 }
 function applyTheme() {
@@ -5175,8 +5170,6 @@ const THEME_ITEMS = [
   { value: "dark", label: "深色" },
   { value: "light", label: "浅色" },
   { value: "system", label: "跟随系统" },
-  { value: "acrylic", label: "亚克力（深色）" },
-  { value: "acrylic-light", label: "亚克力（浅色）" },
 ];
 const themeDd = makeDropdown($("sel-theme"), {
   items: THEME_ITEMS, value: themePref(),
@@ -5261,11 +5254,8 @@ function applyAccentVars() {
   const dark = document.documentElement.dataset.theme === "dark";
   st.setProperty("--accent", c);
   st.setProperty("--accent-deep", mixHex(c, "#000000", dark ? 0.16 : 0.2));
-  // 亚克力下 soft 必须半透明: 浅色默认分支混白是实色, 内联样式优先级高于
-  // CSS 令牌块, 会盖掉亚克力的 --accent-soft 覆盖 → 用户气泡死白
   st.setProperty("--accent-soft",
-    themeIsAcrylic() ? `rgba(${r}, ${g}, ${b}, ${dark ? .14 : .12})`
-    : dark ? `rgba(${r}, ${g}, ${b}, .13)` : mixHex(c, "#ffffff", 0.9));
+    dark ? `rgba(${r}, ${g}, ${b}, .13)` : mixHex(c, "#ffffff", 0.9));
   st.setProperty("--accent-border",
     dark ? `rgba(${r}, ${g}, ${b}, .36)` : mixHex(c, "#ffffff", 0.74));
 }

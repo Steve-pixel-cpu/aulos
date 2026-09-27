@@ -7,7 +7,7 @@
 <title>x-code</title>
 <link rel="icon" type="image/png" href="/api/icon">
 <script>/* 桌面壳经 ?token= 打开页面: 把令牌种成 cookie, 后续 API/静态资源请求自动携带 */ (function(){try{var t=new URLSearchParams(location.search).get("token");if(t)document.cookie="xcode_token="+encodeURIComponent(t)+"; path=/; max-age=31536000; SameSite=Strict";}catch(e){}})();</script>
-<script>/* 主题/材质/壁纸在绘制前应用，避免闪白 (dark | light | system | acrylic | acrylic-light) */ (function(){var de=document.documentElement,p=localStorage.getItem("xc-theme")||"system",acrylic=(p==="acrylic"||p==="acrylic-light");de.dataset.theme=acrylic?(p==="acrylic"?"dark":"light"):(p==="system"&&window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");if(acrylic)de.dataset.fx="acrylic";var a=localStorage.getItem("xc-accent");if(a&&a!=="gray")de.dataset.accent=a;if(localStorage.getItem("xc-bg")==="1")de.dataset.bg="1";/* 壁纸亮度: 与 app.js applyBgBrightness 同一套公式, 绘制前设好防闪回默认 */var b=parseFloat(localStorage.getItem("xc-bg-bright"));if(!isFinite(b)||b<0||b>100)b=50;de.style.setProperty("--bg-dim",(2-b/50).toFixed(4));de.style.setProperty("--bg-surf",(1-.26*Math.max(-1,Math.min(1,(b-50)/50))).toFixed(4));})();</script>
+<script>/* 主题/壁纸在绘制前应用，避免闪白 (dark | light | system) */ (function(){var de=document.documentElement,p=localStorage.getItem("xc-theme")||"system";if(p==="acrylic")p="dark";else if(p==="acrylic-light")p="light";/* 旧亚克力主题值迁移 */ de.dataset.theme=p==="system"&&window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":(p==="dark"||p==="light")?p:"dark";var a=localStorage.getItem("xc-accent");if(a&&a!=="gray")de.dataset.accent=a;if(localStorage.getItem("xc-bg")==="1")de.dataset.bg="1";/* 壁纸亮度: 与 app.js applyBgBrightness 同一套公式, 绘制前设好防闪回默认 */var b=parseFloat(localStorage.getItem("xc-bg-bright"));if(!isFinite(b)||b<0||b>100)b=50;de.style.setProperty("--bg-dim",(2-b/50).toFixed(4));de.style.setProperty("--bg-surf",(1-.26*Math.max(-1,Math.min(1,(b-50)/50))).toFixed(4));})();</script>
 <!-- 渲染库本地化: jsdelivr 在国内时通时断, 同步 CDN 脚本一卡住, 整页解析
      阻塞、defer 的 app.js 永远不执行——表现为页面只剩骨架、点什么都没反应 -->
 <script src="/static/vendor/marked.umd.js"></script>
@@ -18,9 +18,8 @@
 </head>
 <body>
 
-<!-- 背景遮罩 + 磨砂层: z-index -1 垫底, 亚克力主题/壁纸启用（见 app.css） -->
+<!-- 背景遮罩: z-index -1 垫底, 壁纸启用（见 app.css） -->
 <div id="bg-scrim"></div>
-<div id="bg-frost"></div>
 
 <!-- ============ 自绘标题栏（仅桌面壳显示, 高度/主题跟随应用） ============ -->
 <div id="titlebar">

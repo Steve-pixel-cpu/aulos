@@ -21,8 +21,6 @@ use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
 use std::sync::{LazyLock, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
-use tauri::window::Effect;
-use tauri::utils::config::WindowEffectsConfig;
 use tauri::{AppHandle, Manager, RunEvent, WindowEvent, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_opener::OpenerExt;
 
@@ -1106,22 +1104,6 @@ fn create_main_window(app: &AppHandle) -> Result<(), String> {
         .min_inner_size(960.0, 600.0)
         .visible(false) // 页面就绪后再显示, 避免白屏闪烁
         .initialization_script(&bridge_js);
-    // 窗口级亚克力 (仅 Windows): 窗口与 WebView2 背景透明, 桌面经 DWM
-    // ACRYLICBLURBEHIND 模糊透出。材质无条件挂载是安全的——普通深浅主题
-    // 页面画的是不透明背景, 材质被盖住不可见; 只有切到亚克力主题(页面变
-    // 透明)时才透出, 主题切换无需重启壳。Win10 已知取舍: 拖动窗口时材质
-    // 有轻微滞后, 不能接受可把 Effect::Acrylic 换成 Effect::Blur(无滞后,
-    // 少质感)。transparent 方法在 macOS builder 上不存在 (transparent +
-    // effects 一起门控); Linux/mac 页面自绘背景, 观感不变。
-    #[cfg(windows)]
-    let builder = builder
-        .transparent(true)
-        .effects(WindowEffectsConfig {
-            effects: vec![Effect::Acrylic],
-            state: None,
-            radius: None,
-            color: None,
-        });
     builder
         .on_navigation(move |url| {
             let s = url.as_str();

@@ -120,95 +120,19 @@
     --accent-soft: #fdeef1; --accent-border: #f5c6d1;
   }
 
-  /* ============ 亚克力主题: data-fx="acrylic" 叠加在当前深浅底色上 ============
-   * 磨砂主体是窗口级 DWM 材质（壳侧 transparent + Acrylic, 桌面透出）;
-   * 表面令牌全部转为半透明让材质/壁纸透出来。有壁纸时壁纸直接铺在
-   * body 上（JS 写 inline background）, #bg-scrim 与 #bg-frost 用
-   * z-index:-1 垫在所有 UI 之下, 由全屏 #bg-frost 一个元素统一柔化
-   * 壁纸——不给每个表面单独加 blur: 层叠模糊代价高, 嵌套
-   * backdrop-filter 在 WebView2 上表现也不一致。 */
-  :root[data-fx="acrylic"] {
-    --bg: rgba(16, 16, 20, .72);
-    --bg-side: rgba(11, 11, 15, .74);
-    --surface: rgba(23, 23, 29, .78);
-    --surface-2: rgba(29, 29, 36, .74);
-    --surface-3: rgba(38, 38, 47, .72);
-    --pop-bg: rgba(30, 30, 38, .60);
-    --overlay: rgba(6, 6, 10, .45);
-    --code-bg: rgba(10, 10, 15, .68);
-    --code-head: rgba(17, 17, 22, .82);
-    --pane-tint: rgba(16, 16, 20, .60);   /* 消息主区: 最透, 露壁纸 */
-    --side-tint: rgba(11, 11, 15, .62);
-    --header-tint: rgba(16, 16, 20, .40);
-    --titlebar-tint: rgba(11, 11, 15, .66);
-    /* 高亮/气泡底色转半透明: 实色会盖住 DWM 材质, 磨砂上糊出不透明色块 */
-    --hover: rgba(29, 29, 36, .55);
-    --active: rgba(35, 35, 44, .55);
-    --accent-soft: color-mix(in srgb, var(--accent) 14%, transparent);
-  }
-  :root[data-theme="light"][data-fx="acrylic"] {
-    --bg: rgba(255, 255, 255, .72);
-    --bg-side: rgba(247, 247, 248, .76);
-    --surface: rgba(255, 255, 255, .58);
-    --surface-2: rgba(243, 243, 245, .60);
-    --surface-3: rgba(234, 234, 238, .58);
-    --pop-bg: rgba(255, 255, 255, .62);
-    --overlay: rgba(24, 24, 30, .26);
-    --code-bg: rgba(247, 247, 249, .72);
-    --code-head: rgba(239, 239, 242, .84);
-    --pane-tint: rgba(255, 255, 255, .58);
-    --side-tint: rgba(247, 247, 248, .62);
-    /* header-tint 要低: doc-header 叠在 pane tint 之上, 白色叠白色
-     * 会显成一条白色横带(.56 时两层叠加近实心白) */
-    --header-tint: rgba(255, 255, 255, .32);
-    --titlebar-tint: rgba(247, 247, 248, .55);
-    /* 浅色令牌里的 accent-soft/hover/active/*-soft 是不透明实色,
-     * 亚克力下会糊成死白色块(最明显: 用户消息气泡)。统一转半透明,
-     * accent-soft 用 color-mix 自动适配五种强调色主题。 */
-    --hover: rgba(243, 243, 245, .6);
-    --active: rgba(236, 236, 239, .6);
-    --accent-soft: color-mix(in srgb, var(--accent) 12%, transparent);
-    --ok-soft: rgba(231, 244, 235, .65);
-    --err-soft: rgba(251, 236, 234, .65);
-    --warn-soft: rgba(251, 242, 220, .65);
-  }
-  /* body 必须透明: 亚克力的磨砂来自 DWM 窗口材质(桌面透出), 页面画任何
-   * 不透明垫底色都会把材质挡住。 */
-  :root[data-fx="acrylic"] body { background: transparent; }
-  :root[data-fx="acrylic"] #sidebar { background: var(--side-tint); }
-  :root[data-fx="acrylic"] #pane { background: var(--pane-tint); }
-  :root[data-fx="acrylic"] #titlebar { background: var(--titlebar-tint); }
-  :root[data-fx="acrylic"] #doc-header {
-    background: color-mix(in srgb, var(--header-tint) 86%, transparent);
-  }
-  /* 输入卡玻璃化: 低实度白 + 一层磨砂。backdrop-filter 只能模糊页面内
-   * 身后的图层(pane tint / #bg-frost 已模糊的壁纸), 够不到窗外——窗外
-   * 的柔化靠 DWM 材质本身。无壁纸时此层近似无感, 开着也无害 */
-  :root[data-fx="acrylic"] #input-card {
-    -webkit-backdrop-filter: blur(18px) saturate(1.4);
-    backdrop-filter: blur(18px) saturate(1.4);
-  }
-  /* 摸鱼电台 dock: 亚克力下改透明继承侧栏 tint。原本自画 --bg-side(浓度
-   * 高于侧栏 tint 和输入卡 surface), 在磨砂家族里像一条死白贴片 */
-  :root[data-fx="acrylic"] #music-dock {
-    background: transparent;
-    border-top-color: color-mix(in srgb, var(--border) 55%, transparent);
-  }
-
   /* 壁纸启用标记 data-bg="1" 挂在 <html> 上（head 预绘制脚本可设，避免刷新闪底色）。
    * 普通主题 + 壁纸: 大面积区域与表面 token 全部转半透明让图片透出,
-   * 文字可读性由 #bg-scrim 压暗 + 大面板局部 blur 兜底;
-   * 用 :not([data-fx=acrylic]) 与亚克力令牌互斥, 避免两套选择器打架 */
+   * 文字可读性由 #bg-scrim 压暗 + 大面板局部 blur 兜底 */
   /* min(100%,…) 兜底: --bg-surf 换算异常时防止份额超 100% 被 color-mix 归一化成全实底 */
-  :root[data-bg="1"]:not([data-fx="acrylic"]) #sidebar { background: color-mix(in srgb, var(--bg-side) min(100%, calc(88% * var(--bg-surf, 1))), transparent); }
-  :root[data-bg="1"]:not([data-fx="acrylic"]) #pane { background: color-mix(in srgb, var(--bg) min(100%, calc(84% * var(--bg-surf, 1))), transparent); }
-  :root[data-bg="1"]:not([data-fx="acrylic"]) #titlebar { background: color-mix(in srgb, var(--bg-side) min(100%, calc(88% * var(--bg-surf, 1))), transparent); }
-  :root[data-bg="1"]:not([data-fx="acrylic"]) #doc-header { background: color-mix(in srgb, var(--bg) min(100%, calc(86% * var(--bg-surf, 1))), transparent); }
+  :root[data-bg="1"] #sidebar { background: color-mix(in srgb, var(--bg-side) min(100%, calc(88% * var(--bg-surf, 1))), transparent); }
+  :root[data-bg="1"] #pane { background: color-mix(in srgb, var(--bg) min(100%, calc(84% * var(--bg-surf, 1))), transparent); }
+  :root[data-bg="1"] #titlebar { background: color-mix(in srgb, var(--bg-side) min(100%, calc(88% * var(--bg-surf, 1))), transparent); }
+  :root[data-bg="1"] #doc-header { background: color-mix(in srgb, var(--bg) min(100%, calc(86% * var(--bg-surf, 1))), transparent); }
   /* 普通主题 + 壁纸: 表面 token 半透明化——聊天区的工具卡(输出/变更/终端)、
    * 思考胶囊、todo 卡、输入卡、右侧计划面板引用的全是这些令牌, 改这里
    * 一处全局透出。RGB 保持原值只降 alpha(乘 --bg-surf, 随"壁纸亮度"滑块
    * 联动: 100% 最透 / 50% 默认 / 更低更实), 文字对比度不受影响 */
-  :root[data-bg="1"]:not([data-fx="acrylic"]) {
+  :root[data-bg="1"] {
     --bg:        rgb(16 16 20 / calc(.48 * var(--bg-surf, 1)));
     --surface:   rgb(23 23 29 / calc(.55 * var(--bg-surf, 1)));
     --surface-2: rgb(29 29 36 / calc(.50 * var(--bg-surf, 1)));
@@ -218,7 +142,7 @@
     --hover:     rgb(29 29 36 / calc(.38 * var(--bg-surf, 1)));
     --active:    rgb(35 35 44 / calc(.40 * var(--bg-surf, 1)));
   }
-  :root[data-theme="light"][data-bg="1"]:not([data-fx="acrylic"]) {
+  :root[data-theme="light"][data-bg="1"] {
     --bg:        rgb(255 255 255 / calc(.48 * var(--bg-surf, 1)));
     --surface:   rgb(255 255 255 / calc(.55 * var(--bg-surf, 1)));
     --surface-2: rgb(243 243 245 / calc(.50 * var(--bg-surf, 1)));
@@ -231,39 +155,20 @@
   }
   /* 普通主题 + 壁纸: 侧栏本体降到 88% 不透明度, dock 同步透明跟随,
    * 免得播放条比侧栏更实、在底部显出一截白带 */
-  :root[data-bg="1"]:not([data-fx="acrylic"]) #music-dock { background: transparent; }
-  /* 遮罩强度: 亚克力下轻一档（磨砂已柔化壁纸）; 无模糊时稍重帮文字让路。
-   * 正文卡片仍是 84%+ 实底, 可读性由卡片保证, 遮罩只管露出的壁纸区域。
+  :root[data-bg="1"] #music-dock { background: transparent; }
+  /* 遮罩强度: 稍重帮文字让路。正文卡片仍是 84%+ 实底, 可读性由卡片保证,
+   * 遮罩只管露出的壁纸区域。
    * --bg-dim / --bg-surf 由"壁纸亮度"滑块驱动(1=默认观感, <1 更亮, >1 更暗);
    * alpha 会被 CSS 钳到 0..1, 调亮端(系数<1)线性减淡压暗层 */
   :root[data-bg="1"] { --bg-scrim: rgb(10 10 14 / calc(.38 * var(--bg-dim, 1))); }
   :root[data-theme="light"][data-bg="1"] { --bg-scrim: rgb(255 255 255 / calc(.34 * var(--bg-dim, 1))); }
-  :root[data-fx="acrylic"][data-bg="1"] { --bg-scrim: rgb(10 10 14 / calc(.26 * var(--bg-dim, 1))); }
-  :root[data-theme="light"][data-fx="acrylic"][data-bg="1"] { --bg-scrim: rgb(255 255 255 / calc(.22 * var(--bg-dim, 1))); }
-  /* 亚克力 + 壁纸: 表面 tint 再让一档。磨砂(抹掉细节) + 遮罩 + 无壁纸档的
-   * 高浓度 tint 三层叠乘, 壁纸亮度只剩约三成, 观感近乎全黑。有壁纸时 tint
-   * 减薄让壁纸透出; 正文可读性由磨砂抹平高频细节 + 遮罩兜底 */
-  :root[data-fx="acrylic"][data-bg="1"] {
-    --pane-tint: rgb(16 16 20 / calc(.44 * var(--bg-dim, 1)));
-    --side-tint: rgb(11 11 15 / calc(.50 * var(--bg-dim, 1)));
-    --titlebar-tint: rgb(11 11 15 / calc(.55 * var(--bg-dim, 1)));
-  }
-  :root[data-theme="light"][data-fx="acrylic"][data-bg="1"] {
-    --pane-tint: rgb(255 255 255 / calc(.44 * var(--bg-dim, 1)));
-    --side-tint: rgb(247 247 248 / calc(.50 * var(--bg-dim, 1)));
-    --titlebar-tint: rgb(247 247 248 / calc(.45 * var(--bg-dim, 1)));
-  }
 
-  /* 壁纸遮罩与磨砂层: z-index -1 = 壁纸(body 绘制)之上、一切 UI 之下;
+  /* 壁纸遮罩: z-index -1 = 壁纸(body 绘制)之上、一切 UI 之下;
    * 变量从 <html> 继承, 元素本体只管显隐与着色 */
-  #bg-scrim, #bg-frost {
+  #bg-scrim {
     position: fixed; inset: 0; z-index: -1; display: none; pointer-events: none;
   }
   :root[data-bg="1"] #bg-scrim { display: block; background: var(--bg-scrim); }
-  #bg-frost { backdrop-filter: blur(30px) saturate(1.4); }
-  /* 页面内磨砂只服务壁纸(backdrop-filter 够不到窗口外的桌面): 亚克力无壁纸
-   * 时模糊对象是透明窗外的 DWM 材质, 页面这层开着只会白耗 GPU。 */
-  :root[data-fx="acrylic"][data-bg="1"] #bg-frost { display: block; }
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
   input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
