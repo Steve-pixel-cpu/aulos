@@ -167,6 +167,15 @@
   transform: none;
   pointer-events: auto;
 }
+/* JS 显式管理的平行通道 (pet.js pointerenter/leave 切 pointer-inside 类):
+   Linux WebKitGTK 的 :hover 事件投递不可靠 (Wayland 事件丢失/程序化挪窗
+   丢 leave), 类存在即显示, 与 :hover 并列 —— 收到任何指针事件就能正确
+   显隐; Windows 上与 :hover 同语义零差异 */
+#pet-float.pointer-inside #pet-input {
+  opacity: .96;
+  transform: none;
+  pointer-events: auto;
+}
 
 /* ---------- 主界面: 设置→桌宠 的宠物列表 ---------- */
 .pet-set-col { flex-wrap: wrap; }
