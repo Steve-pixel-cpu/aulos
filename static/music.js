@@ -133,9 +133,14 @@
   /* ---- 核心: 播放队列里的某一首 ---- */
   // Linux 的 WebKitGTK 缺 GStreamer 组件时, 创建播放管线会卡死整个页面
   // (实测 Ubuntu 24.04: appsink/appsrc/autoaudiosink not found →
-  //  WebProcess 假死只能重启)。UA 精确含 "WebKitGTK" 不会误伤正常浏览器;
+  //  WebProcess 假死只能重启)。
+  // 检测: 本应用在 Linux 的 WebView 必是 WebKitGTK, 但它的 UA 里没有
+  // "WebKitGTK" 字串 (只有 AppleWebKit/...Safari) —— 用 平台=Linux 且
+  // UA 无 Chrome/Firefox/Edg 标记 来识别 (正常 Linux 浏览器不受影响,
+  // Windows/mac 的 WebView2/WKWebView 由 platform 排除)。
   // 默认拦截, 装好插件后 Shift+点歌可强制一次并记住选择。
-  const IS_WEBKIT_GTK = /WebKitGTK/.test(navigator.userAgent);
+  const IS_WEBKIT_GTK = navigator.platform.startsWith("Linux")
+    && !/Chrome|Chromium|Firefox|Edg\//.test(navigator.userAgent);
   let webkitWarned = false;
 
   async function playIndex(idx) {
