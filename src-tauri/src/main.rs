@@ -845,10 +845,19 @@ fn pet_hit_test(app: AppHandle) -> Result<bool, String> {
     let cursor = win.cursor_position().map_err(|e| e.to_string())?;
     let pos = win.outer_position().map_err(|e| e.to_string())?;
     let size = win.outer_size().map_err(|e| e.to_string())?;
-    let (cx, cy) = (cursor.x, cursor.y);
-    let (px, py) = (pos.x as f64, pos.y as f64);
-    let (w, h) = (size.width as f64, size.height as f64);
-    Ok(cx >= px && cx < px + w && cy >= py && cy < py + h)
+    // 命中测试: 统一物理像素比较。cursor_position 是逻辑坐标 (f64,
+    // 受显示缩放影响), 乘 scale_factor 归一到物理; outer_position/
+    // outer_size 在 X11 下是物理像素。缩放≠1 的环境里两套坐标系直接
+    // 比较会永远对不上 (VM 宸测: 输入框不消失)。
+    let sf = win.scale_factor().unwrap_or(1.0);
+    let (cx, cy) = (cursor.x * sf, cursor.y * sf);
+    let hit = cx >= pos.x as f64 && cx < (pos.x + size.width) as f64
+        && cy >= pos.y as f64 && cy < (pos.y + size.height) as f64;
+    boot_log("pet", &format!(
+        "hit_test: cursor=({cx:.0},{cy:.0}) rect=({},{},{}x{}) sf={sf} -> {hit}",
+        pos.x, pos.y, size.width, size.height,
+    ));
+    Ok(hit)
 }
 
 /// 鼠标穿透开关: 右键开启后点宠物以外的区域都落到下层窗口;
