@@ -147,9 +147,22 @@ fn sanitize_media_env() {
 /// 时机在 gdk 初始化)。
 #[cfg(target_os = "linux")]
 fn apply_linux_gdk_backend() {
-    // ① DMABUF 渲染器回退 (见函数文档): 用户显式设置过则尊重
+    // ① DMABUF 渲染器回退 (见函数文档): 仅虚拟机内生效——真机硬件的
+    //    默认 GPU 渲染路径流畅, 无差别回退反而造成窗口拖动拖影 (软件
+    //    渲染 + 虚拟显卡的固有代价)。systemd-detect-virt 缺失或报
+    //    "none" 视为真机, 保留默认路径。
     if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
-        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+        let in_vm = std::process::Command::new("systemd-detect-virt")
+            .output()
+            .map(|o| o.status.success() && !o.stdout.is_empty())
+            .unwrap_or(false);
+        if in_vm {
+            std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+            boot_log(
+                "shell",
+                "虚拟机环境: 已设 WEBKIT_DISABLE_DMABUF_RENDERER=1 (防窗口停帧; 窗口拖动在无 3D 加速的 VM 里可能有拖影)",
+            );
+        }
     }
     // ② Wayland 桌宠置顶/拖动
     let on_wayland = std::env::var_os("WAYLAND_DISPLAY").is_some()
