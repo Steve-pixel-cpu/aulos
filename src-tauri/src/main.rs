@@ -18,7 +18,7 @@ use std::net::TcpStream;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
-use std::sync::{LazyLock, Mutex};
+use std::sync::{LazyLock, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use tauri::window::Effect;
@@ -86,15 +86,43 @@ fn random_hex32() -> String {
     format!("{t:032x}{:016x}deadbeefdeadbeef", std::process::id() as u128,)[..64].to_string()
 }
 
-/// 发布态判定: 后端 sidecar 随包分发在 <exe>\resources\server\ 下。
+/// 发布态判定: 后端 sidecar 随包分发在资源目录的 resources/server/ 下。
 /// 发布态与开发态用不同的缺省端口/端口文件（见 port_file），互不抢占。
+///
+/// 资源目录解析: 各平台布局不同（Windows NSIS=安装目录; Linux
+/// AppImage=$APPDIR/usr/lib/<产品名>; macOS=.app/Contents/Resources）,
+/// 手工 current_exe 拼路径只在 NSIS 成立——AppImage 上解析失败会误入
+/// 开发态拉 python, 实测 (Ubuntu 24.04)。此处用 setup 阶段从 AppHandle
+/// 拿到的 resource_dir (Tauri 负责各平台正确性) 作为首选候选。
+static RESOURCE_DIR: OnceLock<Option<PathBuf>> = OnceLock::new();
+
+fn set_resource_dir(app: &AppHandle) {
+    let dir = app.path().resource_dir().ok();
+    boot_log(
+        "shell",
+        &format!(
+            "resource_dir = {}",
+            dir.as_ref()
+                .map(|d| d.display().to_string())
+                .unwrap_or_else(|| "(解析失败)".into()),
+        ),
+    );
+    let _ = RESOURCE_DIR.set(dir);
+}
+
 fn sidecar_exe() -> Option<PathBuf> {
-    std::env::current_exe().ok().and_then(|exe| {
-        let p = exe
-            .parent()?
-            .join("resources/server/x-code-server.exe");
-        p.exists().then_some(p)
-    })
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    if let Some(base) = RESOURCE_DIR.get().and_then(|o| o.as_ref()) {
+        candidates.push(base.join("resources/server/x-code-server.exe"));
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        // 兜底: exe 同级的 resources/server/（NSIS 布局; 亦覆盖 setup 前
+        // 极早期调用 resource_dir 未初始化的窗口期）
+        if let Some(d) = exe.parent() {
+            candidates.push(d.join("resources/server/x-code-server.exe"));
+        }
+    }
+    candidates.into_iter().find(|p| p.exists())
 }
 
 fn release_mode() -> bool {
@@ -301,7 +329,11 @@ fn start_server() -> Result<Child, String> {
             break;
         }
     }
+    // venv 的 python 路径: Windows=Scripts/python.exe, POSIX=bin/python
+    #[cfg(windows)]
     let venv = root.join(".venv/Scripts/python.exe");
+    #[cfg(not(windows))]
+    let venv = root.join(".venv/bin/python");
     let python = if venv.exists() {
         venv
     } else {
@@ -956,6 +988,12 @@ fn main() {
             move_pet_window,
             resize_pet_window
         ])
+        .setup(|app| {
+            // 资源目录一次性注入: 之后 sidecar_exe/端口判定全走它
+            // (AppImage/.app/NSIS 的正确布局由 Tauri 解析, 见 RESOURCE_DIR 注释)
+            set_resource_dir(app.handle());
+            Ok(())
+        })
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(move |app, event| match event {
