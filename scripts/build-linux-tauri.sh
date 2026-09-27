@@ -5,9 +5,11 @@
 #   传版本号会先同步 package.json / tauri.conf.json / Cargo.toml /
 #   pyproject.toml (scripts/set-version.js + npm version); 不传维持当前版本。
 # 产物 (dist/):
-#   x-code_<ver>_amd64.AppImage     免安装单文件 (+ .AppImage.sig 更新签名)
-# 依赖: uv, Node.js, Rust 工具链, WebKitGTK 开发包 (workflow 里 apt 装);
-#       必须在 Linux 上运行 (PyInstaller 无法跨平台构建)。
+#   x-code_<ver>_amd64.deb          Debian 包 (+ .deb.sig 更新签名)
+#   安装即用系统 WebKitGTK/GStreamer, apt 按 Depends 自动拉齐运行时依赖
+#   (音频开箱即用, 无 AppImage 的库遮蔽问题)。
+# 依赖: uv, Node.js, Rust 工具链, dpkg-deb —— 必须在 Debian 系 Linux 上运行
+#       (PyInstaller 无法跨平台构建)。
 # 与 build-mac-tauri.sh 同款对齐策略: 冻结后端沿用 "x-code-server.exe"
 # 文件名 (Linux 上只是名字), tauri.conf.json / main.rs 零改动。
 set -euo pipefail
@@ -51,17 +53,17 @@ cp build/server/x-code-server src-tauri/server/x-code-server.exe   # 文件名�
 rm -rf src-tauri/pets
 cp -R pets src-tauri/pets
 
-echo "[4/4] Building Tauri AppImage (updater artifact signed)..."
+echo "[4/4] Building Tauri deb (updater artifact signed)..."
 if [ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
   echo "[sign] Using TAURI_SIGNING_PRIVATE_KEY from environment"
 else
   echo "[warn] No signing key in environment - build succeeds but produces no .sig"
 fi
 npm install --no-save @tauri-apps/cli@2
-npx tauri build --bundles appimage
+npx tauri build --bundles deb
 
 echo "Staging artifacts into dist/..."
 mkdir -p dist
-cp src-tauri/target/release/bundle/appimage/*.AppImage dist/
-cp src-tauri/target/release/bundle/appimage/*.AppImage.sig dist/ 2>/dev/null || true
-ls -1 dist/*.AppImage* 2>/dev/null || true
+cp src-tauri/target/release/bundle/deb/*.deb dist/
+cp src-tauri/target/release/bundle/deb/*.deb.sig dist/ 2>/dev/null || true
+ls -1 dist/*.deb* 2>/dev/null || true

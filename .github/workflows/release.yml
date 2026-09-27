@@ -182,8 +182,8 @@ jobs:
           name: dist-linux
           if-no-files-found: error
           path: |
-            dist/*.AppImage
-            dist/*.AppImage.sig
+            dist/*.deb
+            dist/*.deb.sig
 
   release:
     # 汇总: 下载三平台产物 → 合并生成多平台 latest.json → 创建 Release
