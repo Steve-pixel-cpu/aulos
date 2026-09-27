@@ -280,6 +280,11 @@ git push origin v3.3.9
 - 签名密钥走仓库 Secrets（`TAURI_SIGNING_PRIVATE_KEY` / `_PASSWORD`）；
   缺失时构建成功但无 `.sig`, 不能作为自动更新目标
 - macOS 未做 Apple 公证：首次打开需右键 → 打开, 或 `xattr -cr /Applications/x-code.app`
+- Linux 运行时依赖（缺 GStreamer 插件时窗口/工具正常, 但网页音频无声）:
+
+  ```bash
+  sudo apt install libwebkit2gtk-4.1-0 gstreamer1.0-plugins-base     gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-libav
+  ```
 
 ## 测试
 
