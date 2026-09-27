@@ -110,11 +110,13 @@ fn set_resource_dir(app: &AppHandle) {
 
 /// 剥掉 AppImage/linuxdeploy 注入的媒体环境污染 (仅 Linux 编译进二进制):
 /// - 删除 GST_PLUGIN_SYSTEM_PATH(_1_0) / GI_TYPELIB_PATH (指向 APPDIR 内
-///   不存在的插件/typelib 目录, 系统插件扫描因此一无所获);
-/// - LD_LIBRARY_PATH 剔除 `.mount_`(AppImage 挂载点) 与 `_MEI`(PyInstaller
-///   onefile) 条目 —— 两者都携带旧版 libgstreamer/glib 遮蔽系统库。
-/// 本进程派生的一切 (WebKitWebProcess / 冻结后端 / bash 工具) 随之继承
-/// 干净环境。须在 main() 最前、任何 gtk 初始化之前调用。
+///   不存在的插件/typelib 目录, 系统插件扫描因此一无所获)。
+///
+/// 刻意不动 LD_LIBRARY_PATH: APPDIR 挂载目录里除了旧版 libgstreamer, 还有
+/// WebKitWebProcess/WebKitNetworkProcess 运行必需的捆绑库 (libicudata 等)
+/// —— 剥掉挂载条目会让 WebKit 辅助进程加载失败, 整窗空白, 比"音乐卡死"
+/// 更糟 (v4.0.6 实测回归)。旧版 libgstreamer 遮蔽导致的音频不可用, 由前端
+/// 播放前的静音探测拦截 (music.js), 降级为"电台停用"而非卡死/空白。
 #[cfg(target_os = "linux")]
 fn sanitize_media_env() {
     for var in [
@@ -123,13 +125,6 @@ fn sanitize_media_env() {
         "GI_TYPELIB_PATH",
     ] {
         std::env::remove_var(var);
-    }
-    if let Ok(ld) = std::env::var("LD_LIBRARY_PATH") {
-        let kept: Vec<&str> = ld
-            .split(':')
-            .filter(|p| !p.contains(".mount_") && !p.contains("_MEI"))
-            .collect();
-        std::env::set_var("LD_LIBRARY_PATH", kept.join(":"));
     }
 }
 
