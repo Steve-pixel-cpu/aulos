@@ -7,7 +7,7 @@
 <title>x-code</title>
 <link rel="icon" type="image/png" href="/api/icon">
 <script>/* 桌面壳经 ?token= 打开页面: 把令牌种成 cookie, 后续 API/静态资源请求自动携带 */ (function(){try{var t=new URLSearchParams(location.search).get("token");if(t)document.cookie="xcode_token="+encodeURIComponent(t)+"; path=/; max-age=31536000; SameSite=Strict";}catch(e){}})();</script>
-<script>/* 主题/壁纸在绘制前应用，避免闪白 (dark | light | system) */ (function(){var de=document.documentElement,p=localStorage.getItem("xc-theme")||"system";if(p==="acrylic")p="dark";else if(p==="acrylic-light")p="light";/* 旧亚克力主题值迁移 */ de.dataset.theme=p==="system"&&window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":(p==="dark"||p==="light")?p:"dark";var a=localStorage.getItem("xc-accent");if(a&&a!=="gray")de.dataset.accent=a;if(localStorage.getItem("xc-bg")==="1")de.dataset.bg="1";/* 壁纸亮度: 与 app.js applyBgBrightness 同一套公式, 绘制前设好防闪回默认 */var b=parseFloat(localStorage.getItem("xc-bg-bright"));if(!isFinite(b)||b<0||b>100)b=50;de.style.setProperty("--bg-dim",(2-b/50).toFixed(4));de.style.setProperty("--bg-surf",(1-.26*Math.max(-1,Math.min(1,(b-50)/50))).toFixed(4));})();</script>
+<script>/* 主题/壁纸在绘制前应用，避免闪白 (dark | light | system) */ (function(){var de=document.documentElement,p=localStorage.getItem("xc-theme")||"system";de.dataset.theme=p==="system"&&window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":(p==="dark"||p==="light")?p:"dark";var a=localStorage.getItem("xc-accent");if(a&&a!=="gray")de.dataset.accent=a;if(localStorage.getItem("xc-bg")==="1")de.dataset.bg="1";/* 壁纸亮度: 与 app.js applyBgBrightness 同一套公式, 绘制前设好防闪回默认 */var b=parseFloat(localStorage.getItem("xc-bg-bright"));if(!isFinite(b)||b<0||b>100)b=50;de.style.setProperty("--bg-dim",(2-b/50).toFixed(4));de.style.setProperty("--bg-surf",(1-.26*Math.max(-1,Math.min(1,(b-50)/50))).toFixed(4));})();</script>
 <!-- 渲染库本地化: jsdelivr 在国内时通时断, 同步 CDN 脚本一卡住, 整页解析
      阻塞、defer 的 app.js 永远不执行——表现为页面只剩骨架、点什么都没反应 -->
 <script src="/static/vendor/marked.umd.js"></script>
@@ -305,7 +305,7 @@
           <div class="set-row">
             <div class="set-info">
               <div class="set-name">主题外观</div>
-              <div class="set-desc">深色、浅色、跟随系统或亚克力材质</div>
+              <div class="set-desc">深色、浅色或跟随系统</div>
             </div>
             <button type="button" class="dd set-dd" id="sel-theme">
               <span class="dd-label">跟随系统</span>
@@ -315,7 +315,7 @@
       <div class="set-row">
         <div class="set-info">
           <div class="set-name">背景图片</div>
-          <div class="set-desc">自定义壁纸；配合亚克力主题有磨砂玻璃效果（PNG/JPEG/WebP，限 20MB）</div>
+          <div class="set-desc">自定义壁纸（PNG/JPEG/WebP，限 20MB）</div>
         </div>
         <button type="button" class="icon-act" id="btn-bg-upload">上传图片</button>
         <button type="button" class="icon-act" id="btn-bg-clear">清除</button>

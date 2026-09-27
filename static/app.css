@@ -1009,8 +1009,7 @@
       background: color-mix(in srgb, var(--text-2) calc(var(--f, 0) * 100%), var(--border-strong));
     }
   }
-  /* 预览卡: 固定定位(JS 按刻度位置写入 left/top, 出现在刻度右侧),
-     贴合全局亚克力风格 */
+  /* 预览卡: 固定定位(JS 按刻度位置写入 left/top, 出现在刻度右侧) */
   #mm-pop {
     position: fixed; z-index: 60;
     max-width: 320px; padding: 10px 12px 8px; border-radius: 10px;

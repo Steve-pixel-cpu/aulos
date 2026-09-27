@@ -480,13 +480,7 @@ function notifyTurnEnd(msg, sid) {
  * ============================================================ */
 const THEME_KEY = "xc-theme";
 const mqDark = window.matchMedia("(prefers-color-scheme: dark)");
-function themePref() {
-  const p = localStorage.getItem(THEME_KEY) || "system";
-  // 旧亚克力主题值(acrylic/acrylic-light 已删)迁移到对应深浅主题
-  if (p === "acrylic") { localStorage.setItem(THEME_KEY, "dark"); return "dark"; }
-  if (p === "acrylic-light") { localStorage.setItem(THEME_KEY, "light"); return "light"; }
-  return p;
-}
+function themePref() { return localStorage.getItem(THEME_KEY) || "system"; }
 function resolvedTheme() {
   const pref = themePref();
   return pref === "system" ? (mqDark.matches ? "dark" : "light") : pref;
@@ -4820,7 +4814,7 @@ $("btn-add-provider").onclick = () => {
   scheduleProvSave();   // 新增即自动保存; 缺 Base URL 时红字提示, 填好自动补存
 };
 
-/* ---------- 设置 → 外观: 背景图片（亚克力磨砂的"壁纸"） ----------
+/* ---------- 设置 → 外观: 背景图片（壁纸） ----------
  * 与应用图标同模式: POST /api/bg 落盘 ~/.x-code/appearance/bg-user.png, localStorage 只存
  * 启用标记（xc-bg=1）。应用方式: <html data-bg="1"> 让遮罩/半透明令牌生效
  * （预绘制脚本抢在首帧前设置, 避免闪烁）; 壁纸本体由 syncBgLayers 预加载
@@ -5378,7 +5372,7 @@ bindFsInput("fs-code-input", FS_CHAT_KEY, FS_CHAT_BASE, FS_CHAT_RANGE);
 applyFontSize();
 
 /* ---------- 壁纸亮度: 0-100 滑块, 50=默认观感, 持久化 localStorage ----------
- * 只缩放压暗层(遮罩 alpha / 亚克力 tint / 表面不透明度), 不动实底卡片:
+ * 只缩放压暗层(遮罩 alpha / 表面不透明度), 不动实底卡片:
  * --bg-dim = 2 - v/50 (v=50→1 现状, v=100→0 不压暗, v=0→2 加倍压暗)
  * --bg-surf = 1 - 0.26*clamp((v-50)/50) 限幅 (v>50 更透更亮, v<50 更实更暗;
  *   用减号: 若用加号 v=100 会算出 1.26, color-mix 份额超 100% 被归一化成全实底)
