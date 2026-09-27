@@ -57,3 +57,8 @@ src-tauri/pets/
 evals/.runs/
 evals/results/
 evals/report.md
+
+# 根目录临时构建日志 (cargo/tauri/uvicorn 调试输出)
+/cargo-*.log
+/tauri-build*.log
+/uvicorn_*.log
