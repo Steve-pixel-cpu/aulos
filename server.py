@@ -14,6 +14,23 @@
 #   WebPermissionPrompter — 权限询问转发成弹窗，阻塞等浏览器审批
 
 import asyncio
+# --- AppImage 环境清洗: 必须早于其它导入与任何子进程派生 ---
+# Tauri 壳已在启动前剥掉 AppImage/linuxdeploy 注入的污染, 但 onefile
+# bootloader 会把 /tmp/_MEIxxx 重新塞回本进程的 LD_LIBRARY_PATH —— 在这里
+# 再清洗一次, 工具子进程 (bash 等) 继承干净环境, 不再出现 gst-inspect
+# 崩溃于 _gst_value_unique_list_type、音频管线假死 (Ubuntu 24.04 实测)。
+# 只删环境变量与过滤路径条目, 无新依赖; 非 AppImage 场景全是无害空跑。
+import os as _os_env
+
+_ld_path = _os_env.environ.get("LD_LIBRARY_PATH", "")
+_kept = [p for p in _ld_path.split(":")
+         if p and ".mount_" not in p and "_MEI" not in p]
+if _kept != _ld_path.split(":"):
+    _os_env.environ["LD_LIBRARY_PATH"] = ":".join(_kept)
+for _gst_var in ("GST_PLUGIN_SYSTEM_PATH", "GST_PLUGIN_SYSTEM_PATH_1_0",
+                 "GI_TYPELIB_PATH"):
+    _os_env.environ.pop(_gst_var, None)
+
 import base64
 import json
 import os

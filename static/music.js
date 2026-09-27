@@ -48,6 +48,8 @@
         vol: audio ? Math.round(audio.volume * 100) : (pref.vol ?? 70),
         dock: !$("music-dock").hidden,
         queue: mstate.queue, qname: mstate.qname, index: mstate.index,
+        webkitAudioOk: !!pref.webkitAudioOk,
+        webkitAudioForce: !!pref.webkitAudioForce,
       }));
     } catch { /* 存不了就算了 */ }
   }
@@ -131,28 +133,76 @@
   }
 
   /* ---- 核心: 播放队列里的某一首 ---- */
-  // Linux 的 WebKitGTK 缺 GStreamer 组件时, 创建播放管线会卡死整个页面
-  // (实测 Ubuntu 24.04: appsink/appsrc/autoaudiosink not found →
-  //  WebProcess 假死只能重启)。
-  // 检测: 本应用在 Linux 的 WebView 必是 WebKitGTK, 但它的 UA 里没有
-  // "WebKitGTK" 字串 (只有 AppleWebKit/...Safari) —— 用 平台=Linux 且
-  // UA 无 Chrome/Firefox/Edg 标记 来识别 (正常 Linux 浏览器不受影响,
-  // Windows/mac 的 WebView2/WKWebView 由 platform 排除)。
-  // 默认拦截, 装好插件后 Shift+点歌可强制一次并记住选择。
+  // Linux AppImage 的 WebKitGTK 会继承被污染的 GStreamer 环境 (APPDIR 旧版
+  // libgstreamer 遮蔽系统库 + 插件扫描指向空目录), 媒体管线一创建就
+  // WebProcess 假死拖垮整页 (Ubuntu 24.04 实测)。壳侧 (main.rs) 与服务侧
+  // (server.py) 的环境清洗已剥掉污染, 但用户系统真缺插件时管线同样不可用
+  // —— 两种情况都用「静音探测」兜底区分, 不再一刀切禁用:
+  //   探测通过 → pref.webkitAudioOk 记住, 之后直接播;
+  //   超时/失败 → 提示安装 gstreamer1.0-plugins-base/good/libav, 本次会话
+  //   停用; Shift+点歌 = 强制播放 (已知环境正常时绕过探测的逃生口)。
+  // 检测: 本应用在 Linux 的 WebView 必是 WebKitGTK (UA 无 WebKitGTK 字串,
+  // 用 平台=Linux 且 UA 无 Chrome/Firefox/Edg 识别; 正常 Linux 浏览器与
+  // Windows/mac 全部排除)。
   const IS_WEBKIT_GTK = navigator.platform.startsWith("Linux")
     && !/Chrome|Chromium|Firefox|Edg\//.test(navigator.userAgent);
-  let webkitWarned = false;
+
+  function silentWavUrl() {
+    // 10ms 8bit 静音 WAV: 探测"能否创建并启动播放管线"
+    const sr = 8000, n = 80;
+    const buf = new Uint8Array(44 + n);
+    const dv = new DataView(buf.buffer);
+    const tag = (off, s) => { for (let i = 0; i < s.length; i++) dv.setUint8(off + i, s.charCodeAt(i)); };
+    tag(0, "RIFF"); dv.setUint32(4, 36 + n, true); tag(8, "WAVE");
+    tag(12, "fmt "); dv.setUint32(16, 16, true); dv.setUint16(20, 8, true);
+    dv.setUint16(22, 1, true); dv.setUint32(24, sr, true);
+    dv.setUint32(28, sr, true); dv.setUint16(32, 1, true); dv.setUint16(34, 8, true);
+    tag(36, "data"); dv.setUint32(40, n, true);
+    buf.fill(128, 44);                       // 8bit 静音中点
+    return URL.createObjectURL(new Blob([buf], { type: "audio/wav" }));
+  }
+
+  let webkitAudioProbe = null;               // 会话内只探一次
+
+  function probeWebkitAudio() {
+    if (!webkitAudioProbe) {
+      webkitAudioProbe = (async () => {
+        const url = silentWavUrl();
+        const a = new Audio(url);
+        a.volume = 0;
+        try {
+          // 2.5s 看门狗: 坏管线时 play() 可能永不回调, 不能干等
+          await Promise.race([
+            a.play(),
+            new Promise((_, rej) => setTimeout(() => rej(new Error("probe timeout")), 2500)),
+          ]);
+          pref.webkitAudioOk = true; savePref();
+          return true;
+        } catch (e) {
+          // NotAllowedError = 自动播放策略拒绝 —— 管线本身是通的, 不算坏
+          if (e && e.name === "NotAllowedError") {
+            pref.webkitAudioOk = true; savePref();
+            return true;
+          }
+          pref.webkitAudioOk = false; savePref();
+          toastFn("Linux WebKit 音频管线不可用: 请安装 gstreamer1.0-plugins-base/good/libav; "
+            + "AppImage 下先在系统终端确认 gst-inspect-1.0 --version 正常, 再重启应用");
+          return false;
+        } finally {
+          try { a.pause(); a.removeAttribute("src"); } catch { /* 已清理 */ }
+          URL.revokeObjectURL(url);
+        }
+      })();
+    }
+    return webkitAudioProbe;
+  }
 
   async function playIndex(idx) {
     if (!mstate.queue.length) return;
-    if (IS_WEBKIT_GTK && !pref.webkitAudioForce) {
-      if (!webkitWarned) {
-        webkitWarned = true;
-        toastFn("Linux WebKit 缺 GStreamer 音频组件时播放会卡死页面, 已停用; "
-          + "装好 gstreamer1.0-plugins-base/good/libav 后, 按住 Shift 点击歌曲强制播放");
-      }
+    // WebKitGTK 且未确认管线可用 → 先探测 (Shift 强制 = 已知环境正常, 跳过探测直连)
+    if (IS_WEBKIT_GTK && !pref.webkitAudioOk && !pref.webkitAudioForce) {
       setPlayingUi(false);
-      return;
+      if (await probeWebkitAudio() === false) return;
     }
     mstate.index = ((idx % mstate.queue.length) + mstate.queue.length) % mstate.queue.length;
     savePref();   // 记住听到哪首, 重启恢复

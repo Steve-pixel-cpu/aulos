@@ -108,6 +108,73 @@ fn set_resource_dir(app: &AppHandle) {
     let _ = RESOURCE_DIR.set(dir);
 }
 
+/// 剥掉 AppImage/linuxdeploy 注入的媒体环境污染 (仅 Linux 编译进二进制):
+/// - 删除 GST_PLUGIN_SYSTEM_PATH(_1_0) / GI_TYPELIB_PATH (指向 APPDIR 内
+///   不存在的插件/typelib 目录, 系统插件扫描因此一无所获);
+/// - LD_LIBRARY_PATH 剔除 `.mount_`(AppImage 挂载点) 与 `_MEI`(PyInstaller
+///   onefile) 条目 —— 两者都携带旧版 libgstreamer/glib 遮蔽系统库。
+/// 本进程派生的一切 (WebKitWebProcess / 冻结后端 / bash 工具) 随之继承
+/// 干净环境。须在 main() 最前、任何 gtk 初始化之前调用。
+#[cfg(target_os = "linux")]
+fn sanitize_media_env() {
+    for var in [
+        "GST_PLUGIN_SYSTEM_PATH",
+        "GST_PLUGIN_SYSTEM_PATH_1_0",
+        "GI_TYPELIB_PATH",
+    ] {
+        std::env::remove_var(var);
+    }
+    if let Ok(ld) = std::env::var("LD_LIBRARY_PATH") {
+        let kept: Vec<&str> = ld
+            .split(':')
+            .filter(|p| !p.contains(".mount_") && !p.contains("_MEI"))
+            .collect();
+        std::env::set_var("LD_LIBRARY_PATH", kept.join(":"));
+    }
+}
+
+/// Wayland 会话下桌宠的两个问题: 置顶失效 (被其他窗口遮挡) 与拖不动 ——
+/// Wayland 协议不允许客户端置顶/编程挪窗, GTK 的 set_keep_above 与
+/// gtk_window_move 在原生 Wayland 后端上是空操作。检测到 Wayland 且有
+/// XWayland (DISPLAY 存在) 时强制 GDK_BACKEND=x11 走 XWayland, 恢复 X11
+/// 语义; 三种不强制/退出的情形都写 boot.log 留痕:
+///   - XCODE_GDK_BACKEND 已显式设置: 尊重用户选择 (含 =wayland 回原生
+///     Wayland, 代价是桌宠可能被遮挡、拖不动);
+///   - Wayland 但无 DISPLAY: 无 XWayland 的纯 Wayland, 保应用至少能启动;
+///   - 非 Wayland 会话 (X11): 现状即正确。
+/// 必须在 main() 最前、任何 gtk 初始化之前调用 (GTK 读 GDK_BACKEND 的
+/// 时机在 gdk 初始化)。
+#[cfg(target_os = "linux")]
+fn apply_linux_gdk_backend() {
+    let on_wayland = std::env::var_os("WAYLAND_DISPLAY").is_some()
+        || std::env::var("XDG_SESSION_TYPE")
+            .map(|t| t.eq_ignore_ascii_case("wayland"))
+            .unwrap_or(false);
+    if !on_wayland {
+        boot_log("shell", "非 Wayland 会话: 不调整 GDK_BACKEND");
+        return;
+    }
+    if std::env::var_os("XCODE_GDK_BACKEND").is_some() {
+        boot_log(
+            "shell",
+            "XCODE_GDK_BACKEND 已显式设置: 不调整 GDK_BACKEND (桌宠置顶/拖动在原生 Wayland 下受限)",
+        );
+        return;
+    }
+    if std::env::var_os("DISPLAY").is_none() {
+        boot_log(
+            "shell",
+            "Wayland 会话且无 XWayland (无 DISPLAY): 不强制 GDK_BACKEND, 保应用启动; 桌宠置顶/拖动将受限",
+        );
+        return;
+    }
+    std::env::set_var("GDK_BACKEND", "x11");
+    boot_log(
+        "shell",
+        "Wayland 会话: 已设 GDK_BACKEND=x11 走 XWayland (恢复桌宠置顶/拖动; 启动前 export XCODE_GDK_BACKEND=wayland 可回原生 Wayland)",
+    );
+}
+
 fn sidecar_exe() -> Option<PathBuf> {
     let mut candidates: Vec<PathBuf> = Vec::new();
     if let Some(base) = RESOURCE_DIR.get().and_then(|o| o.as_ref()) {
@@ -723,6 +790,10 @@ async fn open_pet_window(
     // 默认出生点(1200,600)在大尺寸/小屏组合下可能开出屏幕外, 夹回来
     if let Some(w) = app.get_webview_window("pet") {
         clamp_pet_into_monitor(&w);
+        // X11 下 builder 期的 keep-above 在窗口映射 (map) 时存在丢失的时序
+        // 问题 (Wayland 走 XWayland 后尤甚)——建好后幂等重申一次;
+        // set_always_on_top 对 Windows/macOS 无副作用
+        let _ = w.set_always_on_top(true);
     }
     Ok(())
 }
@@ -952,6 +1023,17 @@ const BRIDGE_JS: &str = r#"
 // ---------- 启动流程 ----------
 
 fn main() {
+    // 必须先于一切 gtk 初始化 (GTK 读 GDK_BACKEND 的时机在 gdk 初始化)
+    #[cfg(target_os = "linux")]
+    apply_linux_gdk_backend();
+    // 必须先于一切 tauri/gtk 初始化: AppImage 的 linuxdeploy GTK 钩子注入的
+    // 环境变量会让随后派生的 WebKitWebProcess 加载 APPDIR 内的旧版
+    // gstreamer/glib (遮蔽系统库) 且插件扫描指向空目录 → 音频管线创建失败
+    // → 页面假死 (Ubuntu 24.04 实测)。剥掉污染, 让 WebKit 用回系统栈。
+    // 仅 Linux: Windows 的 WebView2 与 macOS 的 WKWebView 无此依赖链。
+    #[cfg(target_os = "linux")]
+    sanitize_media_env();
+
     let token = ensure_token();
 
     tauri::Builder::default()

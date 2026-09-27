@@ -286,6 +286,14 @@ git push origin v3.3.9
   sudo apt install libwebkit2gtk-4.1-0 gstreamer1.0-plugins-base     gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-libav
   ```
 
+  AppImage 下若仍无声, 先在系统终端确认 `gst-inspect-1.0 --version` 正常
+  (AppImage 的启动环境可能遮蔽系统 GStreamer, 应用会自动剥除, 需重启生效)。
+- Wayland 会话 (Ubuntu 22.04/24.04 默认): Wayland 协议不允许客户端置顶/编程
+  挪窗, 桌宠会被其他窗口遮挡且拖不动。应用检测到 Wayland + XWayland 时自动设
+  `GDK_BACKEND=x11` 走 XWayland 恢复该行为 (决策记录在 `~/.x-code/boot.log`)。
+  想回原生 Wayland: 启动前 `export XCODE_GDK_BACKEND=wayland`, 代价是桌宠
+  可能被遮挡、拖不动。
+
 ## 测试
 
 ```bash
