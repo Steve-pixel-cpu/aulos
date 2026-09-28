@@ -27,6 +27,8 @@ fn main() {
                 "set_pet_click_through",
                 "move_pet_window",
                 "resize_pet_window",
+                "focus_pet",
+                "pet_hit_test",
             ])),
     )
     .expect("failed to run tauri-build");

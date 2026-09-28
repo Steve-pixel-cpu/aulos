@@ -128,6 +128,11 @@ fn sanitize_media_env() {
     }
 }
 
+/// tao 的 cursor_position 只在 X11 后端下有真实值——纯 Wayland 恒返回
+/// (0,0), 命中测试无意义。apply_linux_gdk_backend 启动时按会话类型回填;
+/// 非 Linux 平台不设置, 读取处 unwrap_or(true) 视为可查。
+static CURSOR_TRACKABLE: OnceLock<bool> = OnceLock::new();
+
 /// Linux 显示兼容: 两件事都在 main() 最前处理 (GTK/WebKit 初始化之前)。
 /// ① DMABUF 渲染器: WebKitGTK 2.42+ 默认的 DMABUF 渲染路径在 VMware 等
 ///    无 3D 加速的虚拟机里失效——窗口停留在过期帧 (loading 页), 而页面
@@ -145,6 +150,7 @@ fn sanitize_media_env() {
 ///   - 非 Wayland 会话 (X11): 现状即正确。
 /// 必须在 main() 最前、任何 gtk 初始化之前调用 (GTK 读 GDK_BACKEND 的
 /// 时机在 gdk 初始化)。
+
 #[cfg(target_os = "linux")]
 fn apply_linux_gdk_backend() {
     // ① DMABUF 渲染器回退 (见函数文档): 仅虚拟机内生效——真机硬件的
@@ -170,10 +176,14 @@ fn apply_linux_gdk_backend() {
             .map(|t| t.eq_ignore_ascii_case("wayland"))
             .unwrap_or(false);
     if !on_wayland {
+        let _ = CURSOR_TRACKABLE.set(true);
         boot_log("shell", "非 Wayland 会话: 不调整 GDK_BACKEND");
         return;
     }
-    if std::env::var_os("XCODE_GDK_BACKEND").is_some() {
+    if let Some(backend) = std::env::var_os("XCODE_GDK_BACKEND") {
+        // 用户显式指定后端: 只有 x11 系才有全局光标坐标可查
+        let trackable = backend.to_string_lossy().contains("x11");
+        let _ = CURSOR_TRACKABLE.set(trackable);
         boot_log(
             "shell",
             "XCODE_GDK_BACKEND 已显式设置: 不调整 GDK_BACKEND (桌宠置顶/拖动在原生 Wayland 下受限)",
@@ -181,6 +191,7 @@ fn apply_linux_gdk_backend() {
         return;
     }
     if std::env::var_os("DISPLAY").is_none() {
+        let _ = CURSOR_TRACKABLE.set(false);
         boot_log(
             "shell",
             "Wayland 会话且无 XWayland (无 DISPLAY): 不强制 GDK_BACKEND, 保应用启动; 桌宠置顶/拖动将受限",
@@ -188,6 +199,7 @@ fn apply_linux_gdk_backend() {
         return;
     }
     std::env::set_var("GDK_BACKEND", "x11");
+    let _ = CURSOR_TRACKABLE.set(true);
     boot_log(
         "shell",
         "Wayland 会话: 已设 GDK_BACKEND=x11 走 XWayland (恢复桌宠置顶/拖动; 启动前 export XCODE_GDK_BACKEND=wayland 可回原生 Wayland)",
@@ -795,7 +807,11 @@ async fn open_pet_window(
     .inner_size(PET_BASE_W * s, PET_BASE_H * s)   // 基准尺寸 × 宠物大小
     // 右下角附近出生, 用户可拖到任意位置
     .position(1200.0, 600.0)
-    .visible(true);
+    .visible(true)
+    // 开宠不抢主窗焦点: builder 默认 focused(true), 开出的瞬间会把
+    // 主窗压到身后 (Linux 窗管下观感即"主窗口消失")。输入框真正需要
+    // 焦点时由 focus_pet 按需 set_focus (IME 跟随), 不差出生这一下
+    .focused(false);
     // 透明窗: transparent 方法在 macOS 的 builder 上不存在 (透明走
     // macOSPrivateApi + 配置式窗口), v1 先接受 mac 桌宠带背景
     #[cfg(not(target_os = "macos"))]
@@ -813,6 +829,15 @@ async fn open_pet_window(
         // 问题 (Wayland 走 XWayland 后尤甚)——建好后幂等重申一次;
         // set_always_on_top 对 Windows/macOS 无副作用
         let _ = w.set_always_on_top(true);
+        // 环境快照: 真机上显隐再出问题时, 这行 + hit_test 翻转行即可
+        // 定位是哪条通道 (事件/轮询/:hover) 在何种环境下失效
+        boot_log("pet", &format!(
+            "pet window: session={} gdk={} scale={} pos={:?}",
+            std::env::var("XDG_SESSION_TYPE").unwrap_or_default(),
+            std::env::var("GDK_BACKEND").unwrap_or_default(),
+            w.scale_factor().unwrap_or(1.0),
+            w.outer_position().map(|p| (p.x, p.y)),
+        ));
     }
     Ok(())
 }
@@ -833,33 +858,48 @@ fn start_drag_pet(app: AppHandle) {
 }
 
 /// 光标是否悬停在桌宠窗口内: Linux WebKitGTK 的 pointerleave 会丢
-/// (程序化挪窗/XWayland 场景), 前端对输入框显隐做轮询兜底时不依赖
+/// (程序化挪窗/XWayland 场景), 前端对输入框显隐做轮询纠偏时不依赖
 /// 事件投递, 直接以全局光标坐标对窗口矩形做命中测试。
 /// 开销: 进程内 IPC + 一次光标坐标查询 + 矩形比较, 合计 <1ms; 前端
-/// 350ms 一轮, 且仅在输入框可见期间轮询, 平时定时器停转零开销。
+/// 500ms 一轮。
+/// 必须 async: cursor_position/outer_position/outer_size 都是阻塞式
+/// getter (向 GTK 主线程派发并等回包), 同步命令本身在主线程执行会
+/// 自己等自己 (open_pet_window 同款教训)。
 #[tauri::command]
-fn pet_hit_test(app: AppHandle) -> Result<bool, String> {
+async fn pet_hit_test(app: AppHandle) -> Result<bool, String> {
+    if !CURSOR_TRACKABLE.get().copied().unwrap_or(true) {
+        // 纯 Wayland (无 XWayland): tao 的 cursor_position 恒返回 (0,0),
+        // 命中测试无意义——报错让前端停轮询, 显隐交回事件通道
+        return Err("全局光标坐标不可用 (纯 Wayland)".into());
+    }
     let Some(win) = app.get_webview_window("pet") else {
         return Ok(false);
     };
     let cursor = win.cursor_position().map_err(|e| e.to_string())?;
     let pos = win.outer_position().map_err(|e| e.to_string())?;
     let size = win.outer_size().map_err(|e| e.to_string())?;
-    // 命中测试: 统一物理像素比较。cursor_position 是逻辑坐标 (f64,
-    // 受显示缩放影响), 乘 scale_factor 归一到物理; outer_position/
-    // outer_size 在 X11 下是物理像素。缩放≠1 的环境里两套坐标系直接
-    // 比较会永远对不上 (VM 宸测: 输入框不消失)。
-    let sf = win.scale_factor().unwrap_or(1.0);
-    let (cx, cy) = (cursor.x * sf, cursor.y * sf);
+    // 命中测试: 三者同为物理像素, 直接比较。cursor_position 返回的就
+    // 是物理坐标 (tao 内部已按 scale_factor 转换过), 再乘 sf 是双重
+    // 缩放——缩放≠1 的屏幕上命中矩形会整体偏移, 光标在宠上判不在、
+    // 在左上方 1/sf 倍距离处反而判在。
+    let (cx, cy) = (cursor.x, cursor.y);
     // Position 是 i32 / Size 是 u32, 先归一 f64 再算右/下边界
     let (px, py, rw, rh) = (pos.x as f64, pos.y as f64,
                             size.width as f64, size.height as f64);
     let hit = cx >= px && cx < px + rw && cy >= py && cy < py + rh;
-    boot_log("pet", &format!(
-        "hit_test: cursor=({cx:.0},{cy:.0}) rect=({px:.0},{py:.0},{rw:.0}x{rh:.0}) sf={sf} -> {hit}",
-    ));
+    // 打点只在进出翻转时落一行: 前端 500ms 一轮, 逐轮写盘会刷爆
+    // boot.log (0=未知, 1=在窗内, 2=窗外)
+    let now = if hit { 1 } else { 2 };
+    if HIT_TEST_LAST.swap(now, Ordering::Relaxed) != now {
+        boot_log("pet", &format!(
+            "hit_test: cursor=({cx:.0},{cy:.0}) rect=({px:.0},{py:.0} {rw:.0}x{rh:.0}) -> {hit}",
+        ));
+    }
     Ok(hit)
 }
+
+/// pet_hit_test 上次命中状态 (打点降频用)
+static HIT_TEST_LAST: AtomicU8 = AtomicU8::new(0);
 
 /// 鼠标穿透开关: 右键开启后点宠物以外的区域都落到下层窗口;
 /// 恢复靠主窗的召唤按钮（open_pet_window 会先关穿透）
@@ -1156,6 +1196,13 @@ fn main() {
                 if let Some(child) = CHILD.lock().unwrap().take() {
                     kill_tree(child.id());
                 }
+            }
+            RunEvent::WindowEvent { label, event: WindowEvent::Focused(focused), .. }
+                if label == "main" =>
+            {
+                // 取证: 曾报"鼠标移到桌宠上主窗被压下去"——代码里不存在
+                // 隐藏主窗的路径, 焦点翻转落盘, 真机复现时可对照时间线
+                boot_log("main", &format!("window focused={focused}"));
             }
             RunEvent::WindowEvent { label, event: WindowEvent::CloseRequested { .. }, .. }
                 if label == "main" =>

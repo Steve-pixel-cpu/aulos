@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-focus-pet"
+description = "Enables the focus_pet command without any pre-configured scope."
+commands.allow = ["focus_pet"]
+
+[[permission]]
+identifier = "deny-focus-pet"
+description = "Denies the focus_pet command without any pre-configured scope."
+commands.deny = ["focus_pet"]

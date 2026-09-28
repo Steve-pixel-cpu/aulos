@@ -23,6 +23,8 @@
     "allow-set-pet-click-through",
     "allow-move-pet-window",
     "allow-resize-pet-window",
+    "allow-focus-pet",
+    "allow-pet-hit-test",
     "clipboard-manager:allow-read-text"
   ]
 }
