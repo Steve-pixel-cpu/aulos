@@ -161,16 +161,12 @@
   border-color: var(--accent);
   text-align: left;
 }
-#pet-float:hover #pet-input,
-#pet-input:focus {
-  opacity: .96;
-  transform: none;
-  pointer-events: auto;
-}
-/* JS 显式管理的平行通道 (pet.js pointerenter/leave 切 pointer-inside 类):
-   Linux WebKitGTK 的 :hover 事件投递不可靠 (Wayland 事件丢失/程序化挪窗
-   丢 leave), 类存在即显示, 与 :hover 并列 —— 收到任何指针事件就能正确
-   显隐; Windows 上与 :hover 同语义零差异 */
+/* 显隐单一权威通道: 只有 .pointer-inside 类 (pet.js 的 refresh() 推导:
+   pointerenter/leave 即时写 + 500ms pet_hit_test 轮询纠偏 + 焦点活性判定)。
+   刻意不让 :hover/:focus 参与显隐 —— WebKitGTK/XWayland 下二者会卡死
+   (丢 leave/丢 blur 后残留), 而 JS 写不了伪类, 轮询救不回来, 框就永挂;
+   Windows 上事件可靠, 类驱动与伪类同语义零差异。
+   :focus 只保留上方 border 规则的装饰语义 */
 #pet-float.pointer-inside #pet-input {
   opacity: .96;
   transform: none;

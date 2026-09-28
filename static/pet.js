@@ -514,16 +514,15 @@
     if (inputEl) {
       inputEl.addEventListener("pointerdown", focusNative);
       inputEl.addEventListener("focus", focusNative);
-      // 持焦恒显/失焦收框: 轮询停用 (纯 Wayland 查不到全局光标) 环境
-      // 下的兜底; 轮询活着时它 500ms 内也会推导到同样结果。floatEl/
-      // hitTimer 声明在后, 但回调触发时初始化早已完成
-      inputEl.addEventListener("focus", () => floatEl.classList.add("pointer-inside"));
-      inputEl.addEventListener("blur", () => {
-        if (!hitTimer) floatEl.classList.remove("pointer-inside");
-      });
-      // 打字期间(含 IME 组合态)焦点在手, 框经 :focus/pointer-inside 保持
-      // 可见——鼠标挪开打字不会藏框 (pointerleave 见持焦不收)。收框:
-      // Esc/发送 (主动 blur) 或点到别处失焦
+      // 显隐单一权威: .pointer-inside 类只由 initFloat 里的 refresh() 从
+      // pointerIn/焦点活性推导 (声明在后, 回调触发时初始化早已完成)。
+      // focus/blur 不再直接增删类——旧三通道结构里 :hover/:focus 卡死时
+      // JS 无从纠偏 (XWayland 丢 leave/丢 blur), 框会永挂
+      inputEl.addEventListener("focus", () => { lastInputAt = Date.now(); refresh(); });
+      inputEl.addEventListener("blur", () => refresh());
+      // 打字期间(含 IME 组合态)焦点在手且活跃, 框保持可见——鼠标挪开
+      // 打字不会藏框。收框: Esc/发送 (主动 blur)、点到别处失焦, 或轮询
+      // 判定焦点已死 (窗口失活/空闲超时) 强制 blur
       inputEl.addEventListener("keydown", (e) => {
         if (e.key === "Escape") { inputEl.blur(); return; }
         if (e.key !== "Enter" || e.isComposing) return;
@@ -534,6 +533,11 @@
         sendPetCmd({ type: "task", text: text.slice(0, 2000) });
         transientBubble("派活了, 干着呢…", 15000);   // 回复到达即替换
       });
+      // 键入活动锚点: IME 组合期 keydown 可能只剩不刷新的 Process 键,
+      // composition*/input 必须一并计入, 否则组合中挪开鼠标会被空闲
+      // 超时误判成死焦点而强收
+      for (const ev of ["keydown", "input", "compositionstart", "compositionupdate"])
+        inputEl.addEventListener(ev, () => { lastInputAt = Date.now(); });
     }
     // 主窗回传: 任务回复(收口时最后一段正文; 空回复=纯工具轮, 歌已在放,
     // 亮起的播放条就是答复, 不说话)
@@ -709,20 +713,29 @@
     // ---- 交互: 按住拖动(宠物随鼠标跑动) / 点击打招呼 ----
     const bridge = () => window.xcodeDesktopPet;
     const floatEl = $("pet-float");
-    // 指针显隐 = 三通道, 全部写同一个 .pointer-inside 类, 真相一致不打架:
-    //   ① pointerenter/leave 即时切换——事件可靠时零延迟 (33a372e 曾把
-    //      监听全删只留轮询, 轮询一死就没了活通道, 恢复为即时主通道);
-    //   ② 500ms 轮询 pet_hit_test 纠偏——全局光标坐标 vs 窗口矩形,
-    //      Linux 挪窗丢 leave/被遮挡丢 enter 时把状态拉回真相;
-    //   ③ CSS :hover (pet.css)——事件可靠的平台 (Windows) 即时响应。
-    // 输入框持焦期间恒显示 (打字/IME 不打断)。轮询遇 IPC 失败即停转并
-    // warn 一次 (纯 Wayland 查不到全局光标 / 旧壳 ACL 未放行), 显隐交回
-    // 事件通道, 不再无限静默重试空转。
-    const setPointerInside = (inside, keepFocus = true) => {
-      const focused = keepFocus && document.activeElement === inputEl;
-      floatEl.classList.toggle("pointer-inside", inside || focused);
-    };
+    // 输入框显隐 = 单一权威通道: .pointer-inside 类 (pet.css 里唯一显形
+    // 规则, :hover/:focus 已退出显隐)。类由 refresh() 从两路真值推导:
+    //   ① pointerIn: pointerenter/leave 即时写 (事件可靠时零延迟;
+    //      33a372e 曾把监听全删只留轮询, 轮询一死就没了活通道, 恢复为
+    //      即时主通道), 500ms 轮询 pet_hit_test 纠偏——全局光标 vs 窗口
+    //      矩形, Linux 挪窗丢 leave/被遮挡丢 enter 时拉回真相;
+    //   ② 焦点活性 focusAlive: 持焦 && 窗口在前台 && FOCUS_IDLE_MS 内
+    //      有键入/IME 活动——打字期间鼠标挪开不藏框。
+    // 焦点卡死拆解: XWayland 丢 blur 后 :focus/activeElement 一同说谎,
+    // 轮询发现指针在窗外且窗口失活或空闲超时 → 主动 .blur() 强制拆。
+    // 旧三通道结构里伪类卡死 JS 无从纠偏, 框会永挂, 故弃之。纯 Wayland
+    // (查不到全局光标) 下轮询停转, 事件通道独挑, leave 丢失仍可能挂
+    // ——无信号可纠, 维持已知限制。
+    let pointerIn = false;
+    let lastInputAt = 0;
+    const FOCUS_IDLE_MS = 8000;
+    const inputFocused = () => document.activeElement === inputEl;
+    const focusAlive = () => inputFocused() && document.hasFocus() !== false
+      && Date.now() - lastInputAt < FOCUS_IDLE_MS;
+    const refresh = () =>
+      floatEl.classList.toggle("pointer-inside", pointerIn || focusAlive());
     let hitTimer = null;
+    let hitErrors = 0;
     const stopHitPolling = (reason) => {
       if (hitTimer) { clearInterval(hitTimer); hitTimer = null; }
       console.warn("[xcode] pet_hit_test 轮询停用, 显隐由事件通道接管:", reason);
@@ -731,13 +744,25 @@
       let inside = false;
       try {
         inside = (await bridge()?.petHitTest?.()) ?? false;
-      } catch (e) { stopHitPolling(e); return; }
-      setPointerInside(inside);
+      } catch (e) {
+        // 单次 IPC 抖动不杀纠偏通道, 连续失败(≈2.5s)才停——确定性失败
+        // (纯 Wayland 无全局光标 / 旧壳 ACL 未放行) 照旧停转
+        if (++hitErrors >= 5) stopHitPolling(e);
+        return;
+      }
+      hitErrors = 0;
+      pointerIn = inside;
+      if (!inside && inputFocused()) {
+        const windowDead = document.hasFocus() === false;
+        const idleOut = Date.now() - lastInputAt > FOCUS_IDLE_MS;
+        if (windowDead || idleOut) inputEl.blur();
+      }
+      refresh();
     };
     hitTimer = setInterval(syncPointerInside, 500);
-    floatEl.addEventListener("pointerenter", () => setPointerInside(true));
-    // leave 时输入框持焦则不收 (打字不打断), 收框只剩 Esc/发送/失焦
-    floatEl.addEventListener("pointerleave", () => setPointerInside(false));
+    floatEl.addEventListener("pointerenter", () => { pointerIn = true; refresh(); });
+    // leave 时持焦且活跃则不收 (打字不打断), 收框剩 Esc/发送/失焦/轮询拆焦
+    floatEl.addEventListener("pointerleave", () => { pointerIn = false; refresh(); });
     // drag.acc: 反向行程累计器(饱和区间 ±DIR_REV_PX)。每个 move 事件的
     // 增量与当前朝向相反时累计、同向时清零, 越过阈值立刻掉头——转向跟随
     // 鼠标的"最近运动方向", 而不是相对起点的累计位移(旧法: 先右拖 100px
