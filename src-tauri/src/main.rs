@@ -1298,9 +1298,15 @@ fn create_main_window(app: &AppHandle) -> Result<(), String> {
             {
                 true
             } else {
-                // 外部链接（markdown 链接等）转交系统浏览器
-                let open = app_for_nav.opener().open_url(s, None::<&str>).is_ok();
-                open
+                // 外部链接（markdown 链接等）转交系统浏览器, 并拒绝壳内导航。
+                // 返回值语义是"是否允许 WebView 继续导航"——绝不能因打开成功
+                // 而返回 true: 那样系统浏览器打开的同时, 壳内主文档也会被
+                // 外部网页替换, 自绘标题栏（含关闭按钮）随之消失 → 窗口关不掉
+                // （对齐 Electron 壳 will-navigate 的 preventDefault 语义）
+                if let Err(e) = app_for_nav.opener().open_url(s, None::<&str>) {
+                    boot_log("shell", &format!("外部链接转交系统浏览器失败 {s}: {e}"));
+                }
+                false
             }
         })
         .on_page_load(move |win, payload| {
