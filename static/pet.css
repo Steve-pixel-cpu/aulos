@@ -162,7 +162,8 @@
   text-align: left;
 }
 /* 显隐单一权威通道: 只有 .pointer-inside 类 (pet.js 的 refresh() 推导:
-   pointerenter/leave 即时写 + 500ms pet_hit_test 轮询纠偏 + 焦点活性判定)。
+   pointerenter/leave 即时写 + 500ms pet_hit_test 轮询纠偏 + 指针静默拆冻
+   + 焦点活性判定)。
    刻意不让 :hover/:focus 参与显隐 —— WebKitGTK/XWayland 下二者会卡死
    (丢 leave/丢 blur 后残留), 而 JS 写不了伪类, 轮询救不回来, 框就永挂;
    Windows 上事件可靠, 类驱动与伪类同语义零差异。

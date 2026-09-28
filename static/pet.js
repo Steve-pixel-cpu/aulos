@@ -714,55 +714,82 @@
     const bridge = () => window.xcodeDesktopPet;
     const floatEl = $("pet-float");
     // 输入框显隐 = 单一权威通道: .pointer-inside 类 (pet.css 里唯一显形
-    // 规则, :hover/:focus 已退出显隐)。类由 refresh() 从两路真值推导:
-    //   ① pointerIn: pointerenter/leave 即时写 (事件可靠时零延迟;
+    // 规则, :hover/:focus 已退出显隐)。生效值 pointerIn 由三路真值推导:
+    //   ① 事件通道 evInside: pointerenter/leave 即时写 (事件可靠时零延迟;
     //      33a372e 曾把监听全删只留轮询, 轮询一死就没了活通道, 恢复为
-    //      即时主通道), 500ms 轮询 pet_hit_test 纠偏——全局光标 vs 窗口
-    //      矩形, Linux 挪窗丢 leave/被遮挡丢 enter 时拉回真相;
-    //   ② 焦点活性 focusAlive: 持焦 && 窗口在前台 && FOCUS_IDLE_MS 内
+    //      即时主通道);
+    //   ② 轮询通道 hitInside: 500ms pet_hit_test——全局光标 vs 窗口矩形,
+    //      Linux 挪窗丢 leave/被遮挡丢 enter 时拉回真相, 优先于事件通道;
+    //   ③ 焦点活性 focusAlive: 持焦 && 窗口在前台 && FOCUS_IDLE_MS 内
     //      有键入/IME 活动——打字期间鼠标挪开不藏框。
+    // XWayland 冻结 (v4.1.6 现场反馈"宠物拖出主窗口就失效"的根因):
+    // 指针离开 X 区域 (GNOME 桌面/原生 Wayland 应用) 后, X 侧光标查询与
+    // crossing 事件一并冻结在最后位置——hit_test 恒报"在窗内"、leave 不
+    // 来、:hover 不掉, 三路齐骗。宠物压着主窗口 (同为 X11 表面) 时指针
+    // 始终可追踪, 所以那种摆位下一切正常。冻结与"悬停不动"在本进程内
+    // 不可区分, 只能以 POINTER_SILENCE_MS 持续无指针事件近似拆穿——
+    // Linux 门控, Windows/macOS 事件与查询皆可靠, 不引入此怀疑。
     // 焦点卡死拆解: XWayland 丢 blur 后 :focus/activeElement 一同说谎,
-    // 轮询发现指针在窗外且窗口失活或空闲超时 → 主动 .blur() 强制拆。
-    // 旧三通道结构里伪类卡死 JS 无从纠偏, 框会永挂, 故弃之。纯 Wayland
-    // (查不到全局光标) 下轮询停转, 事件通道独挑, leave 丢失仍可能挂
-    // ——无信号可纠, 维持已知限制。
-    let pointerIn = false;
+    // 生效指针在窗外且窗口失活或空闲超时 → 主动 .blur() 强制拆。
+    // 纯 Wayland (查不到全局光标) 下轮询通道停转, tick 仍以事件通道 +
+    // 静默判定续跑。
+    let pointerIn = false;             // 生效值: (hitInside ?? evInside) && !静默
+    let evInside = false;              // 事件通道
+    let hitInside = null;              // 轮询通道, null = 不可用 (未起步/已停)
     let lastInputAt = 0;
+    let lastPetPointerEvtAt = Date.now();
     const FOCUS_IDLE_MS = 8000;
+    const POINTER_SILENCE_MS = 4000;
+    const MAY_FREEZE = /linux/i.test(navigator.userAgent);
     const inputFocused = () => document.activeElement === inputEl;
     const focusAlive = () => inputFocused() && document.hasFocus() !== false
       && Date.now() - lastInputAt < FOCUS_IDLE_MS;
     const refresh = () =>
       floatEl.classList.toggle("pointer-inside", pointerIn || focusAlive());
-    let hitTimer = null;
+    const stampPointer = () => { lastPetPointerEvtAt = Date.now(); };
+    let hitAlive = true;
     let hitErrors = 0;
-    const stopHitPolling = (reason) => {
-      if (hitTimer) { clearInterval(hitTimer); hitTimer = null; }
-      console.warn("[xcode] pet_hit_test 轮询停用, 显隐由事件通道接管:", reason);
-    };
-    const syncPointerInside = async () => {
-      let inside = false;
-      try {
-        inside = (await bridge()?.petHitTest?.()) ?? false;
-      } catch (e) {
-        // 单次 IPC 抖动不杀纠偏通道, 连续失败(≈2.5s)才停——确定性失败
-        // (纯 Wayland 无全局光标 / 旧壳 ACL 未放行) 照旧停转
-        if (++hitErrors >= 5) stopHitPolling(e);
-        return;
+    let wasStale = false;
+    setInterval(async () => {
+      if (hitAlive) {
+        try {
+          hitInside = (await bridge()?.petHitTest?.()) ?? false;
+          hitErrors = 0;
+        } catch (e) {
+          // 单次 IPC 抖动不杀纠偏通道, 连续失败(≈2.5s)才停——确定性失败
+          // (纯 Wayland 无全局光标 / 旧壳 ACL 未放行) 照旧停转。停的只是
+          // 轮询通道, tick 继续跑事件通道 + 静默判定
+          if (++hitErrors >= 5) {
+            hitAlive = false;
+            hitInside = null;
+            console.warn("[xcode] pet_hit_test 轮询停用, 显隐由事件+静默通道接管:", e);
+          }
+        }
       }
-      hitErrors = 0;
-      pointerIn = inside;
-      if (!inside && inputFocused()) {
+      const rawInside = hitInside ?? evInside;
+      const stale = MAY_FREEZE && rawInside
+        && Date.now() - lastPetPointerEvtAt > POINTER_SILENCE_MS;
+      if (stale !== wasStale) {
+        wasStale = stale;
+        if (stale) console.warn("[xcode] 指针静默超时但 hit 报在窗内, 按窗外处理 (XWayland 冻结: 指针已离开 X 区域, 光标查询冻结在窗内)");
+      }
+      pointerIn = rawInside && !stale;
+      if (!pointerIn && inputFocused()) {
         const windowDead = document.hasFocus() === false;
         const idleOut = Date.now() - lastInputAt > FOCUS_IDLE_MS;
         if (windowDead || idleOut) inputEl.blur();
       }
       refresh();
-    };
-    hitTimer = setInterval(syncPointerInside, 500);
-    floatEl.addEventListener("pointerenter", () => { pointerIn = true; refresh(); });
-    // leave 时持焦且活跃则不收 (打字不打断), 收框剩 Esc/发送/失焦/轮询拆焦
-    floatEl.addEventListener("pointerleave", () => { pointerIn = false; refresh(); });
+    }, 500);
+    floatEl.addEventListener("pointerenter", () => {
+      stampPointer(); evInside = true; pointerIn = true; refresh();
+    });
+    // leave 是真实离窗证据 (冻结场景恰好不会来), 直接生效
+    floatEl.addEventListener("pointerleave", () => {
+      stampPointer(); evInside = false; pointerIn = false; refresh();
+    });
+    floatEl.addEventListener("pointermove", stampPointer);
+    floatEl.addEventListener("pointerdown", stampPointer);
     // drag.acc: 反向行程累计器(饱和区间 ±DIR_REV_PX)。每个 move 事件的
     // 增量与当前朝向相反时累计、同向时清零, 越过阈值立刻掉头——转向跟随
     // 鼠标的"最近运动方向", 而不是相对起点的累计位移(旧法: 先右拖 100px
