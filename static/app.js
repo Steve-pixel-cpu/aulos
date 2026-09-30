@@ -5176,6 +5176,27 @@ const themeDd = makeDropdown($("sel-theme"), {
   },
 });
 
+/* ---------- 界面风格: 默认 / Fluent Design 叠加层 ---------- */
+const STYLE_KEY = "xc-style";
+function stylePref() { return localStorage.getItem(STYLE_KEY) || "default"; }
+function applyStyle() {
+  const de = document.documentElement;
+  if (stylePref() === "fluent") de.dataset.style = "fluent";
+  else delete de.dataset.style;
+}
+const STYLE_ITEMS = [
+  { value: "default", label: "默认" },
+  { value: "fluent", label: "Fluent Design" },
+];
+const styleDd = makeDropdown($("sel-style"), {
+  items: STYLE_ITEMS, value: stylePref(),
+  onChange: v => {
+    localStorage.setItem(STYLE_KEY, v);
+    applyStyle();
+  },
+});
+applyStyle();
+
 /* ---------- 通知: 完成提示音 + 桌面通知, 开关即时生效并持久化 ---------- */
 const ONOFF_ITEMS = [{ value: "1", label: "开启" }, { value: "0", label: "关闭" }];
 const writeBoolPref = key => v => localStorage.setItem(key, v);

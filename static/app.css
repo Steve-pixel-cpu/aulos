@@ -2668,4 +2668,188 @@ body.col-resizing, body.col-resizing * { cursor: col-resize !important; }
 }
 .mem-empty-ico { font-size: 22px; opacity: .75; margin-bottom: 2px; }
 .mem-empty-main { font-size: calc(12.5px * var(--fs-ui)); font-weight: 600; color: var(--text-2); }
+
+  /* ============================================================
+   * Fluent Design 风格叠加层: <html data-style="fluent"> 开启
+   * 思路 = 只覆盖设计令牌 + 少量控件细节, 不动布局与组件结构,
+   * 与深/浅主题(data-theme)、壁纸(data-bg)、强调色(data-accent)正交。
+   * Fluent 2 (Win11) 视觉要点: 大圆角 / 弱边框 / 双层海拔阴影 /
+   * Acrylic 半透明表面 / Segoe UI Variable 字体 / 控件按压回弹
+   * ============================================================ */
+  :root[data-style="fluent"] {
+    color-scheme: dark;
+    --bg:        #272727;   /* Fluent 暗色底 (Win11 mica dark) */
+    --bg-side:   #202020;   /* 侧栏 = 最深层 */
+    --surface:   #2d2d2d;
+    --surface-2: #333333;
+    --surface-3: #3d3d3d;
+    --border:        rgba(255, 255, 255, .055);
+    --border-strong: rgba(255, 255, 255, .09);
+    --hover:  rgba(255, 255, 255, .05);
+    --active: rgba(255, 255, 255, .08);
+    /* Fluent 海拔阴影: 贴地 1px + 更大的柔光层 */
+    --shadow-md: 0 1px 3px rgba(0, 0, 0, .18), 0 4px 10px rgba(0, 0, 0, .12);
+    --shadow-lg: 0 2px 6px rgba(0, 0, 0, .16), 0 10px 28px rgba(0, 0, 0, .20);
+    --shadow-pop: 0 2px 6px rgba(0, 0, 0, .18), 0 16px 44px rgba(0, 0, 0, .28);
+    --pop-bg: rgb(44 44 44 / .72);
+    --r-sm: 6px; --r-md: 10px; --r-lg: 14px; --r-xl: 18px;
+  }
+  :root[data-theme="light"][data-style="fluent"] {
+    color-scheme: light;
+    --bg:        #f3f3f3;   /* Fluent 浅色底 (Win11 mica light) */
+    --bg-side:   #eaeaea;
+    --surface:   #ffffff;
+    --surface-2: #f6f6f6;
+    --surface-3: #efefef;
+    --border:        rgba(0, 0, 0, .07);
+    --border-strong: rgba(0, 0, 0, .12);
+    --hover:  rgba(0, 0, 0, .045);
+    --active: rgba(0, 0, 0, .075);
+    --shadow-md: 0 1px 3px rgba(0, 0, 0, .07), 0 4px 10px rgba(0, 0, 0, .05);
+    --shadow-lg: 0 2px 6px rgba(0, 0, 0, .06), 0 10px 28px rgba(0, 0, 0, .09);
+    --shadow-pop: 0 2px 6px rgba(0, 0, 0, .08), 0 16px 44px rgba(0, 0, 0, .14);
+    --pop-bg: rgb(252 252 252 / .78);
+  }
+  /* 字体: Segoe UI Variable 提到首位 (Windows 11 自带; 无则回退原栈) */
+  :root[data-style="fluent"] body {
+    font-family: "Segoe UI Variable Text", "Segoe UI Variable Display",
+                 "Segoe UI", -apple-system, "SF Pro Text",
+                 "PingFang SC", "Microsoft YaHei UI", sans-serif;
+  }
+  /* 代码高亮: Fluent 暗底偏灰(非蓝黑), 高亮色微调保对比 */
+  :root[data-style="fluent"] {
+    --code-bg:   #1e1e1e;
+    --code-head: #282828;
+    --hl-comment: #8a8a94;
+    --hl-keyword: #ff8a6b;
+    --hl-string:  #b5d98a;
+    --hl-number:  #f0c078;
+    --hl-title:   #82c4ff;
+  }
+  :root[data-theme="light"][data-style="fluent"] {
+    --code-bg:   #fafafa;
+    --code-head: #f0f0f0;
+  }
+
+  /* ---------- Acrylic 表面: 大面积区域半透明 + 模糊 ---------- */
+  /* 桌面壳 WebView2 / 现代浏览器均支持 backdrop-filter */
+  @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    :root[data-style="fluent"] #sidebar {
+      background: color-mix(in srgb, var(--bg-side) 76%, transparent);
+      -webkit-backdrop-filter: blur(30px) saturate(1.2);
+      backdrop-filter: blur(30px) saturate(1.2);
+    }
+    :root[data-style="fluent"] #titlebar {
+      background: color-mix(in srgb, var(--bg-side) 70%, transparent);
+      -webkit-backdrop-filter: blur(30px) saturate(1.2);
+      backdrop-filter: blur(30px) saturate(1.2);
+    }
+    :root[data-style="fluent"] #pane {
+      background: color-mix(in srgb, var(--bg) 82%, transparent);
+      -webkit-backdrop-filter: blur(36px) saturate(1.15);
+      backdrop-filter: blur(36px) saturate(1.15);
+    }
+    :root[data-style="fluent"] #doc-header {
+      background: color-mix(in srgb, var(--bg) 72%, transparent);
+      -webkit-backdrop-filter: blur(28px) saturate(1.2);
+      backdrop-filter: blur(28px) saturate(1.2);
+    }
+    /* 消息工具卡: 卡片级 acrylic (比面板弱, 层次感) */
+    :root[data-style="fluent"] .msg-card,
+    :root[data-style="fluent"] .thinking-caps,
+    :root[data-style="fluent"] .plan-card,
+    :root[data-style="fluent"] .todo-card,
+    :root[data-style="fluent"] .bubble {
+      -webkit-backdrop-filter: blur(16px) saturate(1.3);
+      backdrop-filter: blur(16px) saturate(1.3);
+    }
+    :root[data-style="fluent"] .bubble {
+      background: color-mix(in srgb, var(--surface) 55%, transparent);
+    }
+    :root[data-style="fluent"] .msg-card,
+    :root[data-style="fluent"] .thinking-caps,
+    :root[data-style="fluent"] .plan-card,
+    :root[data-style="fluent"] .todo-card {
+      background: color-mix(in srgb, var(--surface) 68%, transparent);
+    }
+    /* 输入卡: 最浮起的一层, blur 最大 */
+    :root[data-style="fluent"] #input-card {
+      background: color-mix(in srgb, var(--surface) 74%, transparent);
+      -webkit-backdrop-filter: blur(28px) saturate(1.3);
+      backdrop-filter: blur(28px) saturate(1.3);
+    }
+    /* 弹层: Acrylic 加厚 (更强模糊 + 顶部高光描边) */
+    :root[data-style="fluent"] .dd-pop,
+    :root[data-style="fluent"] .modal-box,
+    :root[data-style="fluent"] .plan-pop,
+    :root[data-style="fluent"] .approve-card,
+    :root[data-style="fluent"] #mm-pop {
+      -webkit-backdrop-filter: blur(40px) saturate(1.5);
+      backdrop-filter: blur(40px) saturate(1.5);
+    }
+  }
+  /* 不支持 backdrop-filter 时退化为实底 (半透明色会露出裸背景) */
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    :root[data-style="fluent"] #sidebar,
+    :root[data-style="fluent"] #titlebar { background: var(--bg-side); }
+    :root[data-style="fluent"] #pane     { background: var(--bg); }
+    :root[data-style="fluent"] #doc-header { background: var(--bg); }
+    :root[data-style="fluent"] .bubble,
+    :root[data-style="fluent"] .msg-card,
+    :root[data-style="fluent"] .thinking-caps,
+    :root[data-style="fluent"] .plan-card,
+    :root[data-style="fluent"] .todo-card,
+    :root[data-style="fluent"] #input-card { background: var(--surface); }
+  }
+
+  /* ---------- 控件: Fluent 细节 ---------- */
+  /* 弹层内选项: Win11 菜单的 4px 圆角 + 明显 hover 背板 */
+  :root[data-style="fluent"] .dd-opt { border-radius: 5px; padding: 7px 10px; }
+  :root[data-style="fluent"] .dd-opt:hover { background: var(--active); }
+  :root[data-style="fluent"] .dd-pop { border-radius: 8px; padding: 5px; }
+  /* 分段控件 (分组/项目): Fluent 分段 = 通底槽 + 选中项浮起白块 */
+  :root[data-style="fluent"] .seg {
+    background: rgba(127, 127, 127, .12);
+    border: 1px solid var(--border);
+  }
+  :root[data-style="fluent"] .seg button { border-radius: 5px; }
+  :root[data-style="fluent"] .seg button.on {
+    background: var(--surface-3);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, .16);
+    color: var(--text);
+  }
+  /* 键盘焦点: Fluent 式 2px 外圈 */
+  :root[data-style="fluent"] button:focus-visible,
+  :root[data-style="fluent"] input:focus-visible,
+  :root[data-style="fluent"] textarea:focus-visible,
+  :root[data-style="fluent"] .menu-item:focus-visible,
+  :root[data-style="fluent"] .dd:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1.5px;
+    border-radius: 5px;
+  }
+  /* 输入卡聚焦: 底部强调线 + 更收敛的光晕 (Fluent 文本框语言) */
+  :root[data-style="fluent"] #input-card:focus-within {
+    border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+    box-shadow: var(--shadow-lg), 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+  }
+  /* 按钮按压: Fluent 的"下沉回弹" */
+  :root[data-style="fluent"] button:not(:disabled):active { transform: scale(.97); }
+  :root[data-style="fluent"] #btn-send:not(:disabled):active { transform: scale(.92); }
+  /* 滚动条: Fluent 的细椭圆样式 */
+  :root[data-style="fluent"] ::-webkit-scrollbar { width: 12px; height: 12px; }
+  :root[data-style="fluent"] ::-webkit-scrollbar-thumb {
+    background: transparent; border: 3px solid transparent;
+    border-radius: 6px; background-clip: content-box;
+    min-height: 40px;
+  }
+  :root[data-style="fluent"] ::-webkit-scrollbar-thumb:hover {
+    background: var(--text-3); border: 3px solid transparent; background-clip: content-box;
+  }
+  :root[data-style="fluent"] ::-webkit-scrollbar-track { background: transparent; }
+
+  /* ---------- Fluent × 壁纸叠加 ---------- */
+  /* 壁纸模式本身已把表面令牌半透明化, Fluent 的 acrylic color-mix 底
+   * 再叠 backdrop-filter 会双重压壁纸——但颜色仍来自令牌, 视觉上是
+   * "更实的 Fluent 面", 无文字可读性问题, 无需特判 */
 .mem-empty-sub { font-size: calc(11.5px * var(--fs-ui)); color: var(--text-3); }
