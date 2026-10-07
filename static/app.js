@@ -2830,6 +2830,7 @@ function settleBackgroundTurnEnd(run, sid) {
   // 思考行/乐观胶囊兜底收口（客户端计时）, 与前台 endTurnUiReset 一致;
   // 只清指针的话, 行会永远卡在"思考中…"动画态
   if (run.curThinking) onThinkingEnd({}, sid);
+  renderSessionList();   // 收口即重绘: 后台会话跑完, 侧栏"运行中"转圈立刻停
 }
 
 /* ---------- 权限审批: 聊天流内联卡片（替代旧模态弹窗） ---------- */
@@ -3194,6 +3195,7 @@ function expirePlanCard(run, sid, label) {
     pa.appendChild(makePrMark(label, false));
     $("plan-body").classList.add("stale");
   }
+  renderSessionList();   // 计划过期即重绘: 侧栏"待批计划"徽标立刻熄灭
 }
 
 /* 审批卡定格: 撤按钮, 标记结果（本地批复与 permission_resolved 广播共用,
@@ -3225,6 +3227,7 @@ function markPermResolved(sid, requestId, approved) {
     pa.innerHTML = "";
     pa.appendChild(makePrMark(approved ? "已批准 · 开始实施" : "已拒绝", approved));
   }
+  renderSessionList();   // 批复即重绘: 侧栏"待批计划"徽标立刻熄灭（本地批复与广播共用此口）
 }
 
 /* 桌宠/REST 批复的同步: 服务端广播 permission_resolved, 主窗据此清
