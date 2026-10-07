@@ -79,6 +79,19 @@ class ToolUseEvent(BaseModel):
     input: str
 
 
+class ThinkingEvent(BaseModel):
+    """thinking 块的收束快照（块结束时整块文本一次性 append）。
+
+    为什么存在: GLM 兼容层偶发 thinking-only 响应——text/tool 块一个
+    都没有, build_assistant_message 收到零内容块直接抛「无消息内容!」,
+    子代理十几分钟的工作整场报废。delta 照旧不进 events（防污染历史
+    重放）, 但块结束时把全文快照进来, 供 build_assistant_message 在
+    「零内容块」时降级兜底。正常路径有 text/tool 块时, runtime 侧把
+    ThinkingEvent 丢弃, 行为与从前完全一致。"""
+    type: Literal['thinking'] = 'thinking'
+    text: str
+
+
 class UsageInfo(BaseModel):
     """一次模型调用的 token 用量（来自流式事件的 message_start / message_delta）。"""
     input_tokens: int = 0
@@ -93,7 +106,7 @@ class MessageStopEvent(BaseModel):
     stop_reason: Optional[str] = None   # "end_turn" | "max_tokens" | ... 截断自愈靠它
 
 
-AssistantEvent = TextDeltaEvent | ToolUseEvent | MessageStopEvent
+AssistantEvent = TextDeltaEvent | ToolUseEvent | MessageStopEvent | ThinkingEvent
 
 # ============================================================================
 # 协议中立线级事件（wire events）
@@ -757,10 +770,16 @@ class ClaudeApiClient(ApiClient):
                             info["json"] += event.delta.partial_json
                     elif event.delta.type == 'thinking_delta':
                         # 思考内容只驱动指示器与线级观察，绝不 append 进
-                        # events 列表：一旦进入就会被存入会话历史并重放，污染上下文
+                        # events 列表：一旦进入就会被存入会话历史并重放，污染上下文。
+                        # 块全文累积在 blocks[index]["json"], 块结束时以
+                        # ThinkingEvent 快照进 events（仅作零内容块时的降级兜底,
+                        # 见 ThinkingEvent 注释与 build_assistant_message）。
                         echo.on_thinking(event.delta.thinking)
                         if wire is not None:
                             wire(WireThinkingDelta(text=event.delta.thinking))
+                        info = blocks.get(event.index)
+                        if info is not None and "json" in info:
+                            info["json"] += event.delta.thinking
                     else:
                         # 其余 delta（如 signature_delta）暂不处理
                         pass
@@ -779,6 +798,11 @@ class ClaudeApiClient(ApiClient):
                         echo.on_thinking_end()
                         if wire is not None:
                             wire(WireThinkingEnd())
+                        # 快照全文进 events（ThinkingEvent）: 仅当整条响应
+                        # 零 text/tool 块时才会被 runtime 用作降级文本;
+                        # 正常路径下 runtime 丢弃之, 历史行为不变。
+                        if info and info.get("type") == "thinking" and info.get("json"):
+                            events.append(ThinkingEvent(text=info["json"]))
                 elif event.type == 'message_start':
                     usage = getattr(event.message, "usage", None)
                     if usage is not None:

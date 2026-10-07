@@ -11,7 +11,8 @@ from pathlib import Path
 from pydantic import BaseModel
 
 from api_client import (AssistantEvent, TextDeltaEvent, ToolUseEvent,
-                        MessageStopEvent, ApiClient, INTERRUPTED_STOP_REASON)
+                        MessageStopEvent, ThinkingEvent,
+                        ApiClient, INTERRUPTED_STOP_REASON)
 from compact import (
     CompactionConfig,
     SUMMARIZER_SYSTEM_PROMPT,
@@ -300,10 +301,17 @@ def build_assistant_message(events: list[AssistantEvent]) -> tuple[Message, Opti
     blocks: List[AnyContentBlock] = []
     finished = False
     usage = None
+    # L3 兜底: thinking 块全文快照(api_client 流收束时以 ThinkingEvent 到达)。
+    # 只在"整条响应零 text/tool 块"时降级为 text 块——GLM 兼容层偶发
+    # thinking-only 响应, 从前直接抛「无消息内容!」让子代理整场报废。
+    # 正常路径(有正文/工具块)照旧丢弃 thinking, 不污染历史重放。
+    thinking_text = ""
 
     for event in events:
         if isinstance(event, TextDeltaEvent):
             text_chunk+= event.text
+        elif isinstance(event, ThinkingEvent):
+            thinking_text += event.text
         elif isinstance(event, ToolUseEvent):
             if text_chunk:
                 text_block = TextContentBlock(
@@ -338,6 +346,16 @@ def build_assistant_message(events: list[AssistantEvent]) -> tuple[Message, Opti
         raise RuntimeError("消息无法结束!")
 
     if not blocks:
+        # L3 thinking 兜底(workaround, 针对 GLM 兼容层 thinking-only 响应):
+        # 零 text/tool 块但 thinking 文本在场 → 降级为带标记的 text 块,
+        # 总比抛「无消息内容!」让子代理整场工作报废强。显式标注来源,
+        # 上层/用户能识别这是降级产物。thinking 全程为空则维持原报错
+        # (真·空响应, 交由上层 L1 总结轮处理)。
+        if thinking_text.strip():
+            fallback = TextContentBlock(
+                text="[thinking 兜底·模型未产出正文文本, 以下是其思考内容]\n"
+                     + thinking_text)
+            return Message(role="assistant", content=[fallback]), usage
         raise RuntimeError("无消息内容!")
 
     message = Message(
@@ -537,6 +555,23 @@ class ConversationRuntime:
     def with_max_iterations(self, n) -> "ConversationRuntime":
         self._max_iterations = n
         return self
+
+    def without_tools(self) -> "ConversationRuntime":
+        """临时禁用工具(子代理 L1 总结兜底轮用): 换上一个只回"工具已禁用"
+        的 executor。不改权限模型——工具定义还在请求里, 但执行一律被拒,
+        模型收到错误反馈自然转为纯文本回答; 比"换空注册表"温和, 不破坏
+        请求结构。链式风格对齐 with_max_iterations。"""
+        outer = self
+
+        class _NoToolsExecutor:
+            def execute(self, tool_name: str, input: str,
+                        tool_use_id: Optional[str] = None) -> str:
+                # 中文注释: 总结兜底轮只收文本; 工具调用打回并提示原因,
+                # 防止模型在兜底轮里继续调工具导致再次无文本/死循环
+                return f"工具已禁用（总结轮）: {tool_name} 不可用, 请直接用文本总结。"
+
+        outer._tool_executor = _NoToolsExecutor()
+        return outer
 
     def  with_auto_compact_threshold(self, n) -> "ConversationRuntime":
         self._auto_compact_threshold = n

@@ -445,6 +445,8 @@ function nativeNotify(title, body) {
 }
 
 /* 轮次收尾统一通知入口（turn_done / error, 前台后台会话都经过这里）:
+ * 桌宠派活的会话在 handleServerMessage 挂钩处已先跳过（结果回传悬浮窗,
+ * 主窗不提醒——摸鱼场景）, 不会走到这里。
  * 手动打断不提醒; 声音开关开了就播; 桌面弹窗只在窗口不可见或该会话
  * 在后台时弹——人正盯着这个会话时不打扰。
  * 桌面壳走原生 toast(无点击回调, 点通知不聚焦——只做告知); 浏览器形态
@@ -2195,7 +2197,9 @@ function handleServerMessage(msg, sid) {
   if (petTaskSid && sid === petTaskSid) petTaskObserve(msg);
   // 完成通知（提示音 + 桌面弹窗）: turn_done/error 是轮次终点, 前台/后台
   // 两条路径都从这里过, 单点挂钩全覆盖。内部自己判断"该不该响/该不该弹"。
-  if (msg.type === "turn_done" || msg.type === "error") {
+  // 桌宠派活的会话例外: 结果已由任务桥回传悬浮窗气泡, 主窗不响不弹——
+  // 悬浮输入框的使用场景就是摸鱼, 声音/系统通知会当场暴露。
+  if ((msg.type === "turn_done" || msg.type === "error") && sid !== petTaskSid) {
     try { notifyTurnEnd(msg, sid); } catch (e) { console.warn("[notify]", e); }
   }
   // 继续聊天 = 隐性否决未决计划: 服务端此时会把旧计划自动拒绝并叫停当前轮

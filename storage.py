@@ -291,7 +291,12 @@ class SessionStore:
         # 读走重试: 原子替换的过渡窗口里, Windows 新开读句柄会瞬时被拒
         # （delete pending）; 整体读入再按行解析
         text = read_text_with_retry(file_path)
-        for line_no, line in enumerate(text.splitlines(), 1):
+        # 必须按物理行("\n")切分, 不能用 str.splitlines(): 后者把 U+0085/
+        # U+2028/U+2029 也当行边界, 而 json.dumps(ensure_ascii=False) 不转义
+        # 这些字符——工具结果里嵌了二进制/特殊 Unicode 时, 一条合法记录会被
+        # 切成多段假告警, 消息条目丢失导致 parent_uuid 链断裂（历史回放丢失）。
+        # 写入方 _append_entry 只写 "\n", 读取侧与写入侧对齐。
+        for line_no, line in enumerate(text.split("\n"), 1):
             if line.strip() == "":
                 continue
             try:

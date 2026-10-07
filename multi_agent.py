@@ -196,6 +196,47 @@ def final_text_of(summary) -> str:
     return "(无文本输出)"
 
 
+def _partial_result_digest(session) -> str:
+    """L2: 从子代理会话历史提取"它做了什么、产物在哪"的降级摘要。
+
+    只读 assistant 消息里的 tool_use 块: write_file/edit_file 取 path,
+    bash 取 command; 另附最后 3 条工具调用的输入(产物证据)。解析失败
+    的块跳过——这里是最后防线, 任何二次异常都不能再往外抛。
+    """
+    if session is None:
+        return ""
+    files: list[str] = []
+    cmds: list[str] = []
+    try:
+        for msg in session.messages:
+            for block in getattr(msg, "content", []) or []:
+                # ToolContentBlock 自带 .name/.input; 旧数据/异构块跳过
+                name = getattr(block, "name", "")
+                if not name:
+                    continue
+                raw = getattr(block, "input", "")
+                try:
+                    inp = json.loads(raw) if isinstance(raw, str) and raw else (raw or {})
+                except Exception:
+                    inp = {}
+                if name in ("write_file", "edit_file") and inp.get("path"):
+                    if inp["path"] not in files:
+                        files.append(str(inp["path"]))
+                elif name == "bash" and inp.get("command"):
+                    cmds.append(str(inp["command"]))
+        if not (files or cmds):
+            return ""
+        parts = []
+        if files:
+            parts.append("写过的文件: " + ", ".join(files))
+        if cmds:
+            shown = cmds if len(cmds) <= 5 else cmds[:5] + [f"...(共 {len(cmds)} 条)"]
+            parts.append("跑过的命令: " + "; ".join(shown))
+        return "\n".join(parts)
+    except Exception:
+        return ""
+
+
 class AgentOrchestrator:
     def __init__(self, store_dir: Path, spawn_fn: Optional[Callable] = None,
                  workdir: Optional[str] = None):
@@ -206,11 +247,48 @@ class AgentOrchestrator:
     def _default_spawn_fn(self, job: AgentJob):
         def _worker():  # ← 内层：线程的身体
             # 第 12 课: worker 本体 = 建 runtime → 跑一轮 → complete_agent
+            runtime = None  # L2 要在 except 里读会话历史, 先占位防 NameError
             try:
                 runtime = build_subagent_runtime(job)
-                summary = runtime.run_turn(job.prompt)
+                try:
+                    summary = runtime.run_turn(job.prompt)
+                except RuntimeError as exc:
+                    # L1 续写兜底: 子代理最后一条消息只含 thinking/tool_use 而
+                    # 无 text 时(GLM 兼容层会吞掉 thinking 事件, 见
+                    # build_assistant_message), build_assistant_message 抛
+                    # 「无消息内容!」——十几分钟的工作会整场打成 failed/null。
+                    # 此时给模型"最后一轮总结"的机会: 同一会话注入 user 指令、
+                    # 关掉工具(防它继续调工具再次无文本/死循环)、限 2 次迭代。
+                    # 选择"新一轮 run_turn"而非改主循环: iterations 是 run_turn
+                    # 的局部变量, 新调用天然重置, 完全不触碰预算语义; 代价只是
+                    # 一次额外 API 调用。最多兜底 1 次。
+                    if "无消息内容" not in str(exc):
+                        raise
+                    summary = (runtime.without_tools()
+                               .with_max_iterations(2)
+                               .run_turn(
+                                   "你刚才的最终回复没有可提取的文本内容。"
+                                   "请忽略工具, 用一段话总结你的最终结论与产出"
+                                   "(做了什么、写了哪些文件、结果如何)。"
+                                   "这是最后一轮, 直接给文本, 不要再调用任何工具。"))
                 self.complete_agent(job.manifest.agent_id, final_text_of(summary))
             except Exception as exc:
+                # L2 部分结果回传: L1 总结轮也失败(或压根不是"无消息内容"类
+                # 异常, 如 API 中断)时, 不把工作打成 null——从会话历史提取
+                # 产物证据(写过的文件/跑过的命令/最近的工具输出), 以
+                # COMPLETED + 降级标注交付给 Leader。走 COMPLETED 而非 FAILED:
+                # reap_ready 只交付 completed, FAILED 的 result Leader 拿不到,
+                # "告诉用户产物在哪"就无从谈起。历史里连工具调用都没有时
+                # (任务还没开始就炸了), 维持 FAILED, 不伪造结果。
+                digest = _partial_result_digest(getattr(runtime, "session", None))
+                if digest:
+                    try:
+                        self.complete_agent(
+                            job.manifest.agent_id,
+                            "[部分结果·子代理异常终止] " + str(exc) + "\n" + digest)
+                        return
+                    except Exception:
+                        pass
                 try:
                     self._persist_terminal_state(job.manifest, status=AgentStatus.FAILED.value, result=None, error=str(exc))
                 except Exception:
