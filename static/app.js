@@ -6807,7 +6807,9 @@ async function petTaskRun(text) {
       const r = await fetch("/api/sessions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ workdir: "" }),
+        // pet=true: 后端给该会话固化 danger-full-access + 关计划开关——
+        // 桌宠是无人值守挂件, 权限弹卡等于故障（弹了没人批, 任务卡死）
+        body: JSON.stringify({ workdir: "", pet: true }),
       });
       if (!r.ok) throw new Error("HTTP " + r.status);
       sid = (await r.json()).id;
@@ -6830,6 +6832,12 @@ async function petTaskRun(text) {
   petTaskSid = sid;
   petReplyBuf = "";
   connectWs(sid);   // 后台会话也要有 WS 才能收发(已有则复用)
+  // 旧桌宠会话迁移: 固化权限之前创建的会话没有权限记录（回落全局默认,
+  // 可能是 prompt+plan → 播歌弹审批）。走 WS set_permission_mode 幂等
+  // 补一条并同步 runtime; 新建的会话本来就带这条, 覆盖无副作用。
+  // 必须在 connectWs 之后: sendWs 需要已就绪的 run.ws, 否则静默丢弃。
+  sendWs({ type: "set_permission_mode",
+           mode: "danger-full-access", plan: false }, sid);
   // 「桌宠」会话跟随桌宠模型: 每次派活前都 sync 一条 set_model——
   // 用户改了设置立即生效, 且后端按会话缓存 client, 等值是轻操作。
   // 配置过期的(供应商被删/禁用)本地能查就先拦下, 免得弹错误事件

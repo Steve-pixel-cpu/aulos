@@ -98,6 +98,43 @@ def test_sessions_list_falls_back_to_persisted_mode(client, isolated_store):
     assert item["plan_active"] is True
 
 
+def test_pet_session_pins_danger_full_access(client, isolated_store, monkeypatch):
+    """桌宠会话: POST /api/sessions 带 pet=true 时固化
+    danger-full-access + 关计划开关（落盘持久化）。
+
+    背景: 桌宠是无人值守挂件（点歌/闲聊）, 权限弹卡没人批就是死锁——
+    曾因继承全局默认 prompt+plan 导致播放音乐都要审批。"""
+    from permissions import PermissionMode
+    monkeypatch.setattr(server.app_state, "_mode", PermissionMode.PROMPT)
+    monkeypatch.setattr(server.app_state, "plan_active", True)   # 最坏全局默认
+
+    resp = client.post("/api/sessions", json={"workdir": "", "pet": True})
+    assert resp.status_code == 200
+    sid = resp.json()["id"]
+    # 固化立即落盘（不依赖会话是否已构造 WebSession）
+    assert isolated_store.get_permission_mode(sid) == ("danger-full-access", False)
+
+    # 构造 WebSession: 从持久记录继承, 不吃全局默认
+    ws = server.get_or_create_web_session(sid)
+    assert ws.permission_mode == PermissionMode.DANGER_FULL_ACCESS
+    assert ws.plan_active is False
+
+
+def test_regular_session_still_inherits_global_default(client, isolated_store, monkeypatch):
+    """非桌宠会话行为不变: 无权限记录 → 回落全局默认。"""
+    from permissions import PermissionMode
+    monkeypatch.setattr(server.app_state, "_mode", PermissionMode.PROMPT)
+    monkeypatch.setattr(server.app_state, "plan_active", True)
+
+    resp = client.post("/api/sessions", json={"workdir": ""})
+    assert resp.status_code == 200
+    sid = resp.json()["id"]
+    assert isolated_store.get_permission_mode(sid) == (None, False)
+    ws = server.get_or_create_web_session(sid)
+    assert ws.permission_mode == PermissionMode.PROMPT
+    assert ws.plan_active is True
+
+
 # ------------------------------------------------------------
 # compact: 摘要净化
 # ------------------------------------------------------------

@@ -1648,6 +1648,12 @@ async def api_create_session(payload: Optional[dict] = Body(None)):
             raise HTTPException(status_code=400, detail=f"工作目录不存在: {raw_wd}")
         workdir = str(wd.resolve())
         store.set_workdir(sid, workdir)
+    # 桌宠会话: 固化 danger-full-access + 关计划开关并立即持久化。
+    # 桌宠是无人值守的摸鱼挂件（点歌/闲聊/悬浮输入）, 权限弹卡没人批
+    # 就是死锁; 不落盘的话 WebSession 会回落全局默认（可能是 prompt+plan）,
+    # 播放音乐都要审批。用户仍可在会话里手动降档（记录追加式, 后写覆盖）。
+    if (payload or {}).get("pet"):
+        store.set_permission_mode(sid, "danger-full-access", plan=False)
     _pending_sessions.add(sid)
     return {"id": sid, "workdir": workdir}
 
