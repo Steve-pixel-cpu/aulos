@@ -5364,6 +5364,24 @@ const densityDd = makeDropdown($("sel-density"), {
 });
 applyDensity();
 
+/* ---------- 气泡风格: AI 回复文档流（默认）或包进卡片 ---------- */
+const MSGSTYLE_KEY = "xc-msgstyle";
+function msgstylePref() { return localStorage.getItem(MSGSTYLE_KEY) || "document"; }
+function applyMsgstyle() {
+  const de = document.documentElement, v = msgstylePref();
+  if (v === "document") delete de.dataset.msgstyle;
+  else de.dataset.msgstyle = v;
+}
+const MSGSTYLE_ITEMS = [
+  { value: "document", label: "文档流" },
+  { value: "bubble", label: "气泡卡片" },
+];
+const msgstyleDd = makeDropdown($("sel-msgstyle"), {
+  items: MSGSTYLE_ITEMS, value: msgstylePref(),
+  onChange: v => { localStorage.setItem(MSGSTYLE_KEY, v); applyMsgstyle(); },
+});
+applyMsgstyle();
+
 /* ---------- 禅模式: 隐藏侧栏专注对话; 左缘热区悬停临时唤出侧栏 ---------- */
 const ZEN_KEY = "xc-zen";
 function zenPref() { return localStorage.getItem(ZEN_KEY) === "1"; }

@@ -2901,6 +2901,20 @@ body.col-resizing, body.col-resizing * { cursor: col-resize !important; }
   :root[data-density="compact"] { --density: .75; }
   :root[data-density="cozy"]    { --density: 1.3; }
 
+  /* ---------- 气泡风格: data-msgstyle 覆盖默认 document(文档流) ----------
+   * bubble = AI 回复也包进卡片（壁纸场景下无框文字直接浮在壁纸上可读性差,
+   * 卡片给一层 surface 底 + 边框, 工具卡/思考行随缩进基准一起收进卡内） */
+  :root[data-msgstyle="bubble"] .msg.assistant .bubble {
+    padding: 12px 16px 10px;
+    background: color-mix(in srgb, var(--surface) min(100%, calc(100% * var(--bg-surf, 1))), transparent);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg); border-top-left-radius: 6px;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, .05);
+  }
+  /* 无壁纸时 color-mix 退化为主 surface, 与用户气泡的 accent 底形成对比;
+   * 卡片态下正文与工具卡间距略收紧, 视觉重心在卡框内 */
+  :root[data-msgstyle="bubble"] .msg.assistant { gap: 9px; }
+
   /* ---------- 禅模式: data-zen="1" 隐藏侧栏, 纯聊天区专注 ---------- */
   :root[data-zen="1"] #sidebar { display: none; }
   /* 禅模式开启时的入口提示: 侧栏隐藏后左缘常驻一条 10px 热区,
