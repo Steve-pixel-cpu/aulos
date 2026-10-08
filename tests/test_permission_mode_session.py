@@ -9,7 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import server
-from storage import SessionStore
+from storage import PermissionModeRecord, SessionStore
 
 
 # ------------------------------------------------------------
@@ -18,10 +18,24 @@ from storage import SessionStore
 
 def test_permission_mode_roundtrip(tmp_path):
     store = SessionStore(storage_dir=tmp_path)
-    assert store.get_permission_mode("s-x") is None   # 无记录 → None → 回落全局默认
-    store.set_permission_mode("s-x", "plan")
+    assert store.get_permission_mode("s-x") == (None, False)   # 无记录 → 回落全局默认
+    store.set_permission_mode("s-x", "prompt", plan=True)
     store.set_permission_mode("s-x", "workspace-write")
-    assert store.get_permission_mode("s-x") == "workspace-write"  # 取最新一条
+    assert store.get_permission_mode("s-x") == ("workspace-write", False)  # 取最新一条
+    store.set_permission_mode("s-x", "prompt", plan=True)
+    assert store.get_permission_mode("s-x") == ("prompt", True)  # plan 随记录持久
+
+
+def test_permission_mode_legacy_readonly_normalized(tmp_path):
+    """只读模式时代的旧记录: mode="plan"/"read-only" 归一为
+    (prompt, True)——基础模式回落 prompt, 计划开关保持开。"""
+    store = SessionStore(storage_dir=tmp_path)
+    for legacy in ("plan", "read-only"):
+        store.set_permission_mode("s-legacy", "workspace-write")
+        store._append_entry(store._session_path("s-legacy"),
+                            PermissionModeRecord(mode=legacy,
+                                                 timestamp="2026-01-01T00:00:00+00:00"))
+        assert store.get_permission_mode("s-legacy") == ("prompt", True)
 
 
 # （曾有 test_permission_mode_survives_rewrite: 压缩重写会话文件后非消息
@@ -55,28 +69,33 @@ def clean_web_sessions():
 
 
 def test_sessions_list_includes_permission_mode(client, isolated_store, monkeypatch):
-    """存活会话回显运行值; 切换后列表跟着变。"""
-    from permissions import PLAN_MODE, PermissionMode
+    """存活会话回显运行值（基础模式 + plan 开关）; 切换后列表跟着变。"""
+    from permissions import PermissionMode
     monkeypatch.setattr(server.app_state, "_mode", PermissionMode.WORKSPACE_WRITE)
+    monkeypatch.setattr(server.app_state, "plan_active", False)   # 隔离其他用例污染的全局默认
     ws = server.get_or_create_web_session("s-mode")   # 构造时固化默认值
     server._pending_sessions.add("s-mode")   # 未落盘会话: 走 pending 列表
 
     resp = client.get("/api/sessions").json()
     item = next(i for i in resp["sessions"] if i["id"] == "s-mode")
     assert item["permission_mode"] == "workspace-write"   # 初值 = 全局默认
+    assert item["plan_active"] is False
 
-    ws.permission_mode = PLAN_MODE
+    ws.permission_mode = PermissionMode.PROMPT
+    ws.plan_active = True
     resp = client.get("/api/sessions").json()
     item = next(i for i in resp["sessions"] if i["id"] == "s-mode")
-    assert item["permission_mode"] == "plan"
+    assert item["permission_mode"] == "prompt"
+    assert item["plan_active"] is True
 
 
 def test_sessions_list_falls_back_to_persisted_mode(client, isolated_store):
     """没有存活 WebSession 的会话: 回显持久化的模式记录。"""
-    isolated_store.set_permission_mode("s-persist", "plan")
+    isolated_store.set_permission_mode("s-persist", "prompt", plan=True)
     resp = client.get("/api/sessions").json()
     item = next(i for i in resp["sessions"] if i["id"] == "s-persist")
-    assert item["permission_mode"] == "plan"
+    assert item["permission_mode"] == "prompt"
+    assert item["plan_active"] is True
 
 
 # ------------------------------------------------------------

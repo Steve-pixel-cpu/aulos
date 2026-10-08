@@ -165,6 +165,9 @@ class RuntimeFeatureConfig(BaseModel):
     hooks_post_tool_use: list[str] = Field(default_factory=list)
     model: Optional[str] = None
     permission_mode: Optional[str] = None
+    # 计划开关（与 permission_mode 独立叠加）: permissionMode 配成
+    # "plan"/"read-only" 旧值时 = 基础模式 prompt + 计划开
+    permission_plan: bool = False
     timeout: int = 30
     # 默认与 runtime.DEFAULT_MAX_ITERATIONS 对齐。10 是历史占位值，
     # 接线前从未生效——真放出来正常任务一轮就会被掐断
@@ -213,6 +216,9 @@ class RuntimeConfig(BaseModel):
 
     def permission_mode(self) -> Optional[str]:
         return self.feature_config.permission_mode
+
+    def permission_plan(self) -> bool:
+        return self.feature_config.permission_plan
 
     def timeout(self) -> int:
         return self.feature_config.timeout
@@ -273,23 +279,29 @@ class ConfigLoader:
             raise ConfigError("hooks.PreToolUse/PostToolUse: must be arrays", kind="parse")
 
         # permission_mode: CC 支持多种别名 (config.rs:511-518)
+        # 只读模式已移除——配置值解析为 (基础模式名, 计划开关) 二元组。
+        # "plan"/"read-only"/"default" 是旧版并列模式时代的写法: 归一为
+        # 基础模式 prompt + 计划开（读-only 工作流由计划开关表达）。
         raw_mode = merged.get("permissionMode")
         permission_mode = None
+        permission_plan = False
         if isinstance(raw_mode, str):
             mode_map = {
-                # plan 是正名; read-only/default 是旧写法, 归一为 plan
-                "default": "plan", "plan": "plan", "read-only": "plan",
-                "acceptEdits": "workspace-write", "auto": "workspace-write",
-                "workspace-write": "workspace-write",
-                "dontAsk": "danger-full-access", "danger-full-access": "danger-full-access",
+                "default": ("prompt", False),
+                "plan": ("prompt", True), "read-only": ("prompt", True),
+                "acceptEdits": ("workspace-write", False),
+                "auto": ("workspace-write", False),
+                "workspace-write": ("workspace-write", False),
+                "dontAsk": ("danger-full-access", False),
+                "danger-full-access": ("danger-full-access", False),
                 # Web 设置页的"每次询问"是可持久化的全局默认（server 的
                 # MODE_TO_NAME 会把 PROMPT_MODE 写成这个名）; 漏了它的话,
                 # 设置页一选, 下次启动就直接 ConfigError
-                "prompt": "prompt",
+                "prompt": ("prompt", False),
             }
             if raw_mode not in mode_map:
                 raise ConfigError(f"permissionMode: unsupported mode '{raw_mode}'", kind="parse")
-            permission_mode = mode_map[raw_mode]
+            permission_mode, permission_plan = mode_map[raw_mode]
 
         # thinking_level: 思考深浅档位，budget 映射见 api_client.THINKING_LEVEL_TO_BUDGET
         raw_level = merged.get("thinkingLevel", "medium")
@@ -321,6 +333,7 @@ class ConfigLoader:
             hooks_post_tool_use=post,
             model=merged.get("model"),
             permission_mode=permission_mode,
+            permission_plan=permission_plan,
             timeout=merged.get("timeout", 30),
             max_iterations=merged.get("maxIterations", 128),
             context_window=context_window,

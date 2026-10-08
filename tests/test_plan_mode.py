@@ -1,17 +1,19 @@
 # -*- coding: utf-8 -*-
-"""计划模式（PLAN）端到端语义。
+"""计划模式（叠加开关）端到端语义。
 
-链路: plan 模式下模型调 present_plan → policy 判为"可升级"→ prompter
-弹问（Web=计划卡, CLI=终端面板）→ 批准后回调把会话升级为
-workspace-write, 模型继续实施。
+链路: 计划开着时生效档位是 READ_ONLY → 模型调 present_plan → policy
+判为"可升级"→ prompter 弹问（Web=计划卡, CLI=终端面板）→ 批准后回调
+关闭计划开关, 生效档位回落基础模式, 模型继续实施。
 
 钉住的设计决定:
-- present_plan 的 required 档位是 WORKSPACE_WRITE(2): plan(1) 下弹问,
+- present_plan 的 required 档位是 WORKSPACE_WRITE(2): READ_ONLY(1) 下弹问,
   workspace-write 及以上直接放行（批准过一次不再重复弹）。
-- 批准回调把 WebSession + runtime 都切到 workspace-write 并广播
-  mode_changed; 拒绝只回理由, 不动模式。
-- plan 模式 run_turn 时 system_prompt 末尾带 PLAN_MODE_INSTRUCTION,
-  其他模式不带（缓存边界之后, 不影响静态前缀缓存）。
+- 批准回调把 WebSession/runtime 的计划开关关掉（基础模式不动）并广播
+  mode_changed; 拒绝只回理由, 不动开关。
+- 计划开着时 run_turn 的 system_prompt 带 PLAN_MODE_INSTRUCTION,
+  关掉后不带（缓存边界之后, 不影响静态前缀缓存）。
+- "计划"不是并列模式: 枚举里的 READ_ONLY 是工具要求档位 + 计划覆盖的
+  等效值; PermissionPolicy 是"基础模式 + plan 开关"双状态。
 """
 import json
 
@@ -44,7 +46,7 @@ def isolated_store(monkeypatch, tmp_path):
     monkeypatch.setattr(server, "store", st, raising=False)
     return st
 
-PLAN = PermissionMode.PLAN
+PLAN = PermissionMode.READ_ONLY   # 计划覆盖生效时的等效档位（派生值）
 WORKSPACE_WRITE = PermissionMode.WORKSPACE_WRITE
 DANGER = PermissionMode.DANGER_FULL_ACCESS
 
@@ -53,6 +55,13 @@ def _policy(mode):
     p = PermissionPolicy(mode)
     for name, req in TOOL_REQUIREMENTS.items():
         p.with_tool_requirement(name, req)
+    return p
+
+
+def _plan_policy(base=DANGER):
+    """双状态: 基础模式 + 计划开（对齐 WebSession/CLI 的真实构造）。"""
+    p = _policy(base)
+    p.set_plan(True)
     return p
 
 
@@ -66,26 +75,39 @@ def test_present_plan_registered_at_workspace_write():
 
 
 def test_plan_mode_prompts_for_present_plan_but_denies_other_writes():
-    """plan 模式: present_plan 弹问（升级通道）; write_file/bash 无 prompter
+    """计划开着: present_plan 弹问（升级通道）; write_file/bash 无 prompter
     时 fail-closed——研究期连写文件都不许。"""
-    p = _policy(PLAN)
+    p = _plan_policy()
     prompter = RecordingPrompter(approved=True)
     r = p.authorize("present_plan", '{"plan": "# 步骤"}', prompter)
     assert r.decision == PermissionDecision.ALLOW
     assert len(prompter.requests) == 1
     assert prompter.requests[0].required_mode == WORKSPACE_WRITE
 
-    # 其他写工具: plan 模式无 prompter → 拒绝
+    # 其他写工具: 计划开着无 prompter → 拒绝
     r2 = p.authorize("write_file", "{}", None)
     assert r2.decision == PermissionDecision.DENY
     assert "requires" in r2.reason
 
 
+def test_plan_overlay_works_over_every_base_mode():
+    """计划开关独立于基础档: prompt/danger 基础档 + 计划开, 生效档位都是
+    READ_ONLY——写工具同样被拦, 不会因基础档宽松而漏。"""
+    for base in (PermissionMode.PROMPT, PermissionMode.DANGER_FULL_ACCESS):
+        p = _plan_policy(base)
+        assert p.active_mode == PLAN
+        r = p.authorize("write_file", "{}", None)
+        assert r.decision == PermissionDecision.DENY
+        # 基础档不被侵蚀: 关掉开关即恢复
+        p.set_plan(False)
+        assert p.active_mode == base
+
+
 def test_plan_mode_denies_shell_even_with_prompter():
-    """bash 默认 required=DANGER, plan 模式(1) 走不了"相邻升级"弹问:
+    """bash 默认 required=DANGER, 计划生效(1) 走不了"相邻升级"弹问:
     与 workspace-write(2)→DANGER(3) 不同, 1→3 差两档, 设计上直接拒绝。
     研究期只许读, 命令执行属于实施阶段。"""
-    p = _policy(PLAN)
+    p = _plan_policy()
     prompter = RecordingPrompter(approved=True)
     r = p.authorize("bash", "ls", prompter)
     assert r.decision == PermissionDecision.DENY
@@ -115,7 +137,7 @@ def test_run_turn_plan_mode_appends_instruction_to_system_prompt():
         session=Session(),
         api_client=fake,
         tool_executor=EchoExecutor(),
-        permission_policy=_policy(PLAN),
+        permission_policy=_plan_policy(),
         system_prompt=["static-section"],
     )
     rt.run_turn("做个计划")
@@ -134,7 +156,7 @@ def test_run_turn_plan_mode_appends_instruction_to_system_prompt():
     spy = _Spy([[TextDeltaEvent(text="ok"), MessageStopEvent()]])
     rt2 = ConversationRuntime(
         session=Session(), api_client=spy, tool_executor=EchoExecutor(),
-        permission_policy=_policy(PLAN), system_prompt=["static-section"],
+        permission_policy=_plan_policy(), system_prompt=["static-section"],
     )
     rt2.run_turn("做个计划")
     assert spy.system_prompts[0] == ["static-section", PLAN_MODE_INSTRUCTION]
@@ -149,9 +171,39 @@ def test_run_turn_plan_mode_appends_instruction_to_system_prompt():
     assert spy3.system_prompts[0] == ["static-section"]
 
 
+def test_run_turn_plan_overlay_off_restores_base_prompt():
+    """开关关闭: 生效档位回落基础模式, 计划指令段移除（同 runtime 实例上
+    开→关的往返, 对齐批准回调/CLI /mode plan 的路径）。"""
+    from api_client import MessageStopEvent, TextDeltaEvent
+    from models import Session
+    from runtime import ConversationRuntime, PLAN_MODE_INSTRUCTION
+    from tests.test_runtime import ScriptedApiClient, EchoExecutor
+
+    class _Spy(ScriptedApiClient):
+        def __init__(self, script):
+            super().__init__(script)
+            self.system_prompts = []
+        def stream(self, system_prompt, messages, thinking_level=None, *, model=None, include_tools=True, emit_output=None, on_event=None):
+            self.system_prompts.append(list(system_prompt))
+            return super().stream(system_prompt, messages, thinking_level)
+
+    spy = _Spy([[TextDeltaEvent(text="ok"), MessageStopEvent()]])
+    rt = ConversationRuntime(
+        session=Session(), api_client=spy, tool_executor=EchoExecutor(),
+        permission_policy=_plan_policy(PermissionMode.PROMPT),
+        system_prompt=["static-section"],
+    )
+    assert rt.base_permission_mode() == PermissionMode.PROMPT
+    rt.set_plan_mode(False)
+    assert rt.permission_mode() == PermissionMode.PROMPT
+    assert rt.plan_active() is False
+    rt.run_turn("直接干")
+    assert spy.system_prompts[0] == ["static-section"]   # 计划段已移除
+
+
 def test_run_turn_present_plan_approved_upgrades_mode_mid_turn():
-    """批准回调把 policy 切到 workspace-write: 同一轮里 present_plan 之后的
-    write_file 直接放行（模拟"批准后立刻实施"）。"""
+    """批准回调关闭计划开关: 同一轮里 present_plan 之后的 write_file 直接
+    放行（模拟"批准后立刻实施"——基础档 workspace-write 时）。"""
     from api_client import MessageStopEvent, TextDeltaEvent, ToolUseEvent
     from models import Session
     from runtime import ConversationRuntime
@@ -167,14 +219,14 @@ def test_run_turn_present_plan_approved_upgrades_mode_mid_turn():
     ])
 
     class ApprovingPrompter:
-        """批准 present_plan 并执行升级（对齐 server._upgrade_after_plan）。"""
+        """批准 present_plan 并关闭计划开关（对齐 server._upgrade_after_plan）。"""
         def __init__(self, policy):
             self.policy = policy
             self.requests = []
         def decide(self, request):
             self.requests.append(request)
             if request.tool_name == "present_plan":
-                self.policy.set_mode(WORKSPACE_WRITE)
+                self.policy.set_plan(False)
                 upgrades.append(request.tool_name)
                 from permissions import PermissionResult
                 return PermissionResult(decision=PermissionDecision.ALLOW,
@@ -183,7 +235,7 @@ def test_run_turn_present_plan_approved_upgrades_mode_mid_turn():
             return PermissionResult(decision=PermissionDecision.DENY,
                                     reason="no")
 
-    policy = _policy(PLAN)
+    policy = _plan_policy(WORKSPACE_WRITE)
     prompter = ApprovingPrompter(policy)
     rt = ConversationRuntime(
         session=Session(), api_client=fake, tool_executor=EchoExecutor(),
@@ -191,10 +243,11 @@ def test_run_turn_present_plan_approved_upgrades_mode_mid_turn():
     )
     summary = rt.run_turn("计划并实施", prompter)
     assert upgrades == ["present_plan"]
-    # write_file 在升级后的模式下执行成功（否则会以 error result 出现）
     err = [b for m in summary.tool_results for b in m.content if b.is_error]
     assert err == []
     assert rt.permission_mode() == WORKSPACE_WRITE
+    assert rt.base_permission_mode() == WORKSPACE_WRITE   # 基础档不动
+    assert rt.plan_active() is False
 
 
 # ------------------------------------------------------------
@@ -300,36 +353,38 @@ def test_finalize_callback_emits_plan_rejected_marker(client, isolated_store):
 
 
 def test_start_turn_wires_upgrade_callback(client, isolated_store, monkeypatch):
-    """_start_turn 构造的 prompter 带升级回调: 回调切 WebSession+runtime
-    并广播 mode_changed。"""
+    """_start_turn 构造的 prompter 带升级回调: 回调关掉计划开关（WebSession
+    +runtime）并广播 mode_changed——生效档位回落基础模式, 基础档不动。"""
     import server
 
     web_session = server.get_or_create_web_session("s-plan-wire")
     try:
         class _Rt:
             def __init__(self):
-                self.modes = []
-            def set_permission_mode(self, m):
-                self.modes.append(m)
+                self.plans = []
+            def set_plan_mode(self, active):
+                self.plans.append(active)
             def session(self):
                 from models import Session
                 return Session()
 
         web_session.runtime = _Rt()
-        web_session.permission_mode = server.NAME_TO_MODE["plan"]
+        web_session.permission_mode = server.NAME_TO_MODE["workspace-write"]
+        web_session.plan_active = True   # 计划开着（生效档位 READ_ONLY）
         # _start_turn 里闭包的装配太重（起线程）, 这里复现同一段装配验证:
-        # 升级回调 → WebSession 模式 + runtime 模式 + mode_changed 广播
+        # 升级回调 → WebSession 开关关闭 + runtime 开关关闭 + mode_changed 广播
         broadcasts = []
         web_session.broadcast = lambda payload: broadcasts.append(payload)
 
         def _upgrade_after_plan():
-            web_session.permission_mode = server.WORKSPACE_WRITE_MODE
+            web_session.plan_active = False
             if web_session.runtime is not None:
-                web_session.runtime.set_permission_mode(server.WORKSPACE_WRITE_MODE)
+                web_session.runtime.set_plan_mode(False)
             web_session.broadcast({
                 "type": "mode_changed",
                 "session_id": web_session.session_id,
-                "permission_mode": server.MODE_TO_NAME[server.WORKSPACE_WRITE_MODE],
+                "permission_mode": server.MODE_TO_NAME[web_session.permission_mode],
+                "plan_active": False,
             })
 
         prompter = server.WebPermissionPrompter(
@@ -344,9 +399,12 @@ def test_start_turn_wires_upgrade_callback(client, isolated_store, monkeypatch):
         prompter.resolve("perm-1", True)
         th.join(timeout=2)
         assert not th.is_alive()
-        assert web_session.permission_mode == server.WORKSPACE_WRITE_MODE
-        assert web_session.runtime.modes == [server.WORKSPACE_WRITE_MODE]
+        # 开关关闭, 生效档位回落基础模式（不再硬编码 workspace-write）
+        assert web_session.plan_active is False
+        assert web_session.permission_mode == server.NAME_TO_MODE["workspace-write"]
+        assert web_session.runtime.plans == [False]
         assert broadcasts and broadcasts[-1]["permission_mode"] == "workspace-write"
+        assert broadcasts[-1]["plan_active"] is False
     finally:
         server._sessions.clear()
 
@@ -424,7 +482,8 @@ def test_two_sessions_plan_approval_do_not_block_each_other(
     inner.register("present_plan", lambda p, wd: "计划已批准")
     monkeypatch.setattr(server, "registry", server.EmittingToolRegistry(inner))
     monkeypatch.setattr(server.app_state, "_mode",
-                        server.NAME_TO_MODE["plan"])
+                        server.NAME_TO_MODE["workspace-write"])
+    monkeypatch.setattr(server.app_state, "plan_active", True)
     monkeypatch.setattr(server, "maybe_auto_title", lambda ws: False)
 
     def drain_until(ws, pred, limit=400):

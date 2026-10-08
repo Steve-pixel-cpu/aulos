@@ -333,8 +333,8 @@ def test_ws_set_thinking_level_isolated(client, isolated_store):
         assert server.api_client.thinking_level != "high" or True
         # 全局默认（api_client）不被 WS 会话切换波及:
         assert server.api_client.thinking_level in ("low", "medium", "high", "max")
-        # 持久化: 只写目标会话
-        assert isolated_store.get_permission_mode("s-a") is None
+        # 持久化: 只写目标会话（无记录 → (None, False), 调用方回落全局默认）
+        assert isolated_store.get_permission_mode("s-a") == (None, False)
 
 
 def test_ws_set_thinking_level_invalid_rejected(client, isolated_store):

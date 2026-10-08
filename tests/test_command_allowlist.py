@@ -172,14 +172,39 @@ def settings_file(tmp_path, monkeypatch):
 
 def test_config_roundtrip_preserves_other_keys(settings_file):
     settings_file.write_text(json.dumps(
-        {"providers": [{"id": "default"}], "permissionMode": "plan"}),
+        {"providers": [{"id": "default"}], "permissionMode": "prompt"}),
         encoding="utf-8")
     saved = config.save_command_allowlist(["git push", "git push", "  uv run pytest  "])
     assert saved == ["git push", "uv run pytest"]           # 去重 + 清洗
     data = json.loads(settings_file.read_text(encoding="utf-8"))
     assert data["providers"] == [{"id": "default"}]          # 其他 key 原样
-    assert data["permissionMode"] == "plan"
+    assert data["permissionMode"] == "prompt"
     assert config.load_command_allowlist() == ["git push", "uv run pytest"]
+
+
+def test_config_permission_mode_map_to_base_and_plan(tmp_path):
+    """只读模式已移除: permissionMode 配置值解析为 (基础模式, 计划开关)。
+    旧值 plan/read-only 归一为 prompt+计划开; 别名照旧映射。"""
+    cases = {
+        "default": ("prompt", False),
+        "prompt": ("prompt", False),
+        "acceptEdits": ("workspace-write", False),
+        "auto": ("workspace-write", False),
+        "workspace-write": ("workspace-write", False),
+        "dontAsk": ("danger-full-access", False),
+        "danger-full-access": ("danger-full-access", False),
+        "plan": ("prompt", True),          # 旧值: 计划开关表达只读工作流
+        "read-only": ("prompt", True),     # 旧值
+    }
+    for raw, (mode, plan) in cases.items():
+        (tmp_path / "settings.json").write_text(
+            json.dumps({"permissionMode": raw}), encoding="utf-8")
+        cfg = config.ConfigLoader(cwd=tmp_path, config_home=tmp_path).load()
+        assert (cfg.permission_mode(), cfg.permission_plan()) == (mode, plan), raw
+    (tmp_path / "settings.json").write_text(
+        json.dumps({"permissionMode": "allow"}), encoding="utf-8")
+    with pytest.raises(config.ConfigError):
+        config.ConfigLoader(cwd=tmp_path, config_home=tmp_path).load()   # 配置口径不接受 allow
 
 
 def test_config_missing_or_corrupt_file(settings_file):

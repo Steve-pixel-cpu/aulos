@@ -32,6 +32,8 @@
     /* 字号比例: 设置→外观 可调, JS 写在 documentElement 内联样式上。
        --fs-ui 界面文字 / --fs-chat 聊天内容（气泡+代码）, 两个互相独立 */
     --fs-ui: 1; --fs-chat: 1;
+    /* 聊天密度: data-density=compact|cozy 缩放聊天区垂直间距（见文件末尾外观增强块） */
+    --density: 1;
     /* 等宽栈: 拉丁走 mono 字体, 中文回退到雅黑（否则 Windows 下会掉进宋体, 十分难看） */
     --font-mono: "Cascadia Code", "JetBrains Mono", Menlo, Consolas, "Microsoft YaHei", monospace;
     /* 代码高亮（hljs 类名，深色） */
@@ -444,7 +446,7 @@
   #messages::-webkit-scrollbar { width: 0; height: 0; }
   /* 每个会话一个常驻消息列, 切换只是显隐: 后台会话的流式输出继续写进
      自己的隐藏列, 切回时原样恢复——流式中的回复不丢字、不冻结 */
-  .msg-col { width: var(--content-w); margin: 0 auto; padding: 28px 32px 12px; display: none; }
+  .msg-col { width: var(--content-w); margin: 0 auto; padding: calc(28px * var(--density)) 32px calc(12px * var(--density)); display: none; }
   .msg-col.on { display: block; }
   /* 桌面应用形态: 界面文字（侧栏/标题/按钮等）不可选中, Ctrl+A 全选
      只会选中聊天内容; 输入框、消息列与计划面板正文保持正常可选 */
@@ -590,11 +592,11 @@
   }
 
   /* 用户消息: 右对齐气泡 */
-  .msg { display: flex; margin-bottom: 22px; animation: msg-in .22s ease; }
+  .msg { display: flex; margin-bottom: calc(22px * var(--density)); animation: msg-in .22s ease; }
   @keyframes msg-in { from { transform: translateY(5px); opacity: 0; } to { transform: none; opacity: 1; } }
   .msg.user { justify-content: flex-end; }
   .msg.user .bubble {
-    max-width: 76%; padding: 10px 16px;
+    max-width: 76%; padding: calc(10px * var(--density)) 16px;
     background: var(--accent-soft); border: 1px solid var(--accent-border);
     border-radius: var(--r-lg); border-bottom-right-radius: 6px;
     font-size: calc(14px * var(--fs-chat)); line-height: 1.65; white-space: pre-wrap; word-break: break-word;
@@ -733,7 +735,7 @@
   /* 思考行: 实时「思考中…」→ 收口为「思考 · 持续了X秒」 */
   .think-row {
     display: flex; align-items: center; gap: 7px;
-    margin: 2px 0 12px 38px; padding: 5px 11px;
+    margin: 2px 0 calc(12px * var(--density)) 38px; padding: calc(5px * var(--density)) 11px;
     width: fit-content;
     font-size: calc(12.5px * var(--fs-ui)); color: var(--text-3);
     background: var(--surface-2); border: 1px solid var(--border);
@@ -758,14 +760,14 @@
   /* 工具调用行: 一行式灰色条目（与 CLI 观感一致），纯展示、无展开 */
   .tool-row {
     display: flex; align-items: center; gap: 7px;
-    margin: 2px 0 10px 38px; padding: 4px 9px;
+    margin: 2px 0 calc(10px * var(--density)) 38px; padding: calc(4px * var(--density)) 9px;
     font-size: calc(12.5px * var(--fs-ui)); color: var(--text-3);
     animation: msg-in .22s ease;
   }
   /* 工具分组: 连续工具调用收进一处, 左竖轨示意"过程记录", 头部可折叠。
    * 运行中保持展开（头部脉冲"运行中…"）, 轮次结束由 JS 收起为大分组。 */
   .tool-group {
-    margin: 2px 0 10px 38px;
+    margin: 2px 0 calc(10px * var(--density)) 38px;
     border-left: 2px solid var(--border-strong);
     animation: msg-in .22s ease;
   }
@@ -1661,6 +1663,9 @@
   .dd-col .dd-txt { font-weight: 600; color: var(--text); }
   .dd-opt.on .dd-col .dd-txt { color: var(--accent); }
   .dd-col .dd-desc { font-size: calc(11px * var(--fs-ui)); color: var(--text-3); font-weight: 400; }
+  /* 下拉菜单分隔线（模式下拉: 计划开关行与基础模式行之间的分组线） */
+  .dd-sep { height: 1px; margin: 5px 8px; background: var(--border);
+    border: none; flex: none; }
 
   #btn-send {
     width: 32px; height: 32px; border: none; border-radius: 50%;
@@ -2853,3 +2858,84 @@ body.col-resizing, body.col-resizing * { cursor: col-resize !important; }
    * 再叠 backdrop-filter 会双重压壁纸——但颜色仍来自令牌, 视觉上是
    * "更实的 Fluent 面", 无文字可读性问题, 无需特判 */
 .mem-empty-sub { font-size: calc(11.5px * var(--fs-ui)); color: var(--text-3); }
+
+  /* ============================================================
+   * 外观增强: 代码高亮主题 / 聊天密度 / 禅模式 / 动效
+   * 全部与 data-theme、data-accent、data-bg、data-style 正交,
+   * 开关都挂在 <html> 的 dataset 上（预绘制脚本抢在首帧前设置）
+   * ============================================================ */
+
+  /* ---------- 代码高亮主题: data-hl 覆盖默认的"跟随深浅主题" ---------- */
+  /* 每组给全 9 个 --hl-* 变量; code-bg/head 仅深色系主题覆盖, 浅色系
+   * （github/solarized-light）只改高亮色保留浅底, 与浅色主题不冲突 */
+  :root[data-hl="onedark"] {
+    --code-bg: #282c34; --code-head: #21252b;
+    --hl-comment: #7f848e; --hl-keyword: #c678dd; --hl-string: #98c379;
+    --hl-number: #d19a66;  --hl-title: #61afef;   --hl-attr: #e06c75;
+    --hl-type: #56b6c2;    --hl-meta: #abb2bf;    --hl-builtin: #56b6c2;
+  }
+  :root[data-hl="dracula"] {
+    --code-bg: #282a36; --code-head: #21222c;
+    --hl-comment: #6272a4; --hl-keyword: #ff79c6; --hl-string: #f1fa8c;
+    --hl-number: #bd93f9;  --hl-title: #8be9fd;   --hl-attr: #ff79c6;
+    --hl-type: #50fa7b;    --hl-meta: #f8f8f2;    --hl-builtin: #8be9fd;
+  }
+  :root[data-hl="monokai"] {
+    --code-bg: #272822; --code-head: #1f201a;
+    --hl-comment: #75715e; --hl-keyword: #f92672; --hl-string: #e6db74;
+    --hl-number: #ae81ff;  --hl-title: #66d9ef;   --hl-attr: #fd971f;
+    --hl-type: #66d9ef;    --hl-meta: #f8f8f2;    --hl-builtin: #a6e22e;
+  }
+  :root[data-hl="github-light"] {
+    --hl-comment: #6a737d; --hl-keyword: #d73a49; --hl-string: #032f62;
+    --hl-number: #005cc5;  --hl-title: #6f42c1;   --hl-attr: #e36209;
+    --hl-type: #22863a;    --hl-meta: #586069;    --hl-builtin: #005cc5;
+  }
+  :root[data-hl="solarized-light"] {
+    --hl-comment: #93a1a1; --hl-keyword: #859900; --hl-string: #2aa198;
+    --hl-number: #d33682;  --hl-title: #268bd2;   --hl-attr: #cb4b16;
+    --hl-type: #b58900;    --hl-meta: #657b83;    --hl-builtin: #268bd2;
+  }
+
+  /* ---------- 聊天密度: data-density 覆盖默认 comfortable(1) ---------- */
+  :root[data-density="compact"] { --density: .75; }
+  :root[data-density="cozy"]    { --density: 1.3; }
+
+  /* ---------- 禅模式: data-zen="1" 隐藏侧栏, 纯聊天区专注 ---------- */
+  :root[data-zen="1"] #sidebar { display: none; }
+  /* 禅模式开启时的入口提示: 侧栏隐藏后左缘常驻一条 10px 热区,
+   * 悬停唤出侧栏; 平时完全透明不可见 */
+  #zen-hotzone {
+    display: none; position: fixed; left: 0; top: 42px; bottom: 0; width: 10px;
+    z-index: 880; background: transparent; border: none; padding: 0;
+  }
+  :root[data-zen="1"] #zen-hotzone { display: block; }
+  /* 悬浮态: 真实侧栏覆盖在主区之上（非克隆——克隆会丢事件监听）,
+   * 带阴影与滑入动画, 移出即收回, 全部交互保持可用 */
+  :root[data-zen="1"] #sidebar.zen-peek {
+    display: flex; position: fixed; left: 0; top: 42px; bottom: 0;
+    width: var(--side-w, 268px); z-index: 870;
+    border-right: 1px solid var(--border-strong);
+    box-shadow: var(--shadow-pop);
+    animation: zen-peek-in .16s ease-out;
+  }
+  @keyframes zen-peek-in { from { transform: translateX(-24px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+  /* ---------- 动效: 视图切换淡入 / 列表入场 / reduced-motion 兜底 ---------- */
+  /* 主区视图切换（会话↔设置↔引导页）: 内容容器 150ms 淡入上移 */
+  #pane[data-view] > #settings-page,
+  #pane[data-view] > #onboarding-page { animation: view-in .15s ease-out; }
+  @keyframes view-in { from { transform: translateY(4px); opacity: 0; } to { transform: none; opacity: 1; } }
+  /* 侧栏会话/分组条目入场: 仅首次加载播一次（#session-list.boot）,
+   * 全量重绘频繁（状态切换都会刷）, 常驻动画会造成反复闪烁 */
+  #session-list.boot > * { animation: list-in .12s ease-out; }
+  @keyframes list-in { from { transform: translateY(-3px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+  /* 无障碍兜底: 用户系统开启"减少动态效果"时, 关闭全部动画与过渡 */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: .01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: .01ms !important;
+    }
+  }

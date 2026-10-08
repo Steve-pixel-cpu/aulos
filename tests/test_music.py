@@ -426,7 +426,7 @@ def test_music_play_bili_no_result(monkeypatch):
 
 
 def test_music_play_registered_and_read_only():
-    """TOOLS 有声明; 权限档登记为 READ_ONLY（= PermissionMode.PLAN, 值 1）。"""
+    """TOOLS 有声明; 权限档登记为 READ_ONLY(1)。"""
     import main
     from permissions import READ_ONLY_MODE
     assert main.TOOL_REQUIREMENTS.get("music_play") == READ_ONLY_MODE

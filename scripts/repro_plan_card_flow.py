@@ -32,7 +32,8 @@ import threading
 tmp = pathlib.Path(tempfile.mkdtemp())
 server.store = SessionStore(storage_dir=tmp)
 server._pending_sessions.clear()
-server.app_state._mode = PermissionMode.PLAN   # 会话初值 = 计划模式
+server.app_state._mode = PermissionMode.PROMPT   # 基础模式 = 每次询问
+server.app_state.plan_active = True              # 计划开关开（生效档位 READ_ONLY）
 
 
 class _Scripted(ApiClient):

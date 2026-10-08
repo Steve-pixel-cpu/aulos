@@ -28,7 +28,7 @@ from hooks import HookRunner, HookResult
 from models import Message, TextContentBlock, AnyContentBlock, ToolContentBlock, ToolResultContentBlock, Session
 from permissions import (PermissionMode, PermissionPolicy, PermissionPrompter,
                          PermissionDecision, MUTATING_SHELL_TOOLS,
-                         shell_command_is_read_only)
+                         READ_ONLY_MODE, shell_command_is_read_only)
 from prompt import PLAN_MODE_SECTION, SYSTEM_PROMPT_DYNAMIC_BOUNDARY
 
 DEFAULT_MAX_ITERATIONS = 128
@@ -512,11 +512,11 @@ class ConversationRuntime:
         self._cancel_check = None
 
     def _rebuild_effective_prompt(self) -> None:
-        """权限模式联动系统提示词。计划模式把 PLAN_MODE_SECTION 插进动态段
-        （边界之后; 无边界则追加尾部）——静态前缀逐字节不变, prompt caching
-        前缀继续命中。切回其他模式即移除。"""
+        """权限模式联动系统提示词。计划开关开着（生效档位 READ_ONLY）时
+        把 PLAN_MODE_SECTION 插进动态段（边界之后; 无边界则追加尾部）——
+        静态前缀逐字节不变, prompt caching 前缀继续命中。关掉即移除。"""
         base = self._system_prompt
-        if self._permission_policy.active_mode == PermissionMode.PLAN:
+        if self._permission_policy.active_mode == READ_ONLY_MODE:
             if SYSTEM_PROMPT_DYNAMIC_BOUNDARY in base:
                 idx = base.index(SYSTEM_PROMPT_DYNAMIC_BOUNDARY)
                 self._effective_system_prompt = (
@@ -588,11 +588,28 @@ class ConversationRuntime:
         return self._usage_tracker
 
     def permission_mode(self) -> PermissionMode:
+        """生效档位（派生）: 计划开 → READ_ONLY, 否则基础模式。"""
         return self._permission_policy.active_mode
 
+    def base_permission_mode(self) -> PermissionMode:
+        """基础权限模式（不含计划覆盖）。"""
+        return self._permission_policy.base_mode
+
+    def plan_active(self) -> bool:
+        """计划开关状态。"""
+        return self._permission_policy.plan_active
+
     def set_permission_mode(self, mode: PermissionMode) -> None:
+        """切换基础权限模式。不动计划开关——两个状态相互独立;
+        计划开关走 set_plan_mode（批准回调 / CLI /mode plan）。"""
         self._permission_policy.set_mode(mode)
-        self._rebuild_effective_prompt()   # 计划模式段随模式增减
+        self._rebuild_effective_prompt()   # 计划段随生效档位增减
+
+    def set_plan_mode(self, active: bool) -> None:
+        """切换计划覆盖开关。开着时生效档位是 READ_ONLY（系统提示词
+        注入计划段）, 关闭时回落基础模式（移除计划段）。"""
+        self._permission_policy.set_plan(active)
+        self._rebuild_effective_prompt()
 
     def set_system_prompt(self, sections: list[str]) -> None:
         """整体替换基础系统提示（Web 端 skills 热装卸后重同步用）。
@@ -1234,9 +1251,9 @@ class ConversationRuntime:
                 auto_compacted = True
 
             iterations += 1
-            # 计划模式指令段的注入/移除在 set_permission_mode →
-            # _rebuild_effective_prompt 里完成, stream 一律用生效提示词
-            # （此前这里算过 sys_prompt 却没传给 stream, 等于从未生效）
+            # 计划模式指令段的注入/移除在 set_permission_mode /
+            # set_plan_mode → _rebuild_effective_prompt 里完成, stream
+            # 一律用生效提示词
             # messages 用模型视图: 压缩激活时 = [续接摘要] + 保留区,
             # 全量历史原样留在会话里供展示与落盘。
             events = self._api_client.stream(

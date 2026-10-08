@@ -698,11 +698,12 @@ def build_runtime(session: Session,
                   system_prompt: list[str],
                   hooks_config: RuntimeConfig,
                   permission_mode: PermissionMode = DANGER_FULL_ACCESS_MODE,
+                  plan_mode: bool = False,
                   tool_executor: Optional[ToolExecutor] = None,
                  ) -> ConversationRuntime:
     permission_policy = PermissionPolicy(
         active_mode = permission_mode,
-    )
+    ).set_plan(plan_mode)
     for tool_name, required in TOOL_REQUIREMENTS.items():
         permission_policy.with_tool_requirement(tool_name, required)
     hook_runner = HookRunner.from_config(hooks_config)
@@ -734,10 +735,12 @@ def build_runtime(session: Session,
         [str(Path.cwd())] + load_additional_directories())
     return running_time
 
-def resolve_permission_mode(runtime_config: RuntimeConfig) -> PermissionMode:
-    """决定启动时的权限模式。
+def resolve_permission_mode(runtime_config: RuntimeConfig) -> tuple:
+    """决定启动时的权限模式, 返回 (基础模式, 计划开关)。
 
-    默认 danger-full-access; 配置里设置了 permissionMode 就用配置值。
+    默认 (danger-full-access, False); 配置里设置了 permissionMode 就用
+    配置值——只读模式已移除, "plan"/"read-only" 旧值由 config 解析层
+    归一为 (prompt, True)。
 
     注意: 这里故意不认 "allow" — allow 会连将来注册为需要
     prompt/allow 的工具也一并放行, 所以只允许在 REPL 里用
@@ -749,9 +752,9 @@ def resolve_permission_mode(runtime_config: RuntimeConfig) -> PermissionMode:
     if mode_name:
         mode = NAME_TO_MODE.get(mode_name)
         if mode is not None and mode != ALLOW_MODE:
-            return mode
+            return mode, runtime_config.permission_plan()
         print(c_red(f"✗ 配置里的权限模式无效: {mode_name!r}, 回退到 danger-full-access"))
-    return DANGER_FULL_ACCESS_MODE
+    return DANGER_FULL_ACCESS_MODE, False
 
 BANNER_ART = r"""
  __  __        ____ ___  ____  _____
@@ -767,22 +770,36 @@ def print_banner(name: str = "X-CODE", width: int = 40) -> None:
     print("/help 看命令")
     print("=" * width)
 
+def _mode_status_text(runtime: ConversationRuntime) -> str:
+    """/mode 与 /status 共用的模式回显: 基础模式 + 计划开关两个状态。"""
+    base = runtime.base_permission_mode().as_str()
+    if runtime.plan_active():
+        return f"{base} + plan（计划开, 生效档位 read-only）"
+    return base
+
+
 def switch_mode(runtime: ConversationRuntime, mode_name: str) -> None:
-    """切换权限模式: /mode 不带参数 = 打印当前模式与可选值; /mode <name> = 切换。"""
+    """切换权限模式: /mode 不带参数 = 打印当前状态与可选值; /mode <name>
+    = 切换。"plan" 是计划开关（与基础模式独立叠加, 开着时生效档位
+    read-only）, 其余名字设基础模式。"""
     if not mode_name:
-        print(f"当前权限模式: {runtime.permission_mode().as_str()}")
-        print(f"可选: {' | '.join(MODE_TO_NAME.values())}")
+        print(f"当前权限模式: {_mode_status_text(runtime)}")
+        print(f"可选: {' | '.join(MODE_TO_NAME.values())} | plan（计划开关, 可叠加）")
         return
     name = mode_name.strip().lower()
-    if name == "read-only":
-        name = "plan"   # 旧名兼容: 归一为 plan
+    if name == "plan":
+        active = not runtime.plan_active()
+        runtime.set_plan_mode(active)
+        state = "开" if active else "关"
+        print(f"计划模式已{state}: {_mode_status_text(runtime)}")
+        return
     mode = NAME_TO_MODE.get(name)
     if mode is None:
         print(c_red(f"✗ 未知模式: {mode_name}"))
-        print(f"可选: {' | '.join(MODE_TO_NAME.values())}（read-only 是 plan 的旧名）")
+        print(f"可选: {' | '.join(MODE_TO_NAME.values())} | plan（计划开关, 可叠加）")
         return
     runtime.set_permission_mode(mode)
-    print(f"权限模式已切换: {mode.as_str()}")
+    print(f"权限模式已切换: {_mode_status_text(runtime)}")
 
 def switch_thinking(runtime: ConversationRuntime, level_name: str) -> None:
     """切换思考等级: /thinking 不带参数 = 打印当前等级与可选值; /thinking <level> = 切换。"""
@@ -820,7 +837,7 @@ def print_status(runtime: "ConversationRuntime") -> None:
     print(c_dim(SEPARATOR))
     print(field_line("轮数", f"{turns:,}"))
     print(field_line("消息数", f"{messages:,}"))
-    print(field_line("权限模式", runtime.permission_mode().as_str()))
+    print(field_line("权限模式", _mode_status_text(runtime)))
     print(field_line("思考等级", runtime.thinking_level()))
     latest = runtime.usage().current_turn_usage()
     print(field_line(
@@ -1036,7 +1053,7 @@ def run_repl(runtime: ConversationRuntime,
              last_uuid: Optional[str]):
     setup_console()  # 幂等兜底: 直接进 REPL 的路径也保证 UTF-8 + VT
     print_banner()
-    print(f"权限模式: {runtime.permission_mode().as_str()} (切换: /mode <name>)")
+    print(f"权限模式: {_mode_status_text(runtime)} (切换: /mode <name>)")
     print(f"会话: {session_id}  名字: {c_cyan(display_title(store, session_id))}")
     titled = store.get_title(session_id) is not None  # 自动命名只做一次
 
@@ -1323,18 +1340,27 @@ def _assemble(session_store: SessionStore, session_id: str, *,
     runtime_config = config_loader.load()
     # 权限模式: CLI 覆盖 > 配置 > 默认。与 resolve_permission_mode 同一条
     # 红线: 不接受 "allow"——它会连将来注册为 prompt/allow 的工具一并放行。
+    # "plan" 是计划开关（基于默认基础模式 danger 叠加）; "read-only" 旧值
+    # 归一为 prompt + 计划开。
     if permission_mode_override:
         name = permission_mode_override.strip().lower()
         if name == "read-only":
-            name = "plan"   # 旧名兼容: 归一为 plan
+            name = "prompt"
+            plan_flag = True
+        elif name == "plan":
+            plan_flag = True
+            name = "prompt"
+        else:
+            plan_flag = False
         mode = NAME_TO_MODE.get(name)
         if mode is None or mode == ALLOW_MODE:
             raise StartupError(
                 f"无效的权限模式: {permission_mode_override!r}"
-                f"（可选: {' | '.join(v for v in MODE_TO_NAME.values() if v != 'allow')}）")
+                f"（可选: {' | '.join(v for v in MODE_TO_NAME.values() if v != 'allow')} | plan）")
         permission_mode = mode
+        plan_mode = plan_flag
     else:
-        permission_mode = resolve_permission_mode(runtime_config)
+        permission_mode, plan_mode = resolve_permission_mode(runtime_config)
     # 技能发现: 项目级覆盖用户级, 解析失败降级为警告行不挡启动
     skill_warnings: list[str] = []
     skills = discover_skills(Path.cwd(), USER_DIR,
@@ -1391,6 +1417,7 @@ def _assemble(session_store: SessionStore, session_id: str, *,
         system_prompt=system_prompt,
         registry=registry,
         permission_mode=permission_mode,
+        plan_mode=plan_mode,
         hooks_config=runtime_config,
         session= Session(
             messages=session_msgs,
@@ -1564,7 +1591,8 @@ def _parse_headless_args(rest: list[str]) -> tuple[Optional[str], dict, Optional
             opts["model_override"] = rest[i]
         elif arg == "--permission-mode":
             if i + 1 >= len(rest):
-                return None, opts, "--permission-mode 需要值（plan | workspace-write | danger-full-access）"
+                return None, opts, ("--permission-mode 需要值"
+                                    "（prompt | workspace-write | danger-full-access | plan）")
             i += 1
             opts["permission_mode_override"] = rest[i]
         elif arg.startswith("-"):
@@ -1577,7 +1605,7 @@ def _parse_headless_args(rest: list[str]) -> tuple[Optional[str], dict, Optional
     if not task or not task.strip():
         return None, opts, ('缺少任务文本。用法: python main.py -p "任务" '
                             "[--output-format text|json] [--model 名] "
-                            "[--permission-mode plan|workspace-write|danger-full-access]")
+                            "[--permission-mode prompt|workspace-write|danger-full-access|plan]")
     return task, opts, None
 
 
@@ -1607,8 +1635,8 @@ def usage() -> None:
     print("                      --output-format text|json   text=只出正文;"
           " json=结果对象(含用量/子状态)")
     print("                      --model <名>                覆盖本次运行的模型")
-    print("                      --permission-mode <模式>    plan | "
-          "workspace-write | danger-full-access")
+    print("                      --permission-mode <模式>    prompt | "
+          "workspace-write | danger-full-access | plan(计划开关)")
     print("                      退出码: 0=完成 1=运行错误 2=中断 "
           "3=预算/迭代提前收束 4=用法/启动错误")
 

@@ -45,7 +45,9 @@ def test_workspace_write_still_prompts_for_writes_and_shell():
 
 
 def test_plan_mode_denies_writes_but_allows_reads():
-    p = _policy(PermissionMode.PLAN)
+    """计划覆盖生效（开关开, 等效档位 READ_ONLY）: 读放行, 写拒绝。"""
+    p = _policy(PermissionMode.PROMPT).set_plan(True)
+    assert p.active_mode == PermissionMode.READ_ONLY
     assert p.authorize("read_file", "a.txt", None).decision == PermissionDecision.ALLOW
     r = p.authorize("write_file", "{}", None)
     assert r.decision == PermissionDecision.DENY

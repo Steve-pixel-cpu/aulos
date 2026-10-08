@@ -228,7 +228,7 @@ def test_run_turn_权限拒绝则工具不执行():
     ])
     executor = EchoExecutor()
     policy = (
-        PermissionPolicy(PermissionMode.PLAN)
+        PermissionPolicy(PermissionMode.READ_ONLY)
         .with_tool_requirement("bash", PermissionMode.DANGER_FULL_ACCESS)
     )
     rt = make_runtime(fake, executor=executor, policy=policy)

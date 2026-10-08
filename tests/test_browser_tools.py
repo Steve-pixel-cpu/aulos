@@ -41,10 +41,10 @@ def test_registry_has_all_handlers():
 
 
 def test_permissions_registration():
-    from permissions import PLAN_MODE, WORKSPACE_WRITE_MODE
-    assert TOOL_REQUIREMENTS["browser_navigate"] is PLAN_MODE      # 只读
-    assert TOOL_REQUIREMENTS["browser_snapshot"] is PLAN_MODE
-    assert TOOL_REQUIREMENTS["browser_console"] is PLAN_MODE
+    from permissions import READ_ONLY_MODE, WORKSPACE_WRITE_MODE
+    assert TOOL_REQUIREMENTS["browser_navigate"] is READ_ONLY_MODE      # 只读档位
+    assert TOOL_REQUIREMENTS["browser_snapshot"] is READ_ONLY_MODE
+    assert TOOL_REQUIREMENTS["browser_console"] is READ_ONLY_MODE
     assert TOOL_REQUIREMENTS["browser_click"] is WORKSPACE_WRITE_MODE
     assert TOOL_REQUIREMENTS["browser_type"] is WORKSPACE_WRITE_MODE
     assert TOOL_REQUIREMENTS["browser_screenshot"] is WORKSPACE_WRITE_MODE

@@ -13,7 +13,7 @@ from typing import Self
 """权限模式层级 — 源码 permissions.rs:4-10
 
   从最严格到最宽松:
-  - ReadOnly: 只能读，不能写任何东西
+  - ReadOnly: 只读档（工具要求档位——也是"计划覆盖"生效期间的等效档位）
   - WorkspaceWrite: 可以写工作目录内的文件
   - DangerFullAccess: 可以做任何事（包括 rm -rf /）
   - Prompt: 总是询问用户
@@ -23,9 +23,15 @@ from typing import Self
   因为 Prompt 模式的意思不是"更有权限"，而是
   "这个模式下，需要升级的操作会触发用户提示"。
   在源码中 Prompt 模式会拦截所有需要确认的操作。
+
+  会话状态模型: 权限模式只有三个基础档（workspace-write / danger /
+  prompt / allow 临时档），"计划"不是模式而是叠加开关（见
+  PermissionPolicy.plan_active）——计划开着时生效档位是 READ_ONLY,
+  批准后关掉开关回落基础档。READ_ONLY 作为"可进入的模式"已移除,
+  仅作为工具要求档位与计划覆盖的等效值存在。
   """
 class PermissionMode(IntEnum):
-    PLAN = 1
+    READ_ONLY = 1
     WORKSPACE_WRITE = 2
     DANGER_FULL_ACCESS = 3
     PROMPT = 4
@@ -33,7 +39,7 @@ class PermissionMode(IntEnum):
 
     def as_str(self) -> str:
         return {
-            self.PLAN: "plan",
+            self.READ_ONLY: "read-only",
             self.WORKSPACE_WRITE: "workspace-write",
             self.DANGER_FULL_ACCESS: "danger-full-access",
             self.PROMPT: "prompt",
@@ -41,16 +47,15 @@ class PermissionMode(IntEnum):
         }[self]
 
 # --- 模式名 <-> 枚举: /mode 命令的参数解析与显示用 ---
-PLAN_MODE = PermissionMode.PLAN
-# 兼容别名: 旧代码/旧配置里的只读模式 = 计划模式
-READ_ONLY_MODE = PLAN_MODE
+# 只读不是可选的基础模式: MODE_TO_NAME 里没有它——"计划"开关的生效值
+# 会在运行时表现为 READ_ONLY, 但用户不能"切换到只读模式"。
+READ_ONLY_MODE = PermissionMode.READ_ONLY
 WORKSPACE_WRITE_MODE = PermissionMode.WORKSPACE_WRITE
 DANGER_FULL_ACCESS_MODE = PermissionMode.DANGER_FULL_ACCESS
 PROMPT_MODE = PermissionMode.PROMPT
 ALLOW_MODE = PermissionMode.ALLOW
 
 MODE_TO_NAME = {
-    PLAN_MODE: "plan",
     WORKSPACE_WRITE_MODE: "workspace-write",
     DANGER_FULL_ACCESS_MODE: "danger-full-access",
     PROMPT_MODE: "prompt",
@@ -597,7 +602,14 @@ def shell_command_touches_sensitive_path(tool_name: str, tool_input: str,
 
 class PermissionPolicy:
     def __init__(self, active_mode: PermissionMode):
-        self._active_mode = active_mode
+        # 基础权限模式 + 计划覆盖开关（双状态模型）:
+        # - _base_mode: 三个基础档之一（workspace-write/danger/prompt,
+        #   allow 仅 CLI 临时档）——"会话的权限模式"
+        # - _plan_active: 计划开关, 与基础档独立叠加。开着时生效档位是
+        #   READ_ONLY（只读拦截 + present_plan 计划工作流）, 批准后关闭
+        #   开关回落基础档。active_mode 是派生属性, 不直接持有。
+        self._base_mode = active_mode
+        self._plan_active = False
         self._tool_requirements: Dict[str, PermissionMode] = {}
         self._command_allowlist: list = []
         self._session_allowlist: list = []
@@ -671,12 +683,31 @@ class PermissionPolicy:
             escalation="sensitive"))
 
     @property
+    def base_mode(self) -> PermissionMode:
+        """基础权限模式（不含计划覆盖的派生效值）。"""
+        return self._base_mode
+
+    @property
+    def plan_active(self) -> bool:
+        """计划开关: 开着时生效档位是 READ_ONLY, 批准后关闭回落基础档。"""
+        return self._plan_active
+
+    @property
     def active_mode(self) -> PermissionMode:
-        return self._active_mode
+        """生效档位（派生）: 计划开 → READ_ONLY, 否则基础模式。
+        authorize() 的全部判定都消费这个值——判定逻辑本身零改动。"""
+        return READ_ONLY_MODE if self._plan_active else self._base_mode
 
     def set_mode(self, mode: PermissionMode) -> Self:
-        """切换当前权限模式（运行时可随时调用，如 /mode 命令）。"""
-        self._active_mode = mode
+        """切换基础权限模式（运行时可随时调用, 如 /mode 命令）。
+        不动计划开关——两个状态相互独立。"""
+        self._base_mode = mode
+        return self
+
+    def set_plan(self, active: bool) -> Self:
+        """切换计划覆盖开关（运行时可随时调用）。开着时生效档位是
+        READ_ONLY; 关闭时生效档位回落基础模式。"""
+        self._plan_active = bool(active)
         return self
 
     def authorize(self, tool_name: str, input: str, prompter: Optional[PermissionPrompter] = None,
@@ -703,7 +734,7 @@ class PermissionPolicy:
         if (required == PermissionMode.DANGER_FULL_ACCESS
                 and tool_name in MUTATING_SHELL_TOOLS
                 and shell_command_is_read_only(tool_name, input)):
-            required = PLAN_MODE   # == READ_ONLY_MODE(1): 数值比较即放行
+            required = READ_ONLY_MODE   # (1): 数值比较即放行
 
         # 写路径分级 + bypass-immune 敏感路径检查。
         #
@@ -783,13 +814,13 @@ class PermissionPolicy:
 
         # "可升级弹问"分支（相邻档位）: 当前档差一档且目标可议时交给
         # prompter 裁决——workspace-write→DANGER(危险命令单次放行) 与
-        # plan→WORKSPACE_WRITE(present_plan 计划审批/write_file 单次放行)。
-        # 批准 present_plan 的同时把模式升级为 workspace-write 由调用方
-        # （server 的 on_plan_approved 回调 / CLI 的 /mode）负责, 授权层
-        # 只管这一次的决定。
+        # read-only→WORKSPACE_WRITE(计划覆盖生效时 present_plan 计划审批/
+        # write_file 单次放行)。批准 present_plan 的同时关闭计划开关,
+        # 生效档位回落基础模式, 由调用方（server 的 on_plan_approved
+        # 回调 / CLI 的 /mode plan）负责, 授权层只管这一次的决定。
         prompter_decides = (
             prompter is not None
-            and (current == PermissionMode.PLAN
+            and (current == READ_ONLY_MODE
                  and required == PermissionMode.WORKSPACE_WRITE)
         ) or (
             prompter is not None
@@ -798,7 +829,7 @@ class PermissionPolicy:
         )
         if prompter_decides:
             return prompter.decide(request)
-        if (current == PermissionMode.PLAN
+        if (current == READ_ONLY_MODE
                 and required == PermissionMode.WORKSPACE_WRITE):
             return PermissionResult(decision= PermissionDecision.DENY,
                                     reason= f"tool '{tool_name}' requires approval to escalate "
@@ -809,9 +840,9 @@ class PermissionPolicy:
                                     f"from {current.as_str()} to {required.as_str()}")
 
         # 其他情况: 权限不足，直接拒绝
-        # 计划模式下(典型: bash 默认 DANGER 档, PLAN→DANGER 跨两档)附带
-        # 教学指引——拒绝本身是对模型的一次纠正, 否则它不知道自己在计划
-        # 模式, 只会反复换命令撞墙
+        # 计划覆盖生效时(典型: bash 默认 DANGER 档, READ_ONLY→DANGER 跨
+        # 两档)附带教学指引——拒绝本身是对模型的一次纠正, 否则它不知道
+        # 自己在计划工作流里, 只会反复换命令撞墙
         plan_hint = (" Plan mode is active: do not execute or modify anything. "
                      "Research with read_file, then call present_plan with "
                      "your implementation plan.")
@@ -825,6 +856,6 @@ class PermissionPolicy:
         return PermissionResult(
                     decision = PermissionDecision.DENY,
                     reason = f"tool '{tool_name}' requires {required.as_str()} " 
-                    f"permission; current mode is {current.as_str()}" + (plan_hint if current == PermissionMode.PLAN else "") + shell_redirect
+                    f"permission; current mode is {current.as_str()}" + (plan_hint if current == READ_ONLY_MODE else "") + shell_redirect
                 )
 

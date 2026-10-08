@@ -279,11 +279,14 @@ def _isolate_assembly(monkeypatch):
 
 
 def test_permission_mode_override_lands_in_policy(monkeypatch, tmp_path):
+    """--permission-mode plan = 基础档 prompt + 计划开（旧值归一）。"""
     _isolate_assembly(monkeypatch)
     _, runtime, _ = main_mod._assemble(
         SessionStore(storage_dir=tmp_path), "20260926-000004",
         permission_mode_override="plan")
-    assert runtime.permission_mode() == PermissionMode.PLAN
+    assert runtime.permission_mode() == PermissionMode.READ_ONLY   # 生效档位
+    assert runtime.base_permission_mode() == PermissionMode.PROMPT
+    assert runtime.plan_active() is True
 
 
 def test_permission_mode_override_rejects_allow(monkeypatch, tmp_path):

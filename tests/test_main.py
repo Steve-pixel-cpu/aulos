@@ -122,11 +122,15 @@ def test_build_runtime_assembles_and_preserves_session():
         api_client=FakeApiClient(),
         registry=registry,
         permission_mode=PermissionMode.PROMPT,
+        plan_mode=True,   # 计划开关叠加: 生效档位 READ_ONLY, 基础档 prompt
         system_prompt=["你是助手"],
         hooks_config=RuntimeConfig(),
     )
 
     assert runtime.session() is session  # 装配点不偷换对象
+    assert runtime.base_permission_mode() == PermissionMode.PROMPT
+    assert runtime.plan_active() is True
+    assert runtime.permission_mode() == PermissionMode.READ_ONLY   # 派生效值
 
 
 # ------------------------------------------------------------

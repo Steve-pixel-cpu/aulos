@@ -34,11 +34,12 @@ const state = {
   draftInput: "",           // 草稿态未发送的输入（跟随会话切换）
   draftDir: null,           // 草稿态预选的项目目录（侧栏项目行 + 进入时带上）
   draftMode: null,          // 草稿态预选的权限模式: 建会话后先于首条消息下发
+  draftPlan: null,          // 草稿态预选的计划开关（与 draftMode 配对下发）
   serverWorkspace: null,    // 服务进程工作区名（无会话目录时的兜底展示）
   // 三设置的全局默认值（loadSettings 从 /api/settings 填充）: 无自己覆盖值的
   // 会话/草稿态, 下拉框回落到这里——否则会残留上一个会话的显示值,
   // 与该会话实际用的值不一致（用户看到的"串值"大多是这条路径）
-  globalDefaults: { permissionMode: "prompt", thinkingLevel: null, modelKey: null },
+  globalDefaults: { permissionMode: "prompt", permissionPlan: false, thinkingLevel: null, modelKey: null },
   runs: {},                 // sessionId → 运行态（多会话并行: 各自 WS/流式指针/审批）
 };
 
@@ -64,6 +65,7 @@ function runOf(id) {
       queue: [],              // 待发送消息（本轮进行中追加, 停在输入框上方卡片）
       unread: 0,              // 后台完成/待审批的未读计数
       permissionMode: null,   // 该会话生效的权限模式（mode_changed / 切会话回显）
+      planActive: false,      // 该会话的计划开关（与基础模式独立叠加）
       thinkingLevel: null,    // 该会话生效的思考等级（thinking_changed / 切会话回显）
       modelKey: null,         // 该会话生效的模型 "provider_id|model_id"（model_changed / 切会话回显）
       loaded: false,          // 历史是否已加载过（首次切入必拉）
@@ -1449,7 +1451,13 @@ function petTaskSidSaved() {
 
 function renderSessionList() {
   const list = $("session-list");
+  const booting = !list.dataset.booted;   // 首次渲染播一次入场动画
+  if (booting) list.classList.add("boot");
   list.innerHTML = "";
+  if (booting) {   // 两帧后摘标记: 本次渲染的节点播完入场, 后续重绘不再播
+    requestAnimationFrame(() => requestAnimationFrame(() => list.classList.remove("boot")));
+    list.dataset.booted = "1";
+  }
   const q = ($("search-input").value || "").trim().toLowerCase();
   // 桌宠专属会话不进任务列表: 它是悬浮输入框的对话载体, 混在用户
   // 任务里只会越积越长。会话本体照常存在(WS/轮次/落盘), 仅列表不渲染
@@ -1822,7 +1830,8 @@ async function loadSessionHistory(id) {
 async function selectSession(id) {
   saveCurrentInput();           // 切走前保存当前会话的未发送输入
   state.draft = false;
-  state.draftMode = null;       // 草稿态预选的模式作废: 不带到别的会话
+  state.draftMode = null;       // 草稿态预选的模式/计划作废: 不带到别的会话
+  state.draftPlan = null;
   state.sessionId = id;
   localStorage.setItem("xc-cur-session", id);   // 桌宠悬浮窗直连 WS 回退时用
   $("pane").classList.remove("empty-view");   // 真实会话: 输入卡回到常规底部布局
@@ -1845,11 +1854,17 @@ async function selectSession(id) {
   syncPlanPanelForActiveSession();   // 切回的会话若有未决计划: 恢复面板弹窗
   // 三设置回显: 会话运行值 → 会话列表缓存（/api/sessions 每项都带持久值/
   // 全局默认）→ 全局默认值。必须无条件 setValue: 否则下拉框残留上一个
-  // 会话的显示值, 与本会话实际用的值不一致（"跟随全局"的会话尤其如此）
+  // 会话的显示值, 与本会话实际用的值不一致（"跟随全局"的会话尤其如此）。
+  // 权限下拉 value 编码 "base|plan"（splitModeValue 解析）; 会话自己的
+  // plan 态在 run.planActive（mode_changed 维护）, 列表缓存在 s.plan_active
   {
     const s = state.sessions.find(x => x.id === id);
     const gd = state.globalDefaults;
-    modeDd.setValue(run.permissionMode || (s && s.permission_mode) || gd.permissionMode);
+    const base = run.permissionMode ? splitModeValue(run.permissionMode)[0]
+      : (s && s.permission_mode) || gd.permissionMode;
+    const plan = run.permissionMode ? splitModeValue(run.permissionMode)[1]
+      : (s && s.plan_active) || gd.permissionPlan || false;
+    modeDd.setValue(mkModeValue(base, plan));
     thinkDd.setValue(run.thinkingLevel || (s && s.thinking_level) || gd.thinkingLevel || "medium");
     const mKey = run.modelKey
       || (s && s.model_provider && s.model_id ? s.model_provider + "|" + s.model_id : null)
@@ -2039,7 +2054,10 @@ function startDraft(draftDir = null) {
   // 会话的显示值, 而首条消息实际按全局默认起跑 → 显示与实际不一致
   {
     const gd = state.globalDefaults;
-    modeDd.setValue(state.draftMode || gd.permissionMode);
+    // 草稿预选优先（模式+计划对）; 都没有才回落全局默认
+    modeDd.setValue(state.draftMode || state.draftPlan != null
+      ? mkModeValue(state.draftMode || "prompt", !!state.draftPlan)
+      : mkModeValue(gd.permissionMode, !!gd.permissionPlan));
     thinkDd.setValue(gd.thinkingLevel || "medium");
     if (gd.modelKey) modelDd.setValue(gd.modelKey);
   }
@@ -3993,12 +4011,16 @@ async function sendCurrent() {
     refreshDocTitle();
     connectWs(state.sessionId);
   }
-  // 草稿态预选的权限模式: 先于首条消息冲进 pendingSends/WS,
+  // 草稿态预选的权限模式/计划开关: 先于首条消息冲进 pendingSends/WS,
   // onopen 按序发送保证服务端在建会话首条消息前就切好模式
-  if (state.draftMode) {
-    myRun.permissionMode = state.draftMode;
-    sendWs({ type: "set_permission_mode", mode: state.draftMode });
+  if (state.draftMode || state.draftPlan != null) {
+    const base = state.draftMode || "prompt";
+    const plan = !!state.draftPlan;
+    myRun.permissionMode = mkModeValue(base, plan);
+    myRun.planActive = plan;
+    sendWs({ type: "set_permission_mode", mode: base, plan });
     state.draftMode = null;
+    state.draftPlan = null;
   }
   sendWs({ type: "user", text, attachments, workdir: firstWorkdir, qid });
 }
@@ -4359,7 +4381,15 @@ function makeDropdown(trigger, opts) {
   let pop = null, onDocClick = null, onKey = null;
 
   function syncLabel() {
-    const it = items.find(i => i.value === value);
+    // labelFor 钩子（modeDd 的组合态文案）: value 是复合编码
+    // "基础档|计划态", 不对应任何单一菜单项, 文案由调用方组合渲染
+    if (opts.labelFor) {
+      trigger.querySelector(".dd-label").textContent = opts.labelFor(value);
+      return;
+    }
+    // items 可为函数（modeDd 的动态菜单）: label 由调用方的渲染器给出
+    const view = typeof items === "function" ? items(value) : items;
+    const it = view.find(i => i.value === value);
     // 未命中时显示键的 model 段而非原始 provider|model（值被改名/删除后
     // 的过渡态）: 前半段是内部供应商 id, 整段铺出来用户看到的就是"乱码"
     const text = it ? it.label
@@ -4380,14 +4410,26 @@ function makeDropdown(trigger, opts) {
     value = v; syncLabel(); close();
     if (changed && opts.onChange) opts.onChange(v);
   }
+  function renderPop() {
+    // 返回本次弹层的菜单项视图: modeDd 传入动态函数——计划开关行显示
+    // 当前会话/草稿态的 plan 状态（勾号 + 文案）, 基础模式行打基础勾
+    return typeof items === "function" ? items(value) : items;
+  }
   function open() {
     if (pop) { close(); return; }
+    const view = renderPop();
     pop = document.createElement("div");
-    pop.className = "dd-pop" + (items.some(i => i.desc) ? " rich" : "");
-    for (const it of items) {
+    pop.className = "dd-pop" + (view.some(i => i.desc) ? " rich" : "");
+    for (const it of view) {
+      if (it.sep) {
+        const s = document.createElement("div");
+        s.className = "dd-sep";
+        pop.appendChild(s);
+        continue;
+      }
       const o = document.createElement("button");
       o.type = "button";
-      o.className = "dd-opt" + (it.desc ? " rich" : "") + (it.value === value ? " on" : "");
+      o.className = "dd-opt" + (it.desc ? " rich" : "") + (it.on ? " on" : "");
       o.innerHTML = '<span class="dd-check">' + CHECK_SVG + '</span>'
         + (it.icon ? '<span class="dd-ico">' + it.icon + '</span>' : '')
         + '<span class="dd-col"><span class="dd-txt"></span>'
@@ -4433,9 +4475,9 @@ const ICON_MODE_EYE = '<svg width="15" height="15" viewBox="0 0 24 24" fill="non
 const ICON_MODE_HAND = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 12.5V5.5a1.5 1.5 0 013 0V11m0-5.5v-1a1.5 1.5 0 013 0V11m0-4.5a1.5 1.5 0 013 0V12m-9 .5l-2.4-2.2c-.9-.8-2.2-.4-2.5.8-.1.5 0 1 .3 1.4L10 19c1 1.3 2.3 2 4.2 2 3.2 0 4.8-2 4.8-5v-3.5"/></svg>';
 const ICON_MODE_PENCIL = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l4.5-1L20 7.5 16.5 4 5 15.5 4 20z"/></svg>';
 const ICON_MODE_SHIELD = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 2.8v5.4c0 4.4-2.9 7.8-7 9.8-4.1-2-7-5.4-7-9.8V5.8L12 3z"/></svg>';
+// 基础权限模式: 三档。"计划"不是档位而是叠加开关（顶部分隔的开关行）,
+// 生效时表现为只读 + 计划工作流, 批准后回落基础档。
 const MODE_ITEMS = [
-  { value: "plan", label: "计划模式", icon: ICON_MODE_PLAN,
-    desc: "先研究并给出计划，批准后自动开始实施。" },
   { value: "prompt", label: "每次询问", icon: ICON_MODE_HAND,
     desc: "改动前先征求我的意见。" },
   { value: "workspace-write", label: "自动编辑", icon: ICON_MODE_PENCIL,
@@ -4445,34 +4487,89 @@ const MODE_ITEMS = [
   // allow 不提供: 后端拒绝从设置/会话进入（连将来需要问的工具也一并放行,
   // 只允许 CLI REPL /mode allow 临时开启）
 ];
+const BASE_MODE_LABELS = { "prompt": "每次询问", "workspace-write": "自动编辑",
+  "danger-full-access": "完全访问" };
+// 触发按钮文案: 计划开 → 「计划 · <基础档>」; 关 → 纯基础档名
+function modeLabel(base, plan) {
+  return plan ? "计划 · " + (BASE_MODE_LABELS[base] || base)
+              : (BASE_MODE_LABELS[base] || base);
+}
+// 动态菜单视图: items 为函数时, open() 每次展开重新取——计划行的
+// 勾号/文案反映当下 plan 状态, 基础模式行打基础勾（两态独立）。
+// 每行 value 都用复合编码保住当前计划态: 点基础档行只换基础档,
+// 不会把计划开关悄悄带成 false。
+function modeMenuItems(value) {
+  const [base, plan] = splitModeValue(value);
+  return [
+    { value: mkModeValue(base, !plan), label: plan ? "计划模式（开）" : "计划模式",
+      icon: ICON_MODE_PLAN, on: plan,
+      desc: "先研究并给出计划，批准后回到基础模式。" },
+    { sep: true },
+    ...MODE_ITEMS.map(it => ({
+      ...it, value: mkModeValue(it.value, plan), on: it.value === base,
+    })),
+  ];
+}
+// 下拉框的 value 编码: "prompt|1" = 基础档 prompt + 计划开。
+// 单字符串模式名是旧形态（无计划态）, splitModeValue 兼容。
+function mkModeValue(base, plan) { return base + (plan ? "|1" : "|0"); }
+function splitModeValue(v) {
+  if (typeof v === "string" && v.includes("|")) {
+    const [b, p] = v.split("|");
+    return [b, p === "1"];
+  }
+  return [v, false];
+}
+const modeDd = makeDropdown($("sel-mode"), {
+  items: modeMenuItems, value: "prompt|0",
+  // 触发按钮文案: value 是复合编码（"prompt|1"）, 不对应单一菜单项,
+  // 走组合渲染——「计划 · 每次询问」/「每次询问」。没有这个钩子,
+  // syncLabel 会落到 provider|model 的兜底分支, 把计划态显示成 "0"
+  labelFor: v => modeLabel(...splitModeValue(v)),
+  onChange: v => {
+    // 会话级: 切的是当前会话的模式（全局默认值在设置页改, 是新会话初值）。
+    // 菜单两行互不相扰: 点计划行 = 翻转 plan、基础档不变; 点基础档行 =
+    // 换基础档、plan 不变（服务端同语义: mode/plan 字段缺省 = 不变）
+    const [base, plan] = splitModeValue(v);
+    const run = curRun();
+    if (run) {
+      const [curBase, curPlan] = splitModeValue(run.permissionMode || "prompt|0");
+      const patch = {};
+      if (base !== curBase) patch.mode = base;
+      if (plan !== curPlan) patch.plan = plan;
+      run.permissionMode = v;
+      if (Object.keys(patch).length) {
+        sendWs({ type: "set_permission_mode", ...patch });
+      }
+    } else {
+      // 草稿态: 暂存, 建会话后先于首条消息下发（sendCurrent）
+      state.draftMode = base;
+      state.draftPlan = plan;
+    }
+  },
+});
 const THINK_ITEMS = [
   { value: "low", label: "低" },
   { value: "medium", label: "中" },
   { value: "high", label: "高" },
   { value: "max", label: "最高" },
 ];
-const modeDd = makeDropdown($("sel-mode"), {
-  items: MODE_ITEMS, value: "prompt",
-  onChange: v => {
-    // 会话级: 切的是当前会话的模式（全局默认值在设置页改, 是新会话初值）
-    const run = curRun();
-    if (run) {
-      run.permissionMode = v;
-      sendWs({ type: "set_permission_mode", mode: v });
-    } else {
-      // 草稿态: 暂存, 建会话后先于首条消息下发（sendCurrent）
-      state.draftMode = v;
-    }
-  },
-});
 function onModeChanged(msg, sid) {
   const run = runOf(sid);
-  run.permissionMode = msg.permission_mode;
+  // 服务端回包: 基础模式 + plan 开关双状态, 编码进下拉框 value
+  run.permissionMode = mkModeValue(msg.permission_mode, !!msg.plan_active);
+  run.planActive = !!msg.plan_active;
   // 列表缓存同步: 否则下次 renderSessionList/loadSessions 会用旧值,
   // 切会话时下拉框停留在别的会话的模式上（看起来像串了）
   const s = state.sessions.find(x => x.id === sid);
-  if (s) s.permission_mode = msg.permission_mode;
-  if (sid === state.sessionId) modeDd.setValue(msg.permission_mode);
+  if (s) {
+    s.permission_mode = msg.permission_mode;
+    s.plan_active = !!msg.plan_active;
+  }
+  if (sid === state.sessionId) {
+    modeDd.setValue(run.permissionMode);
+    if (typeof renderDraftChrome === "function") renderDraftChrome();   // 草稿条随 plan 态刷新
+  }
 }
 const thinkDd = makeDropdown($("sel-thinking"), {
   items: THINK_ITEMS, value: "medium",
@@ -4525,11 +4622,12 @@ async function loadSettings() {
     state.providerCfg = await pr.json();
     loadUtilityProvider();   // side-call 小模型设置（下拉项依赖供应商列表）
     syncModelDropdown(s.provider_id, s.model_id);
-    modeDd.setValue(s.permission_mode);
+    modeDd.setValue(mkModeValue(s.permission_mode || "prompt", !!s.permission_plan));
     thinkDd.setValue(s.thinking_level);
     // 全局默认值快照: 供切会话/草稿态回显兜底（见 state.globalDefaults 注释）
     state.globalDefaults = {
       permissionMode: s.permission_mode || "prompt",
+      permissionPlan: !!s.permission_plan,
       thinkingLevel: s.thinking_level || null,
       modelKey: s.provider_id && s.model_id ? s.provider_id + "|" + s.model_id : null,
     };
@@ -4850,6 +4948,21 @@ function syncBgLayers() {
 /* 启动装载: 本地标记开启才发请求拿壁纸（版本号稍后由 /api/settings 校准,
  * 校准值若不同, loadSettings 里会再跑一遍本函数换新地址） */
 syncBgLayers();
+/* 自动取色: localStorage 只有 hex 无图（持久化的原始图不落前端）,
+ * 开关开启且缺 hex 时拉一次壁纸现算。setTimeout 延到脚本求值完成后:
+ * ACCENT_AUTO_* 常量声明在文件后部, 此处直接引用会踩 TDZ */
+setTimeout(() => {
+  if (accentAutoOn() && bgPref() && bgVer > 0 && !localStorage.getItem(ACCENT_AUTO_HEX_KEY)) {
+    const img = new Image();
+    img.onload = () => {
+      const cv = document.createElement("canvas");
+      cv.width = img.naturalWidth; cv.height = img.naturalHeight;
+      cv.getContext("2d").drawImage(img, 0, 0);
+      try { refreshAutoAccent(cv.toDataURL("image/png")); } catch (e) { /* 同源外图片: 静默 */ }
+    };
+    img.src = bgUrl();
+  }
+}, 0);
 
 $("btn-bg-upload").onclick = () => $("bg-file").click();
 $("bg-file").addEventListener("change", () => {
@@ -4874,6 +4987,7 @@ $("bg-file").addEventListener("change", () => {
       bgVer = (await r.json()).ver;
       localStorage.setItem(BG_KEY, "1");   // 上传即启用
       syncBgLayers();
+      if (accentAutoOn()) refreshAutoAccent(data);   // 壁纸自动取色
       toast("背景已更新");
     } catch (e) { toast("背景更新失败: " + e.message); }
   };
@@ -4890,6 +5004,7 @@ $("btn-bg-clear").onclick = async () => {
     bgVer = 0;
     localStorage.removeItem(BG_KEY);
     syncBgLayers();
+    refreshAutoAccent(null);   // 壁纸已清: 自动取色失效, 回落手动强调色
     toast("已清除背景图");
   } catch (e) { toast("清除失败: " + e.message); }
 };
@@ -5151,10 +5266,14 @@ async function saveSettings(patch) {
     }
     const s = await r.json();
     thinkDd.setValue(s.thinking_level);
-    if (!state.sessionId) modeDd.setValue(s.permission_mode);   // 草稿态: 无会话, 显示全局默认
+    // 草稿态: 无会话, 显示全局默认（基础模式 + 计划开关双状态）
+    if (!state.sessionId) {
+      modeDd.setValue(mkModeValue(s.permission_mode || "prompt", !!s.permission_plan));
+    }
     // 草稿态下 REST 修改的全局默认, 同步进快照（切会话/下次进草稿的兜底值）
     if (s.thinking_level != null) state.globalDefaults.thinkingLevel = s.thinking_level;
     if (s.permission_mode) state.globalDefaults.permissionMode = s.permission_mode;
+    if (s.permission_plan != null) state.globalDefaults.permissionPlan = !!s.permission_plan;
     if (s.max_iterations != null) $("set-max-iter").value = String(s.max_iterations);
     if (s.provider_id && s.model_id) {
       state.globalDefaults.modelKey = s.provider_id + "|" + s.model_id;
@@ -5203,6 +5322,100 @@ const styleDd = makeDropdown($("sel-style"), {
   },
 });
 applyStyle();
+
+/* ---------- 代码高亮主题: 默认跟随深浅主题, 或指定一套预设配色 ---------- */
+const HL_KEY = "xc-hl";
+function hlPref() { return localStorage.getItem(HL_KEY) || "auto"; }
+function applyHl() {
+  const de = document.documentElement, v = hlPref();
+  if (v === "auto") delete de.dataset.hl;
+  else de.dataset.hl = v;
+}
+const HL_ITEMS = [
+  { value: "auto", label: "跟随主题" },
+  { value: "onedark", label: "One Dark" },
+  { value: "dracula", label: "Dracula" },
+  { value: "monokai", label: "Monokai" },
+  { value: "github-light", label: "GitHub Light" },
+  { value: "solarized-light", label: "Solarized Light" },
+];
+const hlDd = makeDropdown($("sel-hl"), {
+  items: HL_ITEMS, value: hlPref(),
+  onChange: v => { localStorage.setItem(HL_KEY, v); applyHl(); },
+});
+applyHl();
+
+/* ---------- 聊天密度: 缩放聊天区垂直间距（--density 令牌） ---------- */
+const DENSITY_KEY = "xc-density";
+function densityPref() { return localStorage.getItem(DENSITY_KEY) || "comfortable"; }
+function applyDensity() {
+  const de = document.documentElement, v = densityPref();
+  if (v === "comfortable") delete de.dataset.density;
+  else de.dataset.density = v;
+}
+const DENSITY_ITEMS = [
+  { value: "compact", label: "紧凑" },
+  { value: "comfortable", label: "舒适" },
+  { value: "cozy", label: "宽松" },
+];
+const densityDd = makeDropdown($("sel-density"), {
+  items: DENSITY_ITEMS, value: densityPref(),
+  onChange: v => { localStorage.setItem(DENSITY_KEY, v); applyDensity(); },
+});
+applyDensity();
+
+/* ---------- 禅模式: 隐藏侧栏专注对话; 左缘热区悬停临时唤出侧栏 ---------- */
+const ZEN_KEY = "xc-zen";
+function zenPref() { return localStorage.getItem(ZEN_KEY) === "1"; }
+function applyZen() {
+  const de = document.documentElement;
+  if (zenPref()) de.dataset.zen = "1";
+  else { delete de.dataset.zen; $("sidebar").classList.remove("zen-peek"); }
+  syncZenUi();
+}
+/* 禅模式的入口与回显: 按钮仅聊天视图显示（设置页有自己的开关下拉）,
+ * 悬浮态 zen-peek 由热区悬停驱动, 与持久化开关互不影响 */
+function syncZenUi() {
+  const view = $("pane").dataset.view;
+  $("btn-zen").style.display = (view !== "settings" && view !== "onboarding") ? "" : "none";
+  if (window.__zenDd) window.__zenDd.setValue(zenPref() ? "1" : "0");
+}
+const zenDd = makeDropdown($("sel-zen"), {
+  items: [{ value: "0", label: "关" }, { value: "1", label: "开" }],
+  value: zenPref() ? "1" : "0",
+  onChange: v => {
+    localStorage.setItem(ZEN_KEY, v === "1" ? "1" : "0");
+    applyZen();
+  },
+});
+window.__zenDd = zenDd;
+$("btn-zen").onclick = () => {
+  localStorage.setItem(ZEN_KEY, zenPref() ? "0" : "1");
+  applyZen();
+};
+/* 左缘热区: 悬停弹出真实侧栏（zen-peek 悬浮态）, 移出侧栏延时收回。
+ * 延时防误关: 指针从侧栏滑向其内的弹层/滚动条时不立即消失。 */
+(() => {
+  const hz = $("zen-hotzone"), sb = $("sidebar");
+  let hideTimer = null;
+  hz.addEventListener("mouseenter", () => {
+    clearTimeout(hideTimer);
+    if (zenPref()) sb.classList.add("zen-peek");
+  });
+  sb.addEventListener("mouseleave", () => {
+    if (!zenPref()) return;
+    hideTimer = setTimeout(() => sb.classList.remove("zen-peek"), 260);
+  });
+})();
+/* 全局快捷键 Ctrl+Alt+Z 切换禅模式 */
+document.addEventListener("keydown", ev => {
+  if ((ev.ctrlKey || ev.metaKey) && ev.altKey && ev.key.toLowerCase() === "z") {
+    ev.preventDefault();
+    localStorage.setItem(ZEN_KEY, zenPref() ? "0" : "1");
+    applyZen();
+  }
+});
+applyZen();
 
 /* ---------- 通知: 完成提示音 + 桌面通知, 开关即时生效并持久化 ---------- */
 const ONOFF_ITEMS = [{ value: "1", label: "开启" }, { value: "0", label: "关闭" }];
@@ -5263,24 +5476,127 @@ function mixHex(a, b, w) {   // w = b 的权重
   return "#" + [ch(A.r, B.r), ch(A.g, B.g), ch(A.b, B.b)]
     .map(v => v.toString(16).padStart(2, "0")).join("");
 }
+/* 由主色派生 deep/soft/border 令牌（纯函数, 自定义色与壁纸自动色共用） */
+function deriveAccentTokens(hex, isDark) {
+  const { r, g, b } = hexToRgb(hex);
+  return {
+    "--accent": hex,
+    "--accent-deep": mixHex(hex, "#000000", isDark ? 0.16 : 0.2),
+    "--accent-soft": isDark
+      ? `rgba(${r}, ${g}, ${b}, .13)`
+      : mixHex(hex, "#ffffff", 0.9),
+    "--accent-border": isDark
+      ? `rgba(${r}, ${g}, ${b}, .36)`
+      : mixHex(hex, "#ffffff", 0.74),
+  };
+}
 /* 自定义颜色: 由主色派生 deep/soft/border（深浅主题各自规则），内联覆盖令牌 */
 function applyAccentVars() {
   const st = document.documentElement.style;
-  if (accentPref() !== "custom") {
+  const hex = effectiveAccentHex();
+  if (!hex) {   // 无自定义色（预设/默认灰）: 移除内联, 让 CSS 预设生效
     ["--accent", "--accent-deep", "--accent-soft", "--accent-border"]
       .forEach(p => st.removeProperty(p));
     return;
   }
-  const c = customAccent();
-  const { r, g, b } = hexToRgb(c);
-  const dark = document.documentElement.dataset.theme === "dark";
-  st.setProperty("--accent", c);
-  st.setProperty("--accent-deep", mixHex(c, "#000000", dark ? 0.16 : 0.2));
-  st.setProperty("--accent-soft",
-    dark ? `rgba(${r}, ${g}, ${b}, .13)` : mixHex(c, "#ffffff", 0.9));
-  st.setProperty("--accent-border",
-    dark ? `rgba(${r}, ${g}, ${b}, .36)` : mixHex(c, "#ffffff", 0.74));
+  const isDark = document.documentElement.dataset.theme === "dark";
+  const tokens = deriveAccentTokens(hex, isDark);
+  for (const k in tokens) st.setProperty(k, tokens[k]);
 }
+/* 当前生效的自定义主色: 壁纸自动色（开启且可用）优先于手动自定义 */
+function effectiveAccentHex() {
+  if (accentAutoOn()) {
+    const auto = localStorage.getItem(ACCENT_AUTO_HEX_KEY);
+    if (auto) return auto;
+  }
+  return accentPref() === "custom" ? customAccent() : null;
+}
+/* ---------- 壁纸自动取色: canvas 采样 + 色相桶统计, 与手动强调色并存 ---------- */
+const ACCENT_AUTO_KEY = "xc-accent-auto";
+const ACCENT_AUTO_HEX_KEY = "xc-accent-auto-hex";
+function accentAutoOn() { return localStorage.getItem(ACCENT_AUTO_KEY) === "1"; }
+/* 从 dataURL 提取代表色: 72px 缩样 → 按 24 个色相桶统计
+ * 得分 = 像素量 × 饱和度²（偏爱浓色, 压制灰底）, 滤掉近黑/近白/近灰,
+ * 取最高分桶的代表色并整定到舒适明度/饱和度。失败返回 null。 */
+function extractAccentFromDataUrl(dataUrl, cb) {
+  try {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const S = 72;
+        const cv = document.createElement("canvas");
+        cv.width = S; cv.height = S;
+        const ctx = cv.getContext("2d", { willReadFrequently: true });
+        if (!ctx) return cb(null);
+        ctx.drawImage(img, 0, 0, S, S);
+        const d = ctx.getImageData(0, 0, S, S).data;
+        const buckets = Array.from({ length: 24 }, () => ({ w: 0, r: 0, g: 0, b: 0 }));
+        for (let i = 0; i < d.length; i += 4) {
+          const r = d[i], g = d[i + 1], b = d[i + 2];
+          const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+          const v = mx / 255, s = mx ? (mx - mn) / mx : 0;
+          if (v < .16 || v > .94 || s < .18) continue;   // 近黑/近白/近灰不要
+          let h = 0;
+          if (mx !== mn) {
+            const df = mx - mn;
+            if (mx === r) h = ((g - b) / df + 6) % 6;
+            else if (mx === g) h = (b - r) / df + 2;
+            else h = (r - g) / df + 4;
+          }
+          const idx = Math.min(23, Math.floor(h * 4));
+          const bk = buckets[idx];
+          bk.w += s * s; bk.r += r; bk.g += g; bk.b += b;
+        }
+        let best = -1, bestW = 0;
+        buckets.forEach((bk, i) => { if (bk.w > bestW) { bestW = bk.w; best = i; } });
+        if (best < 0 || bestW <= 0) return cb(null);
+        const bk = buckets[best];
+        let { r, g, b } = { r: bk.r / bk.w, g: bk.g / bk.w, b: bk.b / bk.w };
+        // RGB → HSL 整定: 饱和度钳到 .45-.8, 明度按深浅主题定档
+        const mx = Math.max(r, g, b) / 255, mn = Math.min(r, g, b) / 255;
+        const l0 = (mx + mn) / 2, s0 = mx === mn ? 0 : (mx - mn) / (1 - Math.abs(2 * l0 - 1));
+        const h = bkToHue(best);
+        const s = Math.min(.8, Math.max(.45, s0));
+        const dark = document.documentElement.dataset.theme === "dark";
+        const l = dark ? Math.min(.72, Math.max(.58, l0)) : Math.min(.48, Math.max(.34, l0));
+        cb(hslToHex(h, s, l));
+      } catch (e) { cb(null); }
+    };
+    img.onerror = () => cb(null);
+    img.src = dataUrl;
+  } catch (e) { cb(null); }
+}
+function bkToHue(idx) { return (idx + .5) / 24 * 360; }
+function hslToHex(h, s, l) {
+  const f = n => {
+    const k = (n + h / 30) % 12;
+    const a = s * Math.min(l, 1 - l);
+    const c = l - a * Math.max(-1, Math.min(k - 3, Math.min(9 - k, 1)));
+    return Math.round(255 * c).toString(16).padStart(2, "0");
+  };
+  return "#" + f(0) + f(8) + f(4);
+}
+/* 上传壁纸后重取色; 清壁纸后失效回落手动色 */
+function refreshAutoAccent(dataUrl) {
+  if (!dataUrl) { localStorage.removeItem(ACCENT_AUTO_HEX_KEY); applyAccentVars(); syncAccentSwatch(); return; }
+  extractAccentFromDataUrl(dataUrl, hex => {
+    if (!hex) return;   // 提取失败静默回落手动色
+    localStorage.setItem(ACCENT_AUTO_HEX_KEY, hex);
+    applyAccentVars();
+    syncAccentSwatch();
+  });
+}
+const accentAutoChk = $("accent-auto-chk");
+accentAutoChk.checked = accentAutoOn();
+accentAutoChk.addEventListener("change", () => {
+  localStorage.setItem(ACCENT_AUTO_KEY, accentAutoChk.checked ? "1" : "0");
+  applyAccentVars();
+  syncAccentSwatch();
+  syncAccentInput();
+  toast(accentAutoChk.checked
+    ? (localStorage.getItem(ACCENT_AUTO_HEX_KEY) ? "已启用壁纸取色" : "已开启, 上传或更换壁纸后自动取色")
+    : "已改回手动强调色");
+});
 function applyAccent() {
   const v = accentPref();
   if (v === "gray") delete document.documentElement.dataset.accent;
@@ -6163,8 +6479,7 @@ memInputEl.addEventListener("input", () => {
 });
 
 function openSettings() {
-  themeDd.setValue(themePref());   // 每次打开回显当前值
-  $("fs-ui-input").value = String(fsUiPref());
+  themeDd.setValue(themePref());   // 每次打开回显当前值  $("fs-ui-input").value = String(fsUiPref());
   $("fs-code-input").value = String(fsChatPref());
   $("bg-bright").value = String(bgBrightPref());
   $("bg-bright-val").textContent = String(bgBrightPref());
@@ -6180,10 +6495,12 @@ function openSettings() {
   loadMemories();                                 // 拉取记忆并渲染
   $("sidebar").classList.add("settings-view");
   $("pane").dataset.view = "settings";
+  syncZenUi();   // 视图切换: 禅模式按钮只在聊天视图显示
 }
 function closeSettings() {
   $("sidebar").classList.remove("settings-view");
   $("pane").dataset.view = "chat";
+  syncZenUi();
   $("input").focus();
 }
 document.querySelectorAll(".js-open-settings").forEach(b => { b.onclick = openSettings; });

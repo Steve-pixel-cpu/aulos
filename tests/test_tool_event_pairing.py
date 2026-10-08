@@ -296,12 +296,14 @@ def test_two_concurrent_sessions_no_cross_talk(client, isolated_store, monkeypat
 
 def test_policy_denied_tool_still_pairs(client, isolated_store, monkeypatch):
     """权限不足直接拒绝（不弹问）: 卡片也必须闭合, 否则前端永远"运行中"。
-    PLAN 模式下未注册要求的工具默认 DANGER 级 → 越两级, 走"直接拒绝"分支。"""
-    from permissions import PLAN_MODE
+    READ_ONLY 档（计划覆盖生效的等效档）下未注册要求的工具默认 DANGER 级
+    → 越两级, 走"直接拒绝"分支。"""
+    from permissions import READ_ONLY_MODE
     _install(monkeypatch,
              script=[_tool_turn(("d-1", "echo_test", "{}")), _text_turn()],
              tool_results={})
-    monkeypatch.setattr(server.app_state, "_mode", PLAN_MODE)
+    monkeypatch.setattr(server.app_state, "_mode", READ_ONLY_MODE)
+    monkeypatch.setattr(server.app_state, "plan_active", True)
     with ws_connect(client, "s-deny") as ws:
         sid = "s-deny"
         ws.send_json({"type": "user", "text": "跑一个会被拒的工具"})
@@ -343,9 +345,9 @@ def test_mixed_batch_denied_and_executed_all_pair(client, isolated_store, monkey
     """同一批 tool_use: 一个被策略拒绝 + 两个放行执行——三张卡全部闭合,
     id 各归各（这是 FIFO 补 id 会错位的场景）。
 
-    PLAN 模式: echo_test 显式注册为 PLAN 级（放行执行）;
+    READ_ONLY 档: echo_test 显式注册为 READ_ONLY 级（放行执行）;
     need_danger 不注册 → 默认 DANGER 级 → 越两级直接拒绝。"""
-    from permissions import PLAN_MODE
+    from permissions import READ_ONLY_MODE
     _install(monkeypatch,
              script=[
                  _tool_turn(("m-denied", "need_danger", "{}"),
@@ -354,11 +356,12 @@ def test_mixed_batch_denied_and_executed_all_pair(client, isolated_store, monkey
                  _text_turn(),
              ],
              tool_results={})
-    monkeypatch.setattr(server.app_state, "_mode", PLAN_MODE)
+    monkeypatch.setattr(server.app_state, "_mode", READ_ONLY_MODE)
+    monkeypatch.setattr(server.app_state, "plan_active", True)
     real_build = server.build_runtime
     def patched_build(**kwargs):
         rt = real_build(**kwargs)
-        rt._permission_policy.with_tool_requirement("echo_test", PLAN_MODE)
+        rt._permission_policy.with_tool_requirement("echo_test", READ_ONLY_MODE)
         return rt
     monkeypatch.setattr(server, "build_runtime", patched_build)
     with ws_connect(client, "s-mix") as ws:

@@ -407,7 +407,7 @@ def TOOL_REQUIREMENTS_FIXTURE():
     """与 main.TOOL_REQUIREMENTS 同源的最小档位登记(避免测试依赖 main 导入)。"""
     return {"write_file": PermissionMode.WORKSPACE_WRITE,
             "edit_file": PermissionMode.WORKSPACE_WRITE,
-            "read_file": PermissionMode.PLAN}
+            "read_file": PermissionMode.READ_ONLY}
 
 
 # ------------------------------------------------------------

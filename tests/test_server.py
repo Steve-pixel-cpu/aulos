@@ -75,10 +75,13 @@ def test_settings_permission_mode_validation(client):
     r = tc.post("/api/settings", json={"permission_mode": "no-such-mode"})
     assert r.status_code == 400
 
+    # "plan"/"read-only" 是旧版并列模式时代的值: 归一为基础模式 prompt
+    # + 计划开（全局默认里的 permission_plan 字段）
     tc = TestClient(server.app)
-    r = tc.post("/api/settings", json={"permission_mode": "read-only"})   # 旧名
+    r = tc.post("/api/settings", json={"permission_mode": "read-only"})
     assert r.status_code == 200
-    assert r.json()["permission_mode"] == "plan"   # 归一为 plan
+    assert r.json()["permission_mode"] == "prompt"   # 基础模式归一
+    assert r.json()["permission_plan"] is True       # 计划开关替它表达只读
 
 
 def test_get_messages_returns_empty_for_unknown_session(client):
@@ -921,9 +924,11 @@ def test_settings_permission_mode_persist_merges_existing_keys(settings_file):
         {"providers": [], "activeProvider": {"provider": "p", "model": "m"}},
         ensure_ascii=False), encoding="utf-8")
     tc = TestClient(server.app)
-    tc.post("/api/settings", json={"permission_mode": "workspace-write"})
+    tc.post("/api/settings", json={"permission_mode": "workspace-write",
+                                   "permission_plan": True})
     data = _json.loads(settings_file.read_text(encoding="utf-8"))
     assert data["permissionMode"] == "workspace-write"
+    assert data["permissionPlan"] is True   # 计划开关全局默认同步持久
     assert data["activeProvider"] == {"provider": "p", "model": "m"}   # 原有 key 保留
 
 
@@ -954,7 +959,8 @@ def test_settings_permission_mode_unwritable_degrades(settings_file, monkeypatch
     tc = TestClient(server.app)
     r = tc.post("/api/settings", json={"permission_mode": "read-only"})   # 旧名
     assert r.status_code == 200
-    assert r.json()["permission_mode"] == "plan"   # 归一为 plan   # 请求不受影响
+    assert r.json()["permission_mode"] == "prompt"   # 归一为基础模式
+    assert r.json()["permission_plan"] is True   # 请求不受影响
     assert not real_write_text(settings_file, "", encoding="utf-8") or True
 
 
@@ -1003,17 +1009,20 @@ def test_settings_max_iterations_invalid_rejected(settings_file):
 # ------------------------------------------------------------
 
 def test_ws_set_permission_mode_session_scoped(client, isolated_store):
-    """切 A 会话的模式不影响 B; 广播带 mode_changed。"""
+    """切 A 会话的模式不影响 B; 广播带 mode_changed（含 plan_active）。"""
     a = server.get_or_create_web_session("s-mode-a")
     b = server.get_or_create_web_session("s-mode-b")
     a.permission_mode = server.NAME_TO_MODE["prompt"]
     b.permission_mode = server.NAME_TO_MODE["prompt"]
+    a.plan_active = False   # 隔离其他用例改过的全局默认
+    b.plan_active = False
     try:
         with ws_connect(client, "s-mode-a") as ws:
             ws.send_json({"type": "set_permission_mode", "mode": "workspace-write"})
             reply = json.loads(ws.receive_text())
             assert reply["type"] == "mode_changed"
             assert reply["permission_mode"] == "workspace-write"
+            assert reply["plan_active"] is False
         assert a.permission_mode == server.PermissionMode.WORKSPACE_WRITE
         assert b.permission_mode == server.PermissionMode.PROMPT   # B 不受影响
     finally:
@@ -1034,24 +1043,30 @@ def test_ws_set_permission_mode_allow_rejected(client, isolated_store):
 
 
 def test_ws_set_permission_mode_applies_to_running_runtime(client, isolated_store):
-    """会话 runtime 已存在时, 切模式立即作用到 runtime（本轮即生效）。"""
+    """会话 runtime 已存在时, 切计划开关立即作用到 runtime（本轮即生效）。"""
     web_session = server.get_or_create_web_session("s-mode-rt")
     web_session.permission_mode = server.NAME_TO_MODE["prompt"]
 
     class _Rt:
         def __init__(self):
             self.modes = []
+            self.plans = []
         def set_permission_mode(self, m):
             self.modes.append(m)
+        def set_plan_mode(self, active):
+            self.plans.append(active)
 
     web_session.runtime = _Rt()
     try:
         with ws_connect(client, "s-mode-rt") as ws:
-            ws.send_json({"type": "set_permission_mode", "mode": "read-only"})   # 旧名
+            # 旧名 "read-only": 归一为"计划开、基础模式不变"
+            ws.send_json({"type": "set_permission_mode", "mode": "read-only"})
             reply = json.loads(ws.receive_text())
             assert reply["type"] == "mode_changed"
-            assert reply["permission_mode"] == "plan"
-        assert web_session.runtime.modes == [server.PermissionMode.PLAN]
+            assert reply["permission_mode"] == "prompt"   # 基础模式不变
+            assert reply["plan_active"] is True
+        assert web_session.runtime.modes == []   # 基础模式没动
+        assert web_session.runtime.plans == [True]   # 计划开关打开
     finally:
         server._sessions.clear()
 
@@ -1069,7 +1084,69 @@ def test_settings_permission_mode_only_changes_default(client, isolated_store):
         r = tc.post("/api/settings", json={"permission_mode": "read-only"})
         assert r.status_code == 200
         assert web_session.permission_mode == server.PermissionMode.PROMPT
-        assert server.app_state.permission_mode == server.PermissionMode.PLAN
+        # 全局默认: 基础模式归一 prompt, 计划开关替旧"只读模式"表达
+        assert server.app_state.permission_mode == server.PermissionMode.PROMPT
+        assert server.app_state.plan_active is True
+    finally:
+        server._sessions.clear()
+
+
+def test_ws_set_permission_mode_plan_field(client, isolated_store):
+    """plan 字段 = 计划开关（缺省不变）: 与 mode 相互独立, 可单独或同时发。"""
+    web_session = server.get_or_create_web_session("s-mode-plan")
+    web_session.permission_mode = server.NAME_TO_MODE["prompt"]
+
+    class _Rt:
+        def __init__(self):
+            self.modes = []
+            self.plans = []
+        def set_permission_mode(self, m):
+            self.modes.append(m)
+        def set_plan_mode(self, active):
+            self.plans.append(active)
+
+    web_session.runtime = _Rt()
+    try:
+        with ws_connect(client, "s-mode-plan") as ws:
+            # 只翻计划开关: 基础模式不变
+            ws.send_json({"type": "set_permission_mode", "plan": True})
+            reply = json.loads(ws.receive_text())
+            assert reply["permission_mode"] == "prompt"
+            assert reply["plan_active"] is True
+            assert web_session.runtime.modes == []
+            assert web_session.runtime.plans == [True]
+            # 只换基础模式: 计划开关保持开
+            ws.send_json({"type": "set_permission_mode", "mode": "workspace-write"})
+            reply = json.loads(ws.receive_text())
+            assert reply["permission_mode"] == "workspace-write"
+            assert reply["plan_active"] is True   # plan 未动
+            assert web_session.runtime.modes == [server.PermissionMode.WORKSPACE_WRITE]
+            assert web_session.runtime.plans == [True]   # 没有重复 set_plan
+            # 关掉计划开关
+            ws.send_json({"type": "set_permission_mode", "plan": False})
+            reply = json.loads(ws.receive_text())
+            assert reply["plan_active"] is False
+        # 持久化: 基础模式 + 计划开关都随会话记录
+        assert isolated_store.get_permission_mode("s-mode-plan") == \
+            ("workspace-write", False)
+    finally:
+        server._sessions.clear()
+
+
+def test_settings_permission_plan_roundtrip(client, isolated_store, settings_file, monkeypatch):
+    """计划开关全局默认: GET 回显 / POST 持久化 / 新会话继承。"""
+    import json as _json
+    monkeypatch.setattr(server.app_state, "plan_active", False)   # 隔离其他用例的污染
+    tc = TestClient(server.app)
+    assert tc.get("/api/settings").json()["permission_plan"] is False
+    tc.post("/api/settings", json={"permission_plan": True})
+    assert tc.get("/api/settings").json()["permission_plan"] is True
+    assert _json.loads(settings_file.read_text(encoding="utf-8"))["permissionPlan"] is True
+    # 新会话初值 = 全局默认（基础模式 + 计划开）
+    ws_new = server.get_or_create_web_session("s-plan-inherit")
+    try:
+        assert ws_new.permission_mode == server.PermissionMode.PROMPT
+        assert ws_new.plan_active is True
     finally:
         server._sessions.clear()
 

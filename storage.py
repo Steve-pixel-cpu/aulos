@@ -39,9 +39,14 @@ class WorkdirRecord(BaseModel):
 
 class PermissionModeRecord(BaseModel):
     """权限模式记录: 会话级隔离的持久化。追加式取最新一条;
-    没有记录的会话回落全局默认（app_state）。"""
+    没有记录的会话回落全局默认（app_state）。
+    mode 是基础权限模式名（MODE_TO_NAME 的值）; plan 是计划开关,
+    与基础模式独立叠加。旧记录（引入 plan 字段之前）缺 plan → False;
+    旧数据里 mode="plan"/"read-only" 的读取时归一为 ("prompt", True)——
+    见 get_permission_mode。"""
     type: Literal["permission_mode"] = "permission_mode"
     mode: str
+    plan: bool = False
     timestamp: str
 
 
@@ -241,23 +246,32 @@ class SessionStore:
                 latest = entry.workdir
         return latest
 
-    def set_permission_mode(self, session_id: str, mode: str) -> None:
-        """追加一条权限模式记录（会话级隔离的持久化）。mode 为模式名
-        （MODE_TO_NAME 的值, 如 "plan"）; 非法值由调用方校验。"""
+    def set_permission_mode(self, session_id: str, mode: str,
+                            plan: bool = False) -> None:
+        """追加一条权限模式记录（会话级隔离的持久化）。mode 为基础权限
+        模式名（MODE_TO_NAME 的值）; plan 为计划开关。非法值由调用方校验。"""
         record = PermissionModeRecord(
             mode=mode,
+            plan=bool(plan),
             timestamp=datetime.now(timezone.utc).isoformat(),
         )
         self._append_entry(self._session_path(session_id), record)
 
-    def get_permission_mode(self, session_id: str) -> Optional[str]:
-        """返回会话权限模式名; 没有记录返回 None（调用方回落全局默认）。"""
+    def get_permission_mode(self, session_id: str) -> tuple:
+        """返回 (基础权限模式名, 计划开关); 没有记录返回 (None, False)
+        （调用方回落全局默认）。旧数据归一在此单一收口:
+        mode="plan"/"read-only"（只读模式时代的记录——当时计划是并列
+        模式）→ ("prompt", True): 基础模式回落 prompt, 计划开关保持开。"""
         entries = self._read_entries(self._session_path(session_id))
-        latest: Optional[str] = None
+        latest: Optional[PermissionModeRecord] = None
         for entry in entries:
             if isinstance(entry, PermissionModeRecord):
-                latest = entry.mode
-        return latest
+                latest = entry
+        if latest is None:
+            return None, False
+        if latest.mode in ("plan", "read-only"):
+            return "prompt", True
+        return latest.mode, bool(latest.plan)
 
     def set_model(self, session_id: str, provider_id: Optional[str],
                   model_id: Optional[str]) -> None:
