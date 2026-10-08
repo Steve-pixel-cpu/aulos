@@ -106,7 +106,6 @@ from models import (
 from permissions import (
     ALLOW_MODE,
     MODE_TO_NAME,
-    WORKSPACE_WRITE_MODE,
     NAME_TO_MODE,
     PermissionDecision,
     PermissionMode,
@@ -771,10 +770,15 @@ class WebSession:
         self.workdir = store.get_workdir(session_id)  # 会话工作目录（项目）
         # 会话级思考等级: 初值取全局默认; 切换只影响本会话（runtime 注入）
         self.thinking_level = runtime_config.thinking_level()
-        # 会话级权限模式: 持久值优先（重启不丢）, 没有记录回落全局默认;
-        # 下拉框切换只影响本会话, 全局设置页改的是"新会话的默认值"
-        persisted_mode = NAME_TO_MODE.get(store.get_permission_mode(session_id) or "")
+        # 会话级权限模式: 基础模式 + 计划开关, 双状态独立叠加。持久值优先
+        # （重启不丢）, 没有记录回落全局默认; 下拉框切换只影响本会话,
+        # 全局设置页改的是"新会话的默认值"。旧记录里的 "plan"/"read-only"
+        # （只读模式时代）已在存储层归一为基础模式 + 计划开。
+        persisted_mode_name, persisted_plan = store.get_permission_mode(session_id)
+        persisted_mode = NAME_TO_MODE.get(persisted_mode_name or "")
         self.permission_mode = persisted_mode or app_state.permission_mode
+        self.plan_active = (persisted_plan if persisted_mode is not None
+                            else app_state.plan_active)
         # 会话级模型: 持久值优先（重启不丢）; 无记录的会话在首轮开跑时把
         # 当时的全局 active 固化为自己的模型并落盘（见 _pin_session_model）
         # ——不再"跟随全局", 全局切换只影响之后新建的会话
@@ -812,10 +816,12 @@ _sessions: dict[str, WebSession] = {}
 
 
 class AppState:
-    """全局生效的设置（Web 顶栏）: 思考等级在 api_client 上，权限模式在这里。"""
+    """全局生效的设置（Web 顶栏）: 思考等级在 api_client 上，权限模式在这里。
+    权限 = 基础模式 + 计划开关双状态——设置页是"新会话的默认值"。"""
 
-    def __init__(self, mode: PermissionMode):
+    def __init__(self, mode: PermissionMode, plan: bool = False):
         self._mode = mode
+        self.plan_active = plan
 
     @property
     def permission_mode(self) -> PermissionMode:
@@ -825,7 +831,7 @@ class AppState:
         self._mode = mode
 
 
-app_state = AppState(resolve_permission_mode(runtime_config))
+app_state = AppState(*resolve_permission_mode(runtime_config))
 
 
 def get_or_create_web_session(session_id: str) -> WebSession:
@@ -894,6 +900,9 @@ def load_runtime_for(web_session: WebSession) -> None:
         hooks_config=runtime_config,
         permission_mode=web_session.permission_mode,
     )
+    # 计划开关: 与基础模式独立, 组装后立即恢复（plan 开 → 生效档位
+    # READ_ONLY + 系统提示词注入计划段）
+    web_session.runtime.set_plan_mode(web_session.plan_active)
     web_session.runtime.set_thinking_level(web_session.thinking_level)
     web_session.runtime.set_model(web_session.model_id)
     # workspace 根: 会话工作目录 + 全局附加目录（写路径分级/敏感扫描基准）
@@ -1125,15 +1134,17 @@ def _start_turn(web_session: WebSession, text: str, emit: Callable,
     emitter = TurnEmitter(emit)
 
     def _upgrade_after_plan() -> None:
-        """计划批准: 本会话 plan → workspace-write（本轮立即生效, 持久到会话）。
-        广播 mode_changed 让前端下拉框跟随; 不写全局设置（会话级隔离）。"""
-        web_session.permission_mode = WORKSPACE_WRITE_MODE
+        """计划批准: 关闭本会话的计划开关, 生效档位回落基础模式（本轮立即
+        生效, 持久到会话）。广播 mode_changed 让前端下拉框跟随;
+        不写全局设置（会话级隔离）。"""
+        web_session.plan_active = False
         if web_session.runtime is not None:
-            web_session.runtime.set_permission_mode(WORKSPACE_WRITE_MODE)
+            web_session.runtime.set_plan_mode(False)
         web_session.broadcast({
             "type": "mode_changed",
             "session_id": web_session.session_id,
-            "permission_mode": MODE_TO_NAME[WORKSPACE_WRITE_MODE],
+            "permission_mode": MODE_TO_NAME[web_session.permission_mode],
+            "plan_active": False,
         })
 
     prompter = WebPermissionPrompter(emitter, on_plan_approved=_upgrade_after_plan)
@@ -1557,8 +1568,18 @@ async def api_list_sessions():
         live = _sessions.get(sid)
         if live is not None:
             return MODE_TO_NAME[live.permission_mode]
-        persisted = NAME_TO_MODE.get(store.get_permission_mode(sid) or "")
+        persisted_name, _plan = store.get_permission_mode(sid)
+        persisted = NAME_TO_MODE.get(persisted_name or "")
         return MODE_TO_NAME[persisted or app_state.permission_mode]
+
+    def _session_plan(sid: str) -> bool:
+        """列表回显的会话计划开关: 存活取运行值, 否则持久值/全局默认。"""
+        live = _sessions.get(sid)
+        if live is not None:
+            return live.plan_active
+        name, plan = store.get_permission_mode(sid)
+        return plan if NAME_TO_MODE.get(name or "") is not None \
+            else app_state.plan_active
 
     def _session_thinking(sid: str) -> str:
         """列表回显的会话思考等级: 存活取运行值, 否则全局默认（新会话语义）。"""
@@ -1588,6 +1609,7 @@ async def api_list_sessions():
             # 项目归属: 会话的工作目录(WorkdirRecord, 取最新一条); 未设置时 None
             "workdir": store.get_workdir(sid),
             "permission_mode": _mode_name_for(sid),
+            "plan_active": _session_plan(sid),
             "thinking_level": _session_thinking(sid),
             "model_provider": _session_model(sid)[0],
             "model_id": _session_model(sid)[1],
@@ -1598,6 +1620,7 @@ async def api_list_sessions():
         items.append({"id": sid, "title": UNTITLED, "message_count": 0,
                       "workdir": None,
                       "permission_mode": _mode_name_for(sid),
+                      "plan_active": _session_plan(sid),
                       "thinking_level": _session_thinking(sid),
                       "model_provider": _session_model(sid)[0],
                       "model_id": _session_model(sid)[1]})
@@ -2458,6 +2481,8 @@ async def api_get_settings():
         # 思考等级已按会话隔离, 这里返回的是"新会话的默认值"
         "thinking_level": api_client.thinking_level,
         "permission_mode": MODE_TO_NAME[app_state.permission_mode],
+        # 计划开关的全局默认（新会话初值）, 与基础模式独立叠加
+        "permission_plan": app_state.plan_active,
         # 每轮最大迭代次数（单轮任务里模型连续调用工具的次数上限）:
         # 同样是"新会话的默认值", 进行中的会话保持组装时的值
         "max_iterations": runtime_config.max_iterations(),
@@ -2490,8 +2515,11 @@ async def api_post_settings(request: dict):
     mode_name = request.get("permission_mode")
     if mode_name is not None:
         normalized = str(mode_name).strip().lower()
-        if normalized == "read-only":
-            normalized = "plan"   # 旧名兼容: 归一为 plan
+        # "plan"/"read-only" 是旧版并列模式时代的值: 归一为基础模式
+        # prompt + 计划开（与 WS set_permission_mode 的兼容口径一致）
+        legacy_plan = normalized in ("plan", "read-only")
+        if legacy_plan:
+            normalized = "prompt"
         mode = NAME_TO_MODE.get(normalized)
         if mode is None:
             raise HTTPException(
@@ -2504,9 +2532,21 @@ async def api_post_settings(request: dict):
             raise HTTPException(status_code=400, detail="allow 模式不允许从设置进入")
         app_state.set_permission_mode(mode)
         _save_permission_mode(mode)
+        if legacy_plan:
+            app_state.plan_active = True
+            _save_setting("permissionPlan", True)
         # 只改全局默认（新会话的初值）: 权限模式是会话级的, 存活会话
         # 各自持有, 由会话内的下拉框 / WS set_permission_mode 单独切换
         # ——与 thinking_level 的会话隔离语义对齐
+
+    # 计划开关全局默认（新会话的初值）: 与基础模式一样会话级隔离
+    plan_flag = request.get("permission_plan")
+    if plan_flag is not None:
+        if not isinstance(plan_flag, bool):
+            raise HTTPException(status_code=400,
+                                detail=f"permission_plan 须为布尔, got {plan_flag!r}")
+        app_state.plan_active = plan_flag
+        _save_setting("permissionPlan", plan_flag)
 
     # 每轮最大迭代次数: 只改全局默认（新会话组装 runtime 时的初值）,
     # 存活会话不追改——runtime 的 _max_iterations 在 build 时定死,
@@ -2563,7 +2603,6 @@ def _save_permission_mode(mode: PermissionMode) -> None:
     读回; 不写 "allow"（同 POST 入口, 配置口径拒绝它）。
     """
     _save_setting("permissionMode", MODE_TO_NAME[mode])
-
 
 # ============================================================================
 # REST: 命令白名单（设置页"权限"分区 + 审批卡"总是允许"）
@@ -3054,24 +3093,45 @@ async def ws_endpoint(websocket: WebSocket, session_id: str):
                     ]
 
             elif msg_type == "set_permission_mode":
-                # 会话内下拉框: 只切本会话（全局默认值走 REST /api/settings）
-                # "read-only" 是旧名, 归一为 "plan"
-                mode_name = str(raw.get("mode") or "").strip().lower()
-                if mode_name == "read-only":
-                    mode_name = "plan"
-                mode = NAME_TO_MODE.get(mode_name)
-                if mode is None or mode == ALLOW_MODE:
+                # 会话内下拉框: 只切本会话（全局默认值走 REST /api/settings）。
+                # 载荷: mode = 基础模式名（缺省 = 不变）; plan = 计划开关
+                # （缺省 = 不变）。两者相互独立, 可单独或同时设置。
+                # "plan"/"read-only" 是旧版并列模式时代的值——归一为
+                # "计划开、基础模式不变"（兼容旧前端标签页）。
+                raw_mode = str(raw.get("mode") or "").strip().lower()
+                raw_plan = raw.get("plan")
+                legacy_plan = raw_mode in ("plan", "read-only")
+                mode = NAME_TO_MODE.get(raw_mode) if raw_mode else None
+                if raw_mode and not legacy_plan \
+                        and (mode is None or mode == ALLOW_MODE):
                     emit_error(f"未知或不可用的权限模式: {raw.get('mode')!r}")
                     continue
-                web_session.permission_mode = mode
-                # 持久化: 重启后该会话保持自己的模式, 不回落全局默认
-                store.set_permission_mode(web_session.session_id, mode_name)
+                if legacy_plan:
+                    mode = None   # 基础模式不变（"plan"/"read-only" 只是开计划的旧写法）
+                if mode is not None:
+                    web_session.permission_mode = mode
+                if isinstance(raw_plan, bool):
+                    web_session.plan_active = raw_plan
+                elif legacy_plan:
+                    web_session.plan_active = True
+                plan_now = web_session.plan_active
+                # 持久化: 重启后该会话保持自己的模式与计划状态, 不回落全局默认
+                store.set_permission_mode(
+                    web_session.session_id,
+                    MODE_TO_NAME[web_session.permission_mode], plan_now)
                 if web_session.runtime is not None:
-                    web_session.runtime.set_permission_mode(mode)
+                    if mode is not None:
+                        web_session.runtime.set_permission_mode(mode)
+                    # set_plan 只在消息真动了计划状态时调（set_permission_mode
+                    # 内部已联动 _rebuild_effective_prompt, 无需重复）
+                    if isinstance(raw_plan, bool) or legacy_plan:
+                        web_session.runtime.set_plan_mode(plan_now)
                 web_session.broadcast({
                     "type": "mode_changed",
                     "session_id": web_session.session_id,
-                    "permission_mode": MODE_TO_NAME[mode],
+                    "permission_mode":
+                        MODE_TO_NAME[web_session.permission_mode],
+                    "plan_active": plan_now,
                 })
 
             elif msg_type == "set_thinking_level":
