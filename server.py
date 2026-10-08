@@ -1525,7 +1525,16 @@ async def api_post_bg(request: dict):
     """data 为 dataURL 时写入背景图, null 删除; 返回新版本号。"""
     data = request.get("data")
     if data is None:
-        _BG_LIVE.unlink(missing_ok=True)
+        # Windows: 若恰好有 GET /api/bg 的 FileResponse 尚在发送, unlink 会
+        # 撞 WinError 32（文件被占用）。短暂重试几轮, 覆盖响应写完的间隙
+        for _ in range(4):
+            try:
+                _BG_LIVE.unlink(missing_ok=True)
+                break
+            except PermissionError:
+                time.sleep(0.05)
+        else:
+            raise HTTPException(status_code=409, detail="背景图正被读取, 请稍后重试")
     else:
         m = _ICON_RE.match(str(data))
         if not m:
