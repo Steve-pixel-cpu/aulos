@@ -504,7 +504,7 @@ def git_bash_unavailable_reason() -> Optional[str]:
         return "未找到 bash/sh（系统 shell 异常）, 命令执行器无法工作。"
     if _git_bash():
         return None
-    return ("未检测到 Git Bash（Git for Windows）, x-code 的命令执行器依赖它, "
+    return ("未检测到 Git Bash（Git for Windows）, aulos 的命令执行器依赖它, "
             "并靠它保证中文输出不乱码。\n"
             f"请安装 Git 后重启本程序: {GIT_DOWNLOAD_URL}\n"
             "安装选项全部默认即可, 装完无需任何配置。")
@@ -969,7 +969,7 @@ def present_plan_tool(params: dict, workdir: Optional[str] = None) -> str:
 # 服务器类命令前台跑只有两种结局: 30s 超时被杀(服务起不来), 或模型没配
 # timeout 时拖着轮次干等。background=true 让命令脱离会话立即返回, 输出
 # 进日志文件, 模型按需 task_output 看日志、task_stop 停进程。
-# 注册表是进程内存 dict: 服务进程生命周期 = x-code 服务进程生命周期,
+# 注册表是进程内存 dict: 服务进程生命周期 = aulos 服务进程生命周期,
 # 重启后残留的日志文件无害, 条目丢失只影响对旧任务的查询/停止。
 
 _BG_DIR = Path(tempfile.gettempdir()) / "aulos-bg"

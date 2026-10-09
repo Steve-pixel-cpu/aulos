@@ -2,7 +2,7 @@
 
 设计要点:
 
-- 官方 mcp SDK 是 asyncio 的, 而 x-code 的工具循环/registry 是同步线程模型。
+- 官方 mcp SDK 是 asyncio 的, 而 aulos 的工具循环/registry 是同步线程模型。
   每台服务器起一个 daemon 线程独占 event loop(常驻), 同步侧用
   run_coroutine_threadsafe(...).result(timeout) 桥接——不碰宿主循环,
   也不用 anyio from_thread(那要求双方在同一 anyio portal 里, 不现实)。

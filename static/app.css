@@ -470,8 +470,8 @@
      挂 html 而非 body: html 不参与 body 的 42px 顶部让位, fixed
      后代（标题栏/弹层/遮罩）定位不受影响, 全窗口内容一体裁切。
      最大化时回方角（dataset.max 由壳在 Resized/切换时推）, 同 Win11 行为 */
-  html.xcode-desktop { clip-path: inset(0 round 8px); }
-  html.xcode-desktop[data-max="1"] { clip-path: inset(0 round 0); }
+  html.aulos-desktop { clip-path: inset(0 round 8px); }
+  html.aulos-desktop[data-max="1"] { clip-path: inset(0 round 0); }
   body { padding-top: 42px; }
   .tb-icon { width: 17px; height: 17px; pointer-events: none; }
   .tb-name {

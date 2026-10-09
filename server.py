@@ -1,4 +1,4 @@
-# --- x-code Web UI 后端 (FastAPI) ---
+# --- aulos Web UI 后端 (FastAPI) ---
 # 复用现有 agent 内核（runtime / api_client / permissions / storage），这里只做"皮":
 # 把同步阻塞的 run_turn 丢进工作线程，内核事件经事件循环推回 WebSocket。
 #
@@ -143,7 +143,7 @@ store = SessionStore(storage_dir=STORAGE_DIR)
 _pending_sessions: set[str] = set()
 
 runtime_config: RuntimeConfig = ConfigLoader(
-    cwd=Path.cwd(), config_home=USER_DIR   # x-code 自己的用户配置目录
+    cwd=Path.cwd(), config_home=USER_DIR   # aulos 自己的用户配置目录
 ).load()
 
 # --- 连接门禁: 桌面壳与后端共享 ~/.aulos/token 里的随机令牌 ---
@@ -3331,5 +3331,5 @@ if __name__ == "__main__":
     port_file.parent.mkdir(parents=True, exist_ok=True)
     port_file.write_text(str(chosen), encoding="utf-8")
     (USER_DIR / "startup-error.log").unlink(missing_ok=True)   # 启动成功: 旧原因作废
-    print(f"✓ x-code 服务: http://127.0.0.1:{chosen}")
+    print(f"✓ aulos 服务: http://127.0.0.1:{chosen}")
     uvicorn.run(app, host="127.0.0.1", port=chosen)

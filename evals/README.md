@@ -1,4 +1,4 @@
-# x-code evals
+# aulos evals
 
 Agent 级评测框架:用真实的 `main.py -p` 跑任务夹具,用确定性断言 + LLM 判分
 打分,产出可对比的回归基线。定位:改 prompt、调压缩参数、上新功能(记忆、

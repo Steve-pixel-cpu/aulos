@@ -333,7 +333,7 @@ git push origin v4.2.0
 - Wayland 会话 (Ubuntu 22.04/24.04 默认): Wayland 协议不允许客户端置顶/编程
   挪窗, 桌宠会被其他窗口遮挡且拖不动。应用检测到 Wayland + XWayland 时自动设
   `GDK_BACKEND=x11` 走 XWayland 恢复该行为 (决策记录在 `~/.aulos/boot.log`)。
-  想回原生 Wayland: 启动前 `export XCODE_GDK_BACKEND=wayland`, 代价是桌宠
+  想回原生 Wayland: 启动前 `export AULOS_GDK_BACKEND=wayland`, 代价是桌宠
   可能被遮挡、拖不动。
 - VMware 等无 3D 加速环境: 应用自动设置 `WEBKIT_DISABLE_DMABUF_RENDERER=1`
   回退 WebKitGTK 的非加速渲染路径——否则窗口会停留在过期帧/空白 (页面

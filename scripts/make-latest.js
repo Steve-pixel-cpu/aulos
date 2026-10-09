@@ -14,13 +14,13 @@
  *     "platforms": {
  *       "windows-x86_64": {
  *         "signature": "<contents of the .sig file (required, NOT a path)>",
- *         "url": "https://github.com/.../releases/download/v3.4.0/x-code_3.4.0_x64-setup.exe"
+ *         "url": "https://github.com/.../releases/download/v3.4.0/aulos_3.4.0_x64-setup.exe"
  *       }
  *     }
  *   }
  *
  * Usage: node scripts/make-latest.js [notes]
- *   notes: release notes, defaults to "x-code <ver>"
+ *   notes: release notes, defaults to "aulos <ver>"
  *
  * Prereq: build-exe.cmd ran the packaging under a signing key (otherwise
  * there is no .sig file). The key lives in .tauri/aulos.key and must never
@@ -59,7 +59,7 @@ if (!fs.existsSync(sigPath)) {
 }
 
 // GitHub asset download URL (tag and asset names are a fixed convention:
-// v<version> / x-code_<version>_x64-setup.exe)
+// v<version> / aulos_<version>_x64-setup.exe)
 const repo = "Steve-pixel-cpu/aulos";
 const url = `https://github.com/${repo}/releases/download/v${version}/${exe}`;
 

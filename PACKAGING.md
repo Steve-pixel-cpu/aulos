@@ -1,4 +1,4 @@
-# x-code 打包成 exe 指南
+# aulos 打包成 exe 指南
 
 ## 一键打包
 
@@ -10,25 +10,25 @@ build-exe.cmd both       REM 两种都打
 ```
 
 两种壳共用同一条后端流水线：装 PyInstaller → 把 `server.py` 冻结成
-`build\server\x-code-server.exe`（`static/` 已打入），之后按目标分别走 Tauri 或
+`build\server\aulos-server.exe`（`static/` 已打入），之后按目标分别走 Tauri 或
 electron-builder。产物统一在 `dist\`。
 
 ### Tauri（默认）
 
 | 文件 | 说明 |
 |---|---|
-| `x-code_0.1.0_x64-setup.exe` | NSIS 安装包（当前用户安装, 可选安装目录） |
+| `aulos_0.1.0_x64-setup.exe` | NSIS 安装包（当前用户安装, 可选安装目录） |
 
 技术栈：**Tauri 2 壳（Rust + 系统 WebView2）+ PyInstaller 冻结的 Python 后端**。
-启动时 Tauri 拉起 `resources\server\x-code-server.exe`（默认监听 127.0.0.1:8000），
-WebView2 窗口加载本地服务；如果 8000 端口已有 x-code 在跑则直接复用，不重复拉进程。
+启动时 Tauri 拉起 `resources\server\aulos-server.exe`（默认监听 127.0.0.1:8000），
+WebView2 窗口加载本地服务；如果 8000 端口已有 aulos 在跑则直接复用，不重复拉进程。
 
 ### Electron（`electron` / `both` 参数）
 
 | 文件 | 说明 |
 |---|---|
-| `x-code Setup 0.1.0.exe` | NSIS 安装包 |
-| `x-code 0.1.0.exe` | portable 免安装版，双击即用 |
+| `aulos Setup 0.1.0.exe` | NSIS 安装包 |
+| `aulos 0.1.0.exe` | portable 免安装版，双击即用 |
 
 技术栈：**Electron 壳（自带 Chromium）+ 同一个冻结后端**（electron-builder 经
 `extraResources` 自动把 `build\server` 打进安装包）。运行行为与 Tauri 版一致：
@@ -44,7 +44,7 @@ WebView2 窗口加载本地服务；如果 8000 端口已有 x-code 在跑则直
 8000 端口常被其他程序抢占（**C-Lodop 云打印服务默认占 8000/18000**，装了它的电脑
 最容易撞上）。因此后端绑定失败会自动尝试 8010–8019，并把最终端口写入
 `~/.aulos/port`；桌面壳读取该文件动态访问，无需人工干预。想固定端口可给后端传
-`--port` 参数或设置 `XCODE_PORT` 环境变量。
+`--port` 参数或设置 `AULOS_PORT` 环境变量。
 
 ## 桌面端的浏览器测试工具
 
@@ -53,12 +53,12 @@ WebView2 窗口加载本地服务；如果 8000 端口已有 x-code 在跑则直
 Chromium），Agent 可实际操作 Web 系统做功能测试。冻结后端已把 Playwright
 driver 打进 exe（`--collect-all playwright`），无需 `playwright install`：
 启动渠道自动回退 chromium → 本机 Chrome → 本机 Edge（Win10/11 必有 Edge，
-等效零额外下载）；`XCODE_BROWSER_CHANNEL` 环境变量可强制指定渠道。
+等效零额外下载）；`AULOS_BROWSER_CHANNEL` 环境变量可强制指定渠道。
 
 ## 分发给别人时要带的配置
 
 不需要带任何配置文件。拿到 exe 的人首次打开会进入**初始化页**，填入 API Key
-（和可选的接口地址）即可；配置保存在 `C:\Users\<用户名>\.x-code\settings.json`。
+（和可选的接口地址）即可；配置保存在 `C:\Users\<用户名>\.aulos\settings.json`。
 
 会话记录、多 agent 存档同样存于 `~/.aulos\`，与 exe 安装位置无关，升级覆盖安装不丢数据。
 
@@ -76,7 +76,7 @@ driver 打进 exe（`--collect-all playwright`），无需 `playwright install`�
 UTF-8 不经转码；PowerShell 5.1 的 cmdlet 会按 ANSI(GBK) 转码，读 UTF-8 源码
 必乱。选壳顺序（`tools._git_bash_candidates`）：
 
-1. `XCODE_BASH_HOME` 环境变量指向的目录（预留的打包/定制入口）
+1. `AULOS_BASH_HOME` 环境变量指向的目录（预留的打包/定制入口）
 2. `~/.aulos/git-bash/bin/bash.exe`（预留的内置副本位置）
 3. 系统安装的 Git for Windows（从 `git.exe` 推导根目录）← 绝大多数机器走这里
 4. PATH 里的 bash（排除 System32 的 WSL 启动器）
@@ -89,11 +89,11 @@ UTF-8 不经转码；PowerShell 5.1 的 cmdlet 会按 ANSI(GBK) 转码，读 UTF
 | `build-exe.cmd` | 一键打包入口：装 PyInstaller → 冻结后端 → 按目标走 Tauri 或 Electron 打包 |
 | `scripts/make-latest.js` | 生成自动更新清单 `dist\latest.json`（版本号 + .sig 签名内容 + 下载直链） |
 | `scripts/publish.cmd` | 发布一个版本：打 tag → `gh release create` 上传安装包/.sig/latest.json |
-| `build/server/x-code-server.exe` | PyInstaller 产物（中间产物），`static/` 已打入 exe 内部 |
+| `build/server/aulos-server.exe` | PyInstaller 产物（中间产物），`static/` 已打入 exe 内部 |
 | `src-tauri/tauri.conf.json` | Tauri 配置：窗口、NSIS 打包、后端 exe 经 `bundle.resources` 进安装包 |
 | `src-tauri/src/main.rs` | 桌面壳主体：探活/拉后端/整树杀、令牌门禁、单实例、外部链接转系统浏览器、自动更新命令 |
 | `src-tauri/icons/icon.ico` | 应用图标（由 `static/icon.png` 转制，256px PNG 直嵌 ICO） |
-| `src-tauri/server/x-code-server.exe` | 打包前从 `build/server/` 复制来的后端（打包脚本自动做） |
+| `src-tauri/server/aulos-server.exe` | 打包前从 `build/server/` 复制来的后端（打包脚本自动做） |
 
 ## 自动更新（Tauri 版）
 
@@ -106,7 +106,7 @@ GitHub Release 上的更新清单，发现新版本 → 标题栏版本号出现
 ### 更新链路
 
 ```
-build-exe.cmd tauri <版本>          ← .tauri\x-code.key 签名, 产出 .exe + .exe.sig
+build-exe.cmd tauri <版本>          ← .tauri\aulos.key 签名, 产出 .exe + .exe.sig
   └─ node scripts\make-latest.js   ← 生成 dist\latest.json（签名内容 + 下载直链）
 scripts\publish.cmd <版本> "说明"    ← git tag v<版本> + gh release create 上传 3 个文件
                                         ↓
@@ -116,7 +116,7 @@ scripts\publish.cmd <版本> "说明"    ← git tag v<版本> + gh release crea
 
 ### 签名密钥（重要）
 
-- 私钥 `.tauri/x-code.key`（已 gitignore，**绝不能提交、不能丢**）；公钥已烤进
+- 私钥 `.tauri/aulos.key`（已 gitignore，**绝不能提交、不能丢**）；公钥已烤进
   `tauri.conf.json` 的 `plugins.updater.pubkey`，升级包必须持私钥签名，否则用户端
   拒绝安装（防篡改，无法关闭）。
 - 丢了私钥 = 已发布的老用户收不到自动更新，只能官网重下，且必须换公钥重发一版。
@@ -126,7 +126,7 @@ scripts\publish.cmd <版本> "说明"    ← git tag v<版本> + gh release crea
 ### 发布清单（每次发版）
 
 1. `build-exe.cmd tauri <新版本>`（会同步版本号到四处配置文件）
-2. 确认 `dist\` 里三件套齐全：`x-code_<版本>_x64-setup.exe`、同名 `.sig`、`latest.json`
+2. 确认 `dist\` 里三件套齐全：`aulos_<版本>_x64-setup.exe`、同名 `.sig`、`latest.json`
 3. `scripts\publish.cmd <版本> "更新说明"`（需要 gh CLI 并已 `gh auth login`；
    没装就按脚本打印的手动步骤在 GitHub 网页上传同样三个文件）
 4. 资产名是约定：tag 必须 `v<版本>`、安装包名不能改——`latest.json` 里的直链靠它定位
@@ -135,7 +135,7 @@ scripts\publish.cmd <版本> "说明"    ← git tag v<版本> + gh release crea
 
 | 侧 | 文件 | 内容 |
 |---|---|---|
-| Rust | `src-tauri/src/main.rs` | `check_update` / `install_update` / `update_status` 三个命令 + `window.xcodeDesktopUpdater` 桥 |
+| Rust | `src-tauri/src/main.rs` | `check_update` / `install_update` / `update_status` 三个命令 + `window.aulosDesktopUpdater` 桥 |
 | 壳配置 | `tauri.conf.json` | `bundle.createUpdaterArtifacts` + `plugins.updater`（公钥/端点/passive 安装） |
 | 前端 | `static/app.js`（UPD 段） | 启动静默检查、徽标红点、更新弹窗与进度轮询 |
 | 进度 | 轮询 `update_status` | 下载进度经静态原子量传递（不用插件事件——远端页面事件 ACL 不可靠） |
@@ -152,7 +152,7 @@ scripts\publish.cmd <版本> "说明"    ← git tag v<版本> + gh release crea
   机器没装 Git 时后端也会拒绝启动，具体原因看 `~/.aulos/startup-error.log`；
   装 [Git for Windows](https://git-scm.com/download/win) 后重启即可。
 - **端口**：默认 8000，被占自动避让 8010–8019（实际端口见 `~/.aulos/port`）；
-  可用 `--port` 参数或 `XCODE_PORT` 环境变量固定。
+  可用 `--port` 参数或 `AULOS_PORT` 环境变量固定。
 - **杀毒软件误报**：PyInstaller onefile 常见误报，可换 onedir（去掉 `--onefile`，并把
   tauri.conf.json 的 resources 放行目录）或对 exe 做签名。
 - **改了前端代码要重新打包吗**：要。`static/` 是打进展物内部的，不是运行时从磁盘读的。

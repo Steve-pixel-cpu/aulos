@@ -107,9 +107,9 @@ policy = (PermissionPolicy(PermissionMode.WORKSPACE_WRITE)
 - `authorize` 中 Allow 模式的判断要放在 `>=` 比较之前（因为 Allow 是特殊模式）
 - prompter 可以是 None（没有 prompter 时，需要询问的场景应该拒绝）
 
-## x-code 在 CC 之上的扩展：写路径分级与审批疲劳治理
+## aulos 在 CC 之上的扩展：写路径分级与审批疲劳治理
 
-CC 的档位只看"工具名"，不看"参数"。x-code 把 `write_file`/`edit_file`
+CC 的档位只看"工具名"，不看"参数"。aulos 把 `write_file`/`edit_file`
 的参数（目标路径）也纳入判定——这是**应用层策略沙箱**（policy gate）：
 
 ```
@@ -144,6 +144,6 @@ classify_write_path(path, workspace_roots):
 **诚实边界**：这一切都在应用层，没有内核强制力——用户批准的 shell
 命令仍以完整用户权限执行，审批本身就是闸门而非技术隔离。真正的 OS 级
 沙箱（Linux Landlock / macOS Seatbelt 包裹 bash 子进程）是 Codex CLI 的
-形态；x-code 是本机单用户工具，威胁模型是"防误操作 + 可审计"，
+形态；aulos 是本机单用户工具，威胁模型是"防误操作 + 可审计"，
 与 CC 同档（权限模式 + 审批），未来若需要可在 `tools._run_command`
 处增量包裹。

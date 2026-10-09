@@ -293,7 +293,7 @@ def render_report(result: dict, diff: dict[str, str]) -> str:
     tasks = result["tasks"]
     n_pass = sum(1 for t in tasks if t["passed"])
     lines = [
-        f"# x-code evals 报告 — {result['run_id']}",
+        f"# aulos evals 报告 — {result['run_id']}",
         "",
         f"通过 {n_pass}/{len(tasks)}"
         + (f" (对比基线 {result['baseline_id']})" if result.get("baseline_id") else ""),

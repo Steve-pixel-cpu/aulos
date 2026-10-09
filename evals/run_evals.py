@@ -1,6 +1,6 @@
 # --- evals 批量运行器 ---
 #
-# 用法 (在 x-code 目录下):
+# 用法 (在 aulos 目录下):
 #   uv run python evals/run_evals.py                     # 全量, 有基线则对比
 #   uv run python evals/run_evals.py --only fix-failing-test
 #   uv run python evals/run_evals.py --save-baseline     # 本次结果存为基线
@@ -158,7 +158,7 @@ def load_baseline(path: Path) -> dict | None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="x-code agent evals 批量运行器")
+    parser = argparse.ArgumentParser(description="aulos agent evals 批量运行器")
     parser.add_argument("--only", default="",
                         help="只跑指定任务, 逗号分隔 (默认全量)")
     parser.add_argument("--model", default=None, help="覆盖被测 Agent 的模型")

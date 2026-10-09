@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# x-code macOS 打包: PyInstaller 冻结后端 + electron-builder 出 .dmg / .zip
+# aulos macOS 打包: PyInstaller 冻结后端 + electron-builder 出 .dmg / .zip
 # 用法: ./build-mac.sh [x.y.z]   例: ./build-mac.sh 1.0.6
 #   传版本号会先同步 package.json / package-lock.json (npm version)、
 #   tauri.conf.json、Cargo.toml、pyproject.toml 再打包; 不传则维持当前版本。
-# 产物: dist/x-code-<版本>-<arch>.dmg (安装镜像) 与 .zip (免安装压缩包)
+# 产物: dist/aulos-<版本>-<arch>.dmg (安装镜像) 与 .zip (免安装压缩包)
 # 依赖: uv, Node.js/npm —— 必须在 macOS 上运行
 #       (PyInstaller 与 DMG 均无法跨平台构建, Windows/Linux 上跑不了本脚本)
 set -euo pipefail
@@ -28,7 +28,7 @@ uv pip install --python .venv/bin/python pyinstaller
 echo "[2/4] Freezing Python backend (static/ bundled, uvicorn hidden imports declared)..."
 mkdir -p build/server
 .venv/bin/python -m PyInstaller --noconfirm --clean --onefile \
-  --name x-code-server \
+  --name aulos-server \
   --distpath build/server --workpath build/pyinstaller --specpath build/pyinstaller \
   --add-data "$PWD/static:static" \
   --hidden-import uvicorn.logging \
@@ -53,4 +53,4 @@ npx electron-builder --mac --arm64 --x64
 
 echo "Done. Artifacts in dist/:"
 ls -1 dist/*.dmg dist/*.zip 2>/dev/null || true
-echo "未签名应用首次打开: 右键 -> 打印; 或终端执行: xattr -cr /Applications/x-code.app"
+echo "未签名应用首次打开: 右键 -> 打印; 或终端执行: xattr -cr /Applications/aulos.app"

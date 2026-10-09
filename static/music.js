@@ -128,7 +128,7 @@
         }
       }
     } else {
-      document.title = "x-code";
+      document.title = "aulos";
     }
   }
 

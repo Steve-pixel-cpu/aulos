@@ -7,9 +7,9 @@
  * releases/latest/download/latest.json 恒指向最新)。
  *
  *   windows-x86_64 : aulos_<ver>_x64-setup.exe        (+ .exe.sig)
- *   darwin-aarch64 : x-code_<ver>_aarch64.app.tar.gz   (+ .sig)
- *   darwin-x86_64  : x-code_<ver>_x64.app.tar.gz       (+ .sig)
- *   linux-x86_64   : x-code_<ver>_amd64.deb            (+ .deb.sig)
+ *   darwin-aarch64 : aulos_<ver>_aarch64.app.tar.gz   (+ .sig)
+ *   darwin-x86_64  : aulos_<ver>_x64.app.tar.gz       (+ .sig)
+ *   linux-x86_64   : aulos_<ver>_amd64.deb            (+ .deb.sig)
  *
  * 用法: node scripts/make-latest-multi.js --tag v3.3.9 [--dist dist] [--repo a/b]
  *   tag 决定产物下载 URL; 缺 --tag 时用 --version 指定的版本号拼 v<version>。
@@ -56,10 +56,10 @@ const platforms = {};
 const win = entry(`aulos_${version}_x64-setup.exe`, ".sig");
 if (win) platforms["windows-x86_64"] = win;
 for (const [arch, key] of [["aarch64", "darwin-aarch64"], ["x64", "darwin-x86_64"]]) {
-  const e = entry(`x-code_${version}_${arch}.app.tar.gz`, ".sig");
+  const e = entry(`aulos_${version}_${arch}.app.tar.gz`, ".sig");
   if (e) platforms[key] = e;
 }
-const linux = entry(`x-code_${version}_amd64.deb`, ".sig");
+const linux = entry(`aulos_${version}_amd64.deb`, ".sig");
 if (linux) platforms["linux-x86_64"] = linux;
 
 if (Object.keys(platforms).length === 0) {

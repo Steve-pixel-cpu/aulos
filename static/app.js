@@ -4,21 +4,21 @@
 const DESKTOP = window.aulosDesktop
   || new URLSearchParams(location.search).has("desktop");
 /* ============================================================
- * 入口守卫: 网页入口已关闭, 仅允许 x-code 桌面壳打开
+ * 入口守卫: 网页入口已关闭, 仅允许 aulos 桌面壳打开
  * （桌面壳注入 window.aulosDesktop 标记或 URL 带 desktop=1;
  *   浏览器直接访问 127.0.0.1:8000 只会看到提示, 应用不初始化）
  * ============================================================ */
 if (!DESKTOP) {
   document.documentElement.innerHTML =
-    '<head><meta charset="UTF-8"><title>x-code</title></head>' +
+    '<head><meta charset="UTF-8"><title>aulos</title></head>' +
     '<body style="margin:0;background:#101014">' +
     '<div style="height:100vh;display:flex;flex-direction:column;gap:10px;' +
     'align-items:center;justify-content:center;font-family:system-ui,' +
     '"Microsoft YaHei",sans-serif;color:#a0a1ab;font-size:15px">' +
     '<img src="/api/icon" alt="" style="width:56px;height:56px;' +
     'border-radius:14px;object-fit:cover">' +
-    "<div>请通过 x-code 桌面应用打开</div></div></body>";
-  throw new Error("x-code: 网页入口已关闭, 请使用桌面应用");
+    "<div>请通过 aulos 桌面应用打开</div></div></body>";
+  throw new Error("aulos: 网页入口已关闭, 请使用桌面应用");
 }
 if (DESKTOP) document.documentElement.classList.add("aulos-desktop");
 /* ============================================================
@@ -5497,7 +5497,7 @@ $("btn-notify-test").onclick = () => {
   playChime();
   // 桌面壳: 直接发一条原生 toast, 让用户当场验证系统通知链路通不通
   if (DESKTOP) {
-    nativeNotify("x-code 桌面通知测试", "收到这条说明原生通知链路正常");
+    nativeNotify("aulos 桌面通知测试", "收到这条说明原生通知链路正常");
     toast("已播放提示音并发送系统通知");
     return;
   }
@@ -6573,7 +6573,7 @@ function openOnboarding() {
   setTimeout(() => $("ob-key").focus(), 50);
 }
 /* 初始化页: 协议切换 → Base URL 默认值联动（智谱 Coding Plan 三端点中
- * x-code 用得到两个; /api/v1 是 OpenAI Response 协议, 供 Codex, 不适用）。
+ * aulos 用得到两个; /api/v1 是 OpenAI Response 协议, 供 Codex, 不适用）。
  * 只改"用户还没手动输入过"的值, 避免覆盖用户粘贴的地址。 */
 const OB_BASE_DEFAULTS = {
   anthropic: "https://open.bigmodel.cn/api/anthropic",

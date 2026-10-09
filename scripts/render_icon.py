@@ -115,8 +115,8 @@ def render(size):
     return img
 
 def main():
-    out_master = r"D:\pyworkplace\learn_claude\x-code\static\icon.png"
-    out_icons = r"D:\pyworkplace\learn_claude\x-code\src-tauri\icons"
+    out_master = r"D:\pyworkplace\learn_claude\aulos\static\icon.png"
+    out_icons = r"D:\pyworkplace\learn_claude\aulos\src-tauri\icons"
     master = render(512)
     master.save(out_master)
     print("saved", out_master)
@@ -133,7 +133,7 @@ def main():
     print("saved icon.ico")
     # electron 窗口图标
     master.resize((256, 256), Image.LANCZOS).save(
-        r"D:\pyworkplace\learn_claude\x-code\static\icon-256.png")
+        r"D:\pyworkplace\learn_claude\aulos\static\icon-256.png")
     print("saved static/icon-256.png")
 
 if __name__ == "__main__":

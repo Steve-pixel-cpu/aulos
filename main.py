@@ -680,7 +680,7 @@ class CliToolExecutor:
     def __init__(self, registry: ToolRegistry, out=None):
         self.registry = registry
         # 进度/预览的输出目的地: None = stdout（REPL 观感不变）; headless
-        # 传 stderr——stdout 只留给最终结果, `x-code -p ... | 下游` 才能拿到干净输出
+        # 传 stderr——stdout 只留给最终结果, `aulos -p ... | 下游` 才能拿到干净输出
         self._out = out if out is not None else sys.stdout
 
     def execute(self, tool_name: str, input: str, tool_use_id: str | None = None) -> str:
@@ -781,7 +781,7 @@ BANNER_ART = r"""
   /  \ |_____| |__| |_| | |_| | |___|
  /_/\_\       \____\___/|____/|_____|
 """
-def print_banner(name: str = "X-CODE", width: int = 40) -> None:
+def print_banner(name: str = "aulos", width: int = 40) -> None:
     """Print an ASCII-art startup banner with the app name and help hint."""
     print(BANNER_ART)
     print(name)
@@ -1093,7 +1093,7 @@ def run_repl(runtime: ConversationRuntime,
     ctrl_c_pending = False  # 连续两次 Ctrl+C 才退出, 第一次只提示
     while True:
         try:
-            text = input("x-code> ").strip()
+            text = input("aulos> ").strip()
             ctrl_c_pending = False
         except KeyboardInterrupt:
             if ctrl_c_pending:
@@ -1353,7 +1353,7 @@ def _assemble(session_store: SessionStore, session_id: str, *,
     # 配置先于工具装配: mcpServers 决定 build_registry 连哪些服务器
     config_loader = ConfigLoader(
         cwd=Path.cwd(),
-        config_home=USER_DIR,   # x-code 自己的用户配置目录
+        config_home=USER_DIR,   # aulos 自己的用户配置目录
     )
     runtime_config = config_loader.load()
     # 权限模式: CLI 覆盖 > 配置 > 默认。与 resolve_permission_mode 同一条
@@ -1493,7 +1493,7 @@ def start(session_store:SessionStore,session_id:str):
 #
 # 契约:
 #   stdout 只放最终结果（text = 最后一条 assistant 正文; json = 结果对象）,
-#   装配进度/工具活动/告警全走 stderr——`x-code -p "..." | 下游` 才能拿到
+#   装配进度/工具活动/告警全走 stderr——`aulos -p "..." | 下游` 才能拿到
 #   干净输出。流式回显整机关闭（emit_output=False）, 最终文本由本模块统一输出。
 #   无人值守: prompter 传 None → 权限升级一律自动拒绝（与 subagent 同语义）,
 #   拒绝理由作为 tool_result 回给模型自行交代; 要全放行走
@@ -1518,7 +1518,7 @@ def run_headless(session_store: SessionStore, session_id: str, task: str, *,
                  permission_mode_override: Optional[str] = None) -> int:
     setup_console()
 
-    # 管道输入: stdin 非 TTY 时把内容并入任务——`git diff | x-code -p "审查"`
+    # 管道输入: stdin 非 TTY 时把内容并入任务——`git diff | aulos -p "审查"`
     if not sys.stdin.isatty():
         try:
             piped = sys.stdin.read()

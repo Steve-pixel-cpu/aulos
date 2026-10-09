@@ -1,6 +1,6 @@
 @echo off
 REM ============================================================
-REM x-code one-click packaging:
+REM aulos one-click packaging:
 REM   build-exe.cmd                 -> tauri, keep current version
 REM   build-exe.cmd tauri           -> Tauri 2 shell + frozen Python backend -> NSIS installer
 REM   build-exe.cmd electron        -> Electron shell + frozen Python backend -> NSIS + portable
@@ -11,14 +11,14 @@ REM Setting a version syncs tauri.conf.json, Cargo.toml, pyproject.toml
 REM (scripts\set-version.js) and package.json / package-lock.json (npm version).
 REM Shared steps:
 REM   [1/2] install PyInstaller into the project venv
-REM   [2/2] freeze server.py into build\server\x-code-server.exe
+REM   [2/2] freeze server.py into build\server\aulos-server.exe
 REM Tauri branch:   copy backend exe into src-tauri\server -> cargo tauri build
-REM                 (auto-update: sign with .tauri\x-code.key -> .sig artifact;
+REM                 (auto-update: sign with .tauri\aulos.key -> .sig artifact;
 REM                  then make-latest.js writes dist\latest.json for the updater)
 REM Electron branch: npm install (if needed) -> electron-builder --win
 REM                  (extraResources picks up build\server automatically)
-REM Output: dist\x-code_<ver>_x64-setup.exe (+ .sig + latest.json for auto-update)
-REM         dist\x-code Setup <ver>.exe + dist\x-code <ver>.exe portable (electron)
+REM Output: dist\aulos_<ver>_x64-setup.exe (+ .sig + latest.json for auto-update)
+REM         dist\aulos Setup <ver>.exe + dist\aulos <ver>.exe portable (electron)
 REM Publish a release: scripts\publish.cmd <ver> [notes]
 REM Requirements: uv, Node.js (tauri-cli / electron-builder via npm);
 REM               Rust toolchain (rustup) for the tauri target only
@@ -70,7 +70,7 @@ REM app falls back to a local Edge/Chrome channel (see browser_tools._launch),
 REM so no "playwright install" is needed.
 if not exist build\server mkdir build\server
 .venv\Scripts\python.exe -m PyInstaller --noconfirm --clean --onefile ^
-  --name x-code-server ^
+  --name aulos-server ^
   --distpath build\server --workpath build\pyinstaller --specpath build\pyinstaller ^
   --add-data "%~dp0static;static" --add-data "%~dp0pyproject.toml;." ^
   --collect-all playwright ^
@@ -90,7 +90,7 @@ if errorlevel 1 exit /b 1
 
 REM clear stale artifacts (any version) so dist\ only holds the fresh build
 if not exist dist mkdir dist
-del /q "dist\x-code*.exe" "dist\x-code*.exe.sig" "dist\latest.json" >nul 2>&1
+del /q "dist\aulos*.exe" "dist\aulos*.exe.sig" "dist\latest.json" >nul 2>&1
 
 if /i "%TARGET%"=="electron" goto :do_electron
 if /i "%TARGET%"=="both" goto :do_tauri
@@ -98,7 +98,7 @@ if /i "%TARGET%"=="both" goto :do_tauri
 echo.
 echo ====== Tauri [1/2] Copying backend exe into src-tauri\server ======
 if not exist src-tauri\server mkdir src-tauri\server
-copy /y build\server\x-code-server.exe src-tauri\server\
+copy /y build\server\aulos-server.exe src-tauri\server\
 if errorlevel 1 exit /b 1
 
 REM Ship desktop-pet assets with the package: pets\ -> src-tauri\pets\
@@ -112,7 +112,7 @@ echo.
 echo ====== Tauri [2/2] Building desktop app (NSIS installer) ======
 REM Update signing. If TAURI_SIGNING_PRIVATE_KEY is already set (CI), it is
 REM used as-is (set the password env var yourself too). Otherwise the local
-REM key .tauri\x-code.key + password file .tauri\x-code.key.password are
+REM key .tauri\aulos.key + password file .tauri\aulos.key.password are
 REM injected. Missing key only warns: the build still works, but the version
 REM cannot be shipped as an auto-update target (no .sig).
 REM
@@ -125,36 +125,36 @@ if defined TAURI_SIGNING_PRIVATE_KEY (
   echo [sign] Using TAURI_SIGNING_PRIVATE_KEY from environment
   goto :sign_key_ready
 )
-if not exist ".tauri\x-code.key" (
-  echo [warn] No signing key: .tauri\x-code.key not found and TAURI_SIGNING_PRIVATE_KEY not set
+if not exist ".tauri\aulos.key" (
+  echo [warn] No signing key: .tauri\aulos.key not found and TAURI_SIGNING_PRIVATE_KEY not set
   echo [warn] This build gets no .sig - already-installed users will NOT receive it as an update.
-  echo [warn] To create a key: npx tauri signer generate -w .tauri/x-code.key
+  echo [warn] To create a key: npx tauri signer generate -w .tauri/aulos.key
   goto :sign_key_ready
 )
-if not exist ".tauri\x-code.key.password" (
-  echo [warn] Missing .tauri\x-code.key.password - cannot sign non-interactively.
+if not exist ".tauri\aulos.key.password" (
+  echo [warn] Missing .tauri\aulos.key.password - cannot sign non-interactively.
   goto :sign_key_ready
 )
 REM The bundler only honors TAURI_SIGNING_PRIVATE_KEY (key CONTENT, not a
 REM path - TAURI_SIGNING_PRIVATE_KEY_PATH is only read by the `tauri signer`
 REM subcommand). The key file is a single-line base64 blob, so set /p reads
 REM it verbatim; base64/password are alnum-only, no cmd metacharacters.
-set /p TAURI_SIGNING_KEY_CONTENT=<".tauri\x-code.key"
-set /p TAURI_SIGNING_KEY_PASSWORD_VALUE=<".tauri\x-code.key.password"
+set /p TAURI_SIGNING_KEY_CONTENT=<".tauri\aulos.key"
+set /p TAURI_SIGNING_KEY_PASSWORD_VALUE=<".tauri\aulos.key.password"
 set "TAURI_SIGNING_PRIVATE_KEY=%TAURI_SIGNING_KEY_CONTENT%"
 set "TAURI_SIGNING_PRIVATE_KEY_PASSWORD=%TAURI_SIGNING_KEY_PASSWORD_VALUE%"
-echo [sign] Signing with %~dp0.tauri\x-code.key ^(password from .password file, no prompts^)
+echo [sign] Signing with %~dp0.tauri\aulos.key ^(password from .password file, no prompts^)
 :sign_key_ready
 call npx tauri build
 if errorlevel 1 exit /b 1
 
 echo.
 echo Copying installer into dist\...
-copy /y "src-tauri\target\release\bundle\nsis\x-code_*_x64-setup.exe" dist\ >nul
+copy /y "src-tauri\target\release\bundle\nsis\aulos_*_x64-setup.exe" dist\ >nul
 if errorlevel 1 exit /b 1
 REM auto-update artifacts: .sig signature + latest.json manifest (upload both
 REM together with the installer to the release)
-copy /y "src-tauri\target\release\bundle\nsis\x-code_*_x64-setup.exe.sig" dist\ >nul 2>&1
+copy /y "src-tauri\target\release\bundle\nsis\aulos_*_x64-setup.exe.sig" dist\ >nul 2>&1
 node scripts\make-latest.js
 if errorlevel 1 echo [warn] latest.json was NOT generated (see reason above); this version cannot be an auto-update target
 if /i not "%TARGET%"=="both" goto :done

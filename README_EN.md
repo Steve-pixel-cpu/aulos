@@ -392,7 +392,7 @@ git push origin v4.2.0
   forbids client-side always-on-top/programmatic moves, so the desktop pet gets
   occluded and cannot be dragged. The app detects Wayland + XWayland and sets
   `GDK_BACKEND=x11` automatically (decision recorded in `~/.aulos/boot.log`).
-  To force native Wayland: `export XCODE_GDK_BACKEND=wayland` before launching,
+  To force native Wayland: `export AULOS_GDK_BACKEND=wayland` before launching,
   at the cost of the pet possibly being occluded.
 - On VMs without 3D acceleration (e.g. VMware): the app sets
   `WEBKIT_DISABLE_DMABUF_RENDERER=1` automatically to fall back to WebKitGTK's
