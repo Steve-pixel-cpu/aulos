@@ -587,6 +587,20 @@ function decorateCode(root) {
   });
 }
 
+/* 表格外包滚动容器: 宽表(时间线/对比表)不再撑破气泡, 窄表不受影响。
+ * data-dec 幂等, 流式重渲染重复调用不会套双层 wrapper */
+function decorateTables(root) {
+  if (!root || !root.querySelectorAll) return;
+  root.querySelectorAll("table:not([data-dec])").forEach(tb => {
+    if (tb.closest(".table-wrap")) return;   // 双保险
+    tb.setAttribute("data-dec", "1");
+    const wrap = document.createElement("div");
+    wrap.className = "table-wrap";
+    tb.replaceWith(wrap);
+    wrap.appendChild(tb);
+  });
+}
+
 async function copyText(text) {
   try {
     await navigator.clipboard.writeText(text);
@@ -2338,6 +2352,7 @@ function onTextDelta(msg, sid) {
   run.curBubble._raw += msg.text;
   run.curBubble.innerHTML = renderMd(run.curBubble._raw);
   decorateCode(run.curBubble);
+  decorateTables(run.curBubble);
   scrollToBottom();
 }
 
@@ -3128,6 +3143,7 @@ function showPlanInPanel(reqId, sid, planText) {
   _planSource = planText;   // 复制按钮用: 始终复制 markdown 源文
   body.innerHTML = renderMd(planText);
   decorateCode(body);
+  decorateTables(body);
   body.classList.remove("stale");   // 新计划到达: 清掉上一份的过期淡化
   const actions = $("plan-actions");
   actions.innerHTML = "";
@@ -3878,6 +3894,7 @@ function addAssistantBubble(html, raw, col) {
   b.className = "bubble";
   b.innerHTML = html || "";
   decorateCode(b);
+  decorateTables(b);
   div.appendChild(avatar);
   div.appendChild(b);
   (col || msgCol()).appendChild(div);

@@ -25,9 +25,10 @@ tauri-plugin-updater = "2"
 serde_json = "1"
 
 # 关闭 WebView2 浏览器快捷键（F5/Ctrl+R 刷新等, tauri 未透传该设置）
+# Win32_Graphics_Dwm: DwmSetWindowAttribute — Win11 主窗原生圆角 (DWMWA_WINDOW_CORNER_PREFERENCE)
 [target.'cfg(windows)'.dependencies]
 webview2-com = "0.38"
-windows = { version = "0.61", features = ["Win32_Foundation"] }
+windows = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Dwm"] }
 
 [profile.release]
 strip = true

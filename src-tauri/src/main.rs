@@ -692,6 +692,40 @@ async fn pick_folder(app: AppHandle) -> Result<Option<String>, String> {
 
 // ---------- 自绘标题栏的窗口控制（decorations: false 后自己实现） ----------
 
+/// Win11 原生窗口圆角: DWMWA_WINDOW_CORNER_PREFERENCE = DWMWCP_ROUND。
+/// 由 DWM 绘制, 抗锯齿、带系统 1px 边框光晕, 与系统应用一致; 窗口
+/// 最大化/贴边时系统自动回方角。Win10 的 DWM 不认识该属性 → 调用
+/// 失败(HRESULT 错误), 静默留痕 boot.log, 圆角由前端 CSS clip-path 兜底。
+#[cfg(windows)]
+fn apply_win11_rounding(win: &tauri::WebviewWindow) {
+    use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND};
+    let Ok(hwnd) = win.hwnd() else { return };
+    let pref = DWMWCP_ROUND.0 as u32;
+    let hr = unsafe {
+        DwmSetWindowAttribute(
+            windows::Win32::Foundation::HWND(hwnd.0),
+            DWMWA_WINDOW_CORNER_PREFERENCE,
+            &pref as *const u32 as *const _,
+            std::mem::size_of::<u32>() as u32,
+        )
+    };
+    if let Err(e) = hr {
+        boot_log("shell", &format!("DWM 圆角设置失败(非 Win11? 由 CSS 兜底): {e}"));
+    }
+}
+
+/// 把主窗最大化状态推给前端(html.dataset.max), CSS 圆角据此回方角——
+/// Win10 无 DWM 圆角时靠 CSS 裁切, 必须自己跟踪状态; Win11 原生圆角
+/// 下推了也无妨(与系统行为重合)。static 去重: Resized 高频触发。
+fn push_max_state(win: &tauri::WebviewWindow) {
+    static LAST: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(255);
+    let max = win.is_maximized().map(|b| b as u8).unwrap_or(0);
+    if LAST.swap(max, Ordering::Relaxed) == max {
+        return;
+    }
+    let _ = win.eval(&format!("document.documentElement.dataset.max='{max}'"));
+}
+
 #[tauri::command]
 fn minimize_main(app: AppHandle) {
     if let Some(win) = app.get_webview_window("main") {
@@ -704,6 +738,7 @@ fn toggle_maximize_main(app: AppHandle) {
     if let Some(win) = app.get_webview_window("main") {
         let _ = win.is_maximized()
             .map(|max| if max { win.unmaximize() } else { win.maximize() });
+        push_max_state(&win);   // 自定义命令路径: 切完立即推(CSS 回方角/复原)
     }
 }
 
@@ -1204,6 +1239,16 @@ fn main() {
                 // 隐藏主窗的路径, 焦点翻转落盘, 真机复现时可对照时间线
                 boot_log("main", &format!("window focused={focused}"));
             }
+            RunEvent::WindowEvent { label, event: WindowEvent::Resized(_), .. }
+                if label == "main" =>
+            {
+                // Win+方向键 / Aero Snap / 系统菜单等不经 toggle_maximize_main
+                // 的尺寸变化: 在此同步最大化状态给前端(CSS 圆角回方角/复原),
+                // static 去重后重复事件只是读一次 is_maximized
+                if let Some(win) = app.get_webview_window("main") {
+                    push_max_state(&win);
+                }
+            }
             RunEvent::WindowEvent { label, event: WindowEvent::CloseRequested { .. }, .. }
                 if label == "main" =>
             {
@@ -1316,10 +1361,20 @@ fn create_main_window(app: &AppHandle) -> Result<(), String> {
                 // 桥的重申: initialization_script 偶发不注入时在此兜底
                 let _ = win.eval(&bridge_js);
                 apply_desktop_webview_settings(&win);
+                // 每次页面加载(loading→应用跳转/刷新)重申最大化状态:
+                // 新文档的 documentElement.dataset 会被重置
+                push_max_state(&win);
             }
         })
         .build()
         .map_err(|e| e.to_string())?;
+
+    // Win11 原生圆角(Win10 失败无妨, 前端 CSS 兜底) + 初始最大化状态
+    if let Some(win) = app.get_webview_window("main") {
+        #[cfg(windows)]
+        apply_win11_rounding(&win);
+        push_max_state(&win);
+    }
 
     Ok(())
 }
@@ -1334,7 +1389,7 @@ fn create_main_window(app: &AppHandle) -> Result<(), String> {
 /// Set* 幂等, 重复只是重申。设置是 webview 级的, 导航后持续生效。
 #[cfg(windows)]
 fn apply_desktop_webview_settings(win: &tauri::WebviewWindow) {
-    use webview2_com::Microsoft::Web::WebView2::Win32::{ICoreWebView2Settings3, ICoreWebView2Settings4};
+    use webview2_com::Microsoft::Web::WebView2::Win32::{ICoreWebView2Settings3, ICoreWebView2Settings4, ICoreWebView2Controller2};
     use windows::core::Interface;
 
     let scheduled = win.with_webview(|wv| {
@@ -1348,6 +1403,16 @@ fn apply_desktop_webview_settings(win: &tauri::WebviewWindow) {
                 let s4 = settings.cast::<ICoreWebView2Settings4>()?;
                 s4.SetIsGeneralAutofillEnabled(false)?;
                 s4.SetIsPasswordAutosaveEnabled(false)?;
+                // WebView2 默认背景白色: Win10 无 DWM 圆角、由 CSS clip-path
+                // 裁切时, 四角缺口会露出这块白底。设为透明后缺口直接透出
+                // 桌面, 才是真"圆角窗口"。win11 原生圆角路径不依赖此设置,
+                // 设置失败(老版本 WebView2)仅退化为"角缺口填白"。
+                // 注意 Controller2 是 Controller 的派生接口, 从 core 上
+                // cast 会 E_NOINTERFACE
+                let c2 = wv.controller().cast::<ICoreWebView2Controller2>()?;
+                c2.SetDefaultBackgroundColor(webview2_com::Microsoft::Web::WebView2::Win32::COREWEBVIEW2_COLOR {
+                    A: 0, R: 0, G: 0, B: 0,
+                })?;
                 Ok(())
             })()
         };

@@ -463,6 +463,15 @@
     align-items: center; gap: 9px; padding-left: 14px;
     background: var(--bg-side); border-bottom: 1px solid var(--border);
   }
+  /* Win11 风格圆角窗口（兜底裁切）: 桌面壳已尝试 DWM 原生圆角
+     (main.rs apply_win11_rounding, Win11 生效且带系统阴影)。
+     本规则对 Win11 无感——裁切半径与系统圆角重合、不可见;
+     Win10 等 DWM 不支持的系统上由它兜底: 裁掉四角方角。
+     挂 html 而非 body: html 不参与 body 的 42px 顶部让位, fixed
+     后代（标题栏/弹层/遮罩）定位不受影响, 全窗口内容一体裁切。
+     最大化时回方角（dataset.max 由壳在 Resized/切换时推）, 同 Win11 行为 */
+  html.xcode-desktop { clip-path: inset(0 round 8px); }
+  html.xcode-desktop[data-max="1"] { clip-path: inset(0 round 0); }
   body { padding-top: 42px; }
   .tb-icon { width: 17px; height: 17px; pointer-events: none; }
   .tb-name {
@@ -674,10 +683,31 @@
     background: var(--surface-2); border: 1px solid var(--border);
     padding: 1.5px 6px; border-radius: 5px;
   }
-  .bubble a { color: var(--accent); }
-  .bubble table { border-collapse: collapse; margin: .6em 0; font-size: calc(13px * var(--fs-ui)); }
-  .bubble th, .bubble td { border: 1px solid var(--border-strong); padding: 6px 11px; }
-  .bubble th { background: var(--surface-2); font-weight: 600; }
+  .bubble a { color: var(--accent); text-decoration: none; }
+  .bubble a:hover { text-decoration: underline; }
+  /* markdown 图片: 不溢出气泡, 圆角与整体卡片语言一致 */
+  .bubble img { max-width: 100%; height: auto; border-radius: var(--r-sm); }
+  /* GFM 任务清单: 勾选项整行弱化(对齐 #plan-body 已有样式) */
+  .bubble input[type="checkbox"] { accent-color: var(--accent); margin-right: 2px; }
+  .bubble li:has(> input[type="checkbox"]:checked) { color: var(--text-3); text-decoration: line-through; text-decoration-color: var(--text-3); }
+  /* 表格: 圆角卡容器 + 行分隔线, 摘掉全网格线(老式 Excel 观感)。
+   * 宽表由 .table-wrap 横向滚动, 不撑破气泡 */
+  .table-wrap {
+    border: 1px solid var(--border-strong); border-radius: var(--r-md);
+    overflow-x: auto; margin: .6em 0;
+  }
+  .bubble table { border-collapse: collapse; margin: 0; width: 100%; font-size: calc(13px * var(--fs-ui)); }
+  .bubble th, .bubble td { border: none; border-bottom: 1px solid var(--border); padding: 7px 12px; text-align: left; vertical-align: top; }
+  .bubble th { background: var(--surface-2); font-weight: 600; border-bottom-color: var(--border-strong); white-space: nowrap; }
+  .bubble td { color: var(--text); }
+  /* 行分隔线去掉最后一行的, 由容器边框收口 */
+  .bubble tr:last-child td { border-bottom: none; }
+  /* 偶数行斑马纹 + 行悬停高亮(壁纸/浅色下都够淡, 不抢正文) */
+  .bubble tbody tr:nth-child(even) { background: color-mix(in srgb, var(--surface-2) 45%, transparent); }
+  .bubble tbody tr:hover { background: var(--hover); }
+  @supports not (background: color-mix(in srgb, red 50%, blue)) {
+    .bubble tbody tr:nth-child(even) { background: var(--surface-2); }
+  }
   .bubble blockquote {
     border-left: 3px solid var(--accent-border); margin: .6em 0;
     padding: 2px 0 2px 12px; color: var(--text-2);
@@ -2160,9 +2190,14 @@ body.col-resizing, body.col-resizing * { cursor: col-resize !important; }
   border-left: 3px solid color-mix(in srgb, var(--accent) 55%, transparent);
   color: var(--text-2);
 }
-#plan-body table { border-collapse: collapse; margin: 0 0 .7em; font-size: .93em; width: 100%; }
-#plan-body th, #plan-body td { border: 1px solid var(--border); padding: 5px 9px; text-align: left; }
-#plan-body th { background: color-mix(in srgb, var(--surface-2, rgba(127,127,127,.12)) 70%, transparent); font-weight: 600; }
+/* 计划面板表格: 与聊天流 .table-wrap 同语言(圆角卡 + 行分隔线 + 斑马纹) */
+#plan-body .table-wrap { border-color: var(--border); margin: 0 0 .7em; }
+#plan-body table { border-collapse: collapse; margin: 0; width: 100%; font-size: .93em; }
+#plan-body th, #plan-body td { border: none; border-bottom: 1px solid var(--border); padding: 6px 11px; text-align: left; vertical-align: top; }
+#plan-body th { background: color-mix(in srgb, var(--surface-2, rgba(127,127,127,.12)) 70%, transparent); font-weight: 600; border-bottom-color: var(--border-strong); white-space: nowrap; }
+#plan-body tr:last-child td { border-bottom: none; }
+#plan-body tbody tr:nth-child(even) { background: color-mix(in srgb, var(--surface-2, rgba(127,127,127,.12)) 45%, transparent); }
+#plan-body tbody tr:hover { background: var(--hover); }
 #plan-body hr { border: none; border-top: 1px solid var(--border); margin: 1.1em 0; }
 #plan-body a { color: var(--accent); text-decoration: none; }
 #plan-body a:hover { text-decoration: underline; }

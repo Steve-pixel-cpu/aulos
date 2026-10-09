@@ -35,6 +35,10 @@
   }
   html.xcode-desktop #titlebar { display: flex; }
   html.xcode-desktop body { padding-top: 42px; box-sizing: border-box; }
+  /* Win11 风格圆角窗口: 与 app.css 同款。DWM 原生圆角(main.rs)生效时
+     此裁切与其重合不可见; Win10 由它兜底。最大化回方角(dataset.max 由壳推) */
+  html.xcode-desktop { clip-path: inset(0 round 8px); }
+  html.xcode-desktop[data-max="1"] { clip-path: inset(0 round 0); }
   html.dark #titlebar { background: #232323; border-bottom-color: #333; }
   .tb-icon { width: 17px; height: 17px; pointer-events: none; }
   .tb-name { font-size: 12.5px; font-weight: 600; color: #78716c; flex: 1; }
