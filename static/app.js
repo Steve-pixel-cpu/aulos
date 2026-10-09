@@ -2071,6 +2071,9 @@ function renderHistoryMessage(m) {
     const text = m.blocks.filter(b => b.type === "text").map(b => b.text).join("\n");
     // 旧版压缩持久化的续接指令: 模型专用文本, 渲染为一行提示卡而非气泡
     if (text && isCompactNotice(text)) { addCompactNotice(); return; }
+    // [System note] 内部导向文案（收束提醒/预算耗尽/截断恢复等）:
+    // 仅供模型读取, 对用户不可行动——直接不渲染
+    if (text && isSystemNote(text)) return;
     // 附件块转成与 WS 同形状: image 拼缩略图网格, file 渲染文件 chip
     const atts = m.blocks
       .filter(b => b.type === "image" || b.type === "file")
@@ -3513,6 +3516,13 @@ function addCompactNotice(col, live) {
   (col || msgCol()).appendChild(div);
   scrollToBottom();
 }
+
+/* ---------- 模型导向系统提示: [System note] 前缀的 user 消息 ----------
+ * 收束提醒/预算耗尽/迭代上限/截断恢复等内部导向文案以 user 角色落进
+ * 历史（供模型读取）, 对用户没有任何可行动的信息——回放时直接跳过,
+ * 不渲染。 */
+const SYSTEM_NOTE_MARK = "[System note]";
+function isSystemNote(text) { return text.startsWith(SYSTEM_NOTE_MARK); }
 
 /* ---------- 限流退避提示: 同一轮的多条原地更新一行, 有进展/收口即撤 ---------- */
 function onRateLimitedRetry(msg, sid) {
