@@ -37,7 +37,7 @@ from prompt import ProjectContext, SystemPromptBuilder
 from runtime import ConversationRuntime, ToolExecutor
 from storage import SessionStore
 from tools import (ToolRegistry, bash_tool, edit_file_tool, glob_tool,
-                   grep_tool, read_tool,
+                   grep_tool, read_tool, set_tool_result_char_limit,
                    write_tool, present_plan_tool, powershell_tool,
                    task_output_tool, task_stop_tool, todo_tool,
                    web_fetch_tool, web_search_tool,
@@ -182,6 +182,16 @@ read_file_spec = {
                 "description": (
                     "Maximum number of lines to return, starting at offset. "
                     "Omit (with no offset) to read the whole file."
+                ),
+            },
+            "force": {
+                "type": "boolean",
+                "description": (
+                    "Re-read a file you have already read even if it has "
+                    "not changed. Whole-file reads of unchanged files "
+                    "normally return a short 'unchanged' note instead of "
+                    "the full text; set force=true only when you actually "
+                    "need the text again."
                 ),
             },
         },
@@ -719,10 +729,18 @@ def build_runtime(session: Session,
     )
     # 循环层预算接线: maxIterations / tokenBudget(=auto-compact 阈值) /
     # turnTokenBudget 此前只是被解析, 从未生效
+    # toolResultCharLimit 落在 tools 模块全局（截断发生在 registry 执行层,
+    # CLI 与 Web 共享同一份; 配置本身进程级, 语义一致）
+    set_tool_result_char_limit(hooks_config.tool_result_char_limit())
     running_time = (running_time
                     .with_max_iterations(hooks_config.max_iterations())
                     .with_auto_compact_threshold(hooks_config.token_budget())
-                    .with_turn_output_budget(hooks_config.turn_token_budget()))
+                    .with_turn_output_budget(hooks_config.turn_token_budget())
+                    .with_thinking_downshift(
+                        hooks_config.thinking_auto_downshift(),
+                        hooks_config.downshift_after_iterations())
+                    .with_convergence_nudge(hooks_config.convergence_nudge_at())
+                    .with_reread_dedup(hooks_config.reread_dedup()))
     # 用户命令白名单: settings.json 持久规则, 启动即生效（CLI 与 Web 同源）。
     # setter 返回 None, 不能挂进上面的 builder 链尾。
     running_time.set_command_allowlist(load_command_allowlist())

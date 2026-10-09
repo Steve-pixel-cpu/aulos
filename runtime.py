@@ -6,13 +6,15 @@ import os
 import re
 import shlex
 import threading
+import time
 from pathlib import Path
 
 from pydantic import BaseModel
 
+import call_log
 from api_client import (AssistantEvent, TextDeltaEvent, ToolUseEvent,
                         MessageStopEvent, ThinkingEvent,
-                        ApiClient, INTERRUPTED_STOP_REASON)
+                        ApiClient, INTERRUPTED_STOP_REASON, THINKING_LEVELS)
 from compact import (
     CompactionConfig,
     SUMMARIZER_SYSTEM_PROMPT,
@@ -63,6 +65,19 @@ TURN_ITERATIONS_EXHAUSTED_NOTICE = (
     "this conversation. In your next turn, do NOT repeat reads or checks "
     "you have already done — continue directly with the next concrete "
     "action."
+)
+
+# 迭代软收束提示: 在 maxIterations 硬掐之前, 提前给模型一个"该收了"的
+# 信号。观测到的模式: 排查型回合滚到三四十轮还不收敛, 每轮照样全额
+# 思考, 墙钟按分钟累加。收束点对模型可见（落进历史）, 而非静默截断。
+TURN_CONVERGENCE_NUDGE_NOTICE = (
+    "[System note] This turn has already run {n} tool rounds. Stop "
+    "open-ended investigation: synthesize the evidence you already have "
+    "and move to the concrete action or the final answer. Do not start "
+    "new exploratory threads; re-read or re-run only what you actually "
+    "need to act (e.g. a result that was truncated). If you are still "
+    "doing broad investigation, delegate one subagent sweep and continue "
+    "with its conclusions instead of reading files inline."
 )
 
 # --- 重复只读调用护栏: 确定性反自旋。观测到的失败模式: 大文件整读被截断
@@ -432,6 +447,24 @@ class ConversationRuntime:
         self._max_iterations = DEFAULT_MAX_ITERATIONS
         self._auto_compact_threshold = DEFAULT_AUTO_COMPACT_THRESHOLD
         self._turn_output_budget = DEFAULT_TURN_OUTPUT_BUDGET
+        # 长回合延迟治理（默认值与 config.RuntimeFeatureConfig 对齐,
+        # build_runtime 按配置覆盖）:
+        # - 思考自动降档: 回合内迭代每完成 downshift_after 轮降一档
+        # - 软收束提示: 迭代达到 nudge_at 时注入一次收束提醒（0 = 关）
+        self._thinking_downshift_enabled = True
+        self._downshift_after = 20
+        self._nudge_at = 30
+        # 调用耗时日志的会话标签（Web 端传会话 id 便于多会话区分;
+        # CLI 单会话可省）
+        self._log_tag: Optional[str] = None
+        # 同文件重读去重（主上下文瘦身）: path -> (解析路径, seq, mtime_ns,
+        # size, 总行数, 首读时刻)。seq = 建档时的变异序号——任何写入推进
+        # 序号即全体失效（保守: 多失效好过给模型看不见的内容）。指纹由
+        # read_tool 经 contextvar sink（_read_fp_events）送达, 键用模型
+        # 写的原始 path 串, 双方无需共享 workdir 解析。
+        self._reread_dedup_enabled = True
+        self._read_dedup: dict = {}
+        self._read_fp_events: dict = {}
         self._api_client = api_client
         # side-call 专用 client（utilityProvider 小模型, 见 set_utility_client）:
         # None = 未配置, 摘要类 side-call 跟主模型（原行为）
@@ -581,6 +614,23 @@ class ConversationRuntime:
         self._turn_output_budget = n
         return self
 
+    def with_thinking_downshift(self, enabled: bool, after: int) -> "ConversationRuntime":
+        self._thinking_downshift_enabled = enabled
+        self._downshift_after = after
+        return self
+
+    def with_convergence_nudge(self, n: int) -> "ConversationRuntime":
+        self._nudge_at = n
+        return self
+
+    def with_reread_dedup(self, enabled: bool) -> "ConversationRuntime":
+        self._reread_dedup_enabled = enabled
+        return self
+
+    def set_log_tag(self, tag: Optional[str]) -> "ConversationRuntime":
+        self._log_tag = tag
+        return self
+
     def session(self)-> Session:
         return self._session
 
@@ -646,6 +696,23 @@ class ConversationRuntime:
 
     def set_thinking_level(self, level: str) -> None:
         self._thinking_level = level
+
+    def _effective_thinking_level(self, iterations: int) -> str:
+        """本次请求实际使用的思考档位: 回合内工具迭代每完成
+        downshift_after 轮, 向 low 退一级（high→medium→low, 触底 low;
+        max 先退到 high）。只影响本次请求参数, 不改写用户设置
+        _thinking_level——新回合自动恢复。长回合后段多是执行与收尾,
+        每轮全额思考预算（high=16k）只白烧墙钟。"""
+        if not self._thinking_downshift_enabled or self._downshift_after <= 0:
+            return self._thinking_level
+        steps = (iterations - 1) // self._downshift_after if iterations > 0 else 0
+        if steps <= 0:
+            return self._thinking_level
+        try:
+            idx = THINKING_LEVELS.index(self._thinking_level)
+        except ValueError:
+            return self._thinking_level
+        return THINKING_LEVELS[max(0, idx - steps)]
 
     def model(self) -> Optional[str]:
         """本会话请求覆盖的模型名; None = 跟随 api_client 当前模型。"""
@@ -737,6 +804,9 @@ class ConversationRuntime:
                 count, at_seq = self._read_calls.get(key, (0, self._mutation_seq))
                 if at_seq != self._mutation_seq:
                     count = 0               # 有写入介入: 结果会变, 视作首次
+                elif (tool_name == "read_file"
+                        and self._read_dedup_stale(tool_input)):
+                    count = 0               # 会话外文件已变: 重看合法, 视作首次
                 count += 1
                 self._read_calls[key] = (count, self._mutation_seq)
                 self._turn_call_clock += 1
@@ -784,6 +854,82 @@ class ConversationRuntime:
                 msgs[idx] = msg.model_copy(update={"content": [new_block]})
             return
 
+    def _read_dedup_stale(self, tool_input: str) -> bool:
+        """重读去重视角下"文件已变": 有档案且磁盘 mtime/大小不再吻合
+        （会话外编辑不推进变异序号, 护栏据此把重读视作首次）。"""
+        try:
+            raw = json.loads(tool_input or "{}").get("path")
+        except json.JSONDecodeError:
+            return False
+        if not isinstance(raw, str):
+            return False
+        entry = self._read_dedup.get(raw)
+        if entry is None:
+            return False
+        try:
+            st = os.stat(entry[0])
+        except OSError:
+            return True
+        return st.st_mtime_ns != entry[2] or st.st_size != entry[3]
+
+    def _forget_fingerprint(self, tool_input: str) -> None:
+        """清 sink 里该 path 的指纹（执行前调用, 保证"执行后 sink 有档"
+        等价于"这次执行真的全文成功"）。键 = 模型写的原始 path 串。"""
+        from tools import READ_FILE_FINGERPRINTS
+        sink = READ_FILE_FINGERPRINTS.get()
+        if sink is None:
+            return
+        try:
+            raw = json.loads(tool_input or "{}").get("path")
+        except json.JSONDecodeError:
+            return
+        if isinstance(raw, str):
+            sink.pop(raw, None)
+
+    def _maybe_reread_dedup(self, tool_block: ToolContentBlock, output: str,
+                            failed: bool) -> str:
+        """同文件重读去重: 整读命中"档案在 + 无写入介入 + 磁盘未变"时,
+        全文换成一行 unchanged。任何一条拿不准就照给全文——去重省的是
+        上下文, 不能省成失忆。失效条件(任一): 显式 offset/limit、
+        force=true、档案缺失、变异序号推进过（任何写动作, 含并行批次的
+        其他工具）、磁盘 mtime/大小与建档时不符（会话外编辑）。"""
+        if failed or tool_block.name != "read_file" or not self._reread_dedup_enabled:
+            return output
+        from tools import READ_FILE_FINGERPRINTS, REREAD_UNCHANGED_TEXT
+        try:
+            params = json.loads(tool_block.input) if tool_block.input else {}
+        except json.JSONDecodeError:
+            return output
+        raw_path = params.get("path")
+        if not isinstance(raw_path, str) or not raw_path:
+            return output
+        whole_read = params.get("offset") in (None, 1) and not params.get("limit")
+        forced = bool(params.get("force"))
+        entry = self._read_dedup.get(raw_path)
+        if whole_read and not forced and entry is not None:
+            resolved, at_seq, mtime_ns, size, n_lines, hhmm = entry
+            if at_seq == self._mutation_seq:
+                try:
+                    st = os.stat(resolved)
+                    unchanged = st.st_mtime_ns == mtime_ns and st.st_size == size
+                except OSError:
+                    unchanged = False
+                if unchanged:
+                    return REREAD_UNCHANGED_TEXT.format(n=n_lines, hhmm=hhmm)
+                # 磁盘已变（会话外编辑）: 档案过期, 走下面的全文/刷新分支。
+                # 护栏计数已在注册时按 _read_dedup_stale 复位, 不会被拒。
+        # 全文照给。这次执行真有全文建档（read_tool 在 sink 留档）才刷新;
+        # 整读但没档（读失败/二进制/文件已消失）→ 旧档案一并作废。
+        fresh = READ_FILE_FINGERPRINTS.get().get(raw_path) \
+            if READ_FILE_FINGERPRINTS.get() else None
+        if fresh is not None:
+            self._read_dedup[raw_path] = (
+                fresh[0], self._mutation_seq, fresh[1], fresh[2],
+                fresh[3], fresh[4])
+        elif whole_read:
+            self._read_dedup.pop(raw_path, None)
+        return output
+
     def _execute_tool(self, tool_block: ToolContentBlock, pre_res: HookResult) -> Message:
         """执行管线: 工具本体 + Pre/Post hook 反馈合并 + 重复只读护栏。
         无其他共享可变状态, 同一条消息里相互独立的 tool_use 可由 run_turn
@@ -798,6 +944,10 @@ class ConversationRuntime:
                 output = REPEAT_DENIED_TEXT,
                 is_error = True,
             )
+        if tool_block.name == "read_file":
+            # 清掉 sink 里该 path 的旧指纹: 执行后 sink 里有档 ⟺ 这次执行
+            # 真的全读成功——失败/部分读不能误刷新去重档案的时效。
+            self._forget_fingerprint(tool_block.input)
         is_tool_error = False
         try:
             output = self._tool_executor.execute(
@@ -830,6 +980,11 @@ class ConversationRuntime:
             output = (f"{output}\n\n" + (SHELL_REPEAT_STRONG_TEXT
                                          if shell_streak >= SHELL_REPEAT_STRONG_ON
                                          else SHELL_REPEAT_WARN_TEXT))
+
+        # 同文件重读去重: 未变文件的整读换成一行 unchanged（主上下文瘦身,
+        # 实测单会话 markdown.tsx 重读 14 遍、每遍全文驻留）
+        output = self._maybe_reread_dedup(
+            tool_block, output, failed=is_tool_error or post_res.denied)
 
         # result_meta 随消息落盘, Web 端历史回放可重建富展示（diff 等）。
         # 内部 Message/持久化层认识它, API 序列化 (_convert_message) 忽略之。
@@ -888,6 +1043,7 @@ class ConversationRuntime:
         with self._guard_lock:
             self._read_calls.clear()
             self._shell_streaks.clear()
+            self._read_dedup.clear()   # 旧全文可能已归档出视图: 重读必须给真内容
             self._turn_call_clock = 0
             self._checkpoint_mark = 0
         if self._on_compacted is not None:
@@ -1124,6 +1280,17 @@ class ConversationRuntime:
                             if k[0] == "read_file" and k[1] == key[1]]
                     for k in dead:
                         self._read_calls.pop(k, None)
+        # 重读去重档案一并摘除: 被清出的旧全文已不在模型视图里,
+        # "unchanged"会让模型永远拿不回内容——必须允许真重读
+        for entry in entries:
+            if not entry or entry[0] != "read_file":
+                continue
+            try:
+                raw = json.loads(entry[1] or "{}").get("path")
+            except json.JSONDecodeError:
+                continue
+            if isinstance(raw, str):
+                self._read_dedup.pop(raw, None)
 
     def _post_compact_restore_text(self, archived: List[Message]) -> str:
         """压缩后文件重注入: 从归档区收集最近读过的文件（最多 5 个, 每个
@@ -1214,10 +1381,22 @@ class ConversationRuntime:
         budget_exhausted = False
         iterations_exhausted = False
         auto_compacted = False
+        nudge_fired = False      # 软收束提示每回合至多一次
         output_recoveries = 0    # max_tokens 截断恢复已用次数
 
+        # 重读去重指纹 sink: read_tool 经 contextvar 拿到本会话的档案袋。
+        # 必须在 turn 线程上 set——并行批次由 copy_context() 快照携带,
+        # 在创建线程上 set 池线程看不见。
+        from tools import READ_FILE_FINGERPRINTS
+        READ_FILE_FINGERPRINTS.set(self._read_fp_events)
+
         # 附件（图片/文本文件）经 Message.user_input 组装成 image/file 块;
-        # CLI 调用点不传附件, 行为不变
+        # CLI 调用点不传附件, 行为不变。贴图先降采样: 单边 >1568px 或
+        # >300KB 的等比压缩, 原图落盘 tool-outputs/images/——会话 JSONL
+        # 与后续每轮请求只带缩后版本。
+        if attachments:
+            from imaging import slim_image_attachments
+            attachments = slim_image_attachments(attachments)
         curr_session.messages.append(
             Message.user_input(user_input, attachments))
         self._notify_iterate()   # 一致点: 用户消息已落定
@@ -1244,6 +1423,16 @@ class ConversationRuntime:
                     Message.user_text(TURN_ITERATIONS_EXHAUSTED_NOTICE))
                 self._notify_iterate()
                 break
+            # 迭代软收束点: 与预算检查同一落点（此刻历史一致）。提示落进
+            # 历史后模型看得见"该收了"——比静默放行到 maxIterations 硬掐
+            # 便宜得多。每回合至多一次。
+            if (self._nudge_at > 0 and not nudge_fired
+                    and iterations >= self._nudge_at):
+                nudge_fired = True
+                curr_session.messages.append(
+                    Message.user_text(
+                        TURN_CONVERGENCE_NUDGE_NOTICE.format(n=iterations)))
+                self._notify_iterate()   # 一致点: 收束提示已落定
             # 压缩检查点与预算检查同位置: 此刻历史一致。压缩只置粘性标记
             # （历史不被改写）, 真正的裁剪发生在下面 _model_view() 构建
             # 请求视图时——超限发生在单轮中途也能就地降载。
@@ -1251,6 +1440,11 @@ class ConversationRuntime:
                 auto_compacted = True
 
             iterations += 1
+            # 本次请求的思考档位: 回合内降档只改请求参数, 不改用户设置
+            effective_level = self._effective_thinking_level(iterations)
+            # 计时含 _model_view()（压缩激活时其中有一次摘要 side-call）
+            # ——口径是"这一步用户等了多久", 而非纯端点耗时
+            _call_started = time.perf_counter()
             # 计划模式指令段的注入/移除在 set_permission_mode /
             # set_plan_mode → _rebuild_effective_prompt 里完成, stream
             # 一律用生效提示词
@@ -1259,7 +1453,7 @@ class ConversationRuntime:
             events = self._api_client.stream(
                 system_prompt=self._effective_system_prompt,
                 messages=self._model_view(),
-                thinking_level=self._thinking_level,
+                thinking_level=effective_level,
                 model=self._model,
             )
             # 流内打断: api_client 在流式消费循环里查 should_stop 命中后
@@ -1295,6 +1489,13 @@ class ConversationRuntime:
             assistant_messages.append(message)
             if token_usage:
                 self.usage().record(usage=token_usage)
+                # 每次调用的耗时与用量日志（best-effort, 失败静默）:
+                # "这轮对话为什么这么久"以后直接看 ~/.x-code/logs/
+                call_log.log_model_call(
+                    session=self._log_tag, iteration=iterations,
+                    thinking_level=effective_level,
+                    duration_s=time.perf_counter() - _call_started,
+                    usage=token_usage)
             curr_session.messages.append(message)
 
             if flow_interrupted:

@@ -15,6 +15,7 @@ dependencies = [
     "playwright>=1.49",
     "mcp>=2",
     "pyyaml>=6.0",
+    "pillow>=12.3.0",
 ]
 
 [dependency-groups]

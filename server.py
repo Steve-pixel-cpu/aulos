@@ -905,6 +905,8 @@ def load_runtime_for(web_session: WebSession) -> None:
     web_session.runtime.set_plan_mode(web_session.plan_active)
     web_session.runtime.set_thinking_level(web_session.thinking_level)
     web_session.runtime.set_model(web_session.model_id)
+    # 调用耗时日志带上会话 id——多会话共用一个日志文件时分得清谁是谁
+    web_session.runtime.set_log_tag(web_session.session_id)
     # workspace 根: 会话工作目录 + 全局附加目录（写路径分级/敏感扫描基准）
     web_session.runtime.set_workspace_roots(
         _workspace_roots_for(web_session.workdir))
@@ -2492,6 +2494,11 @@ async def api_get_settings():
         # 每轮最大迭代次数（单轮任务里模型连续调用工具的次数上限）:
         # 同样是"新会话的默认值", 进行中的会话保持组装时的值
         "max_iterations": runtime_config.max_iterations(),
+        # 长回合延迟治理: 回合内思考自动降档开关 / 降档起点迭代数 /
+        # 软收束提示的注入位置（0 = 关）。会话隔离语义同 max_iterations
+        "thinking_auto_downshift": runtime_config.thinking_auto_downshift(),
+        "downshift_after_iterations": runtime_config.downshift_after_iterations(),
+        "convergence_nudge_at": runtime_config.convergence_nudge_at(),
         # 前端展示用: 输入栏的模型名 + 顶栏面包屑的工作区名
         "model": api_client.model,
         "provider_id": active.get("provider"),
@@ -2568,6 +2575,43 @@ async def api_post_settings(request: dict):
             )
         runtime_config.feature_config.max_iterations = raw_iterations
         _save_setting("maxIterations", raw_iterations)
+
+    # 长回合延迟治理三键: 会话隔离语义同 max_iterations（新会话生效,
+    # 存活会话不追改）
+    raw_downshift = request.get("thinking_auto_downshift")
+    if raw_downshift is not None:
+        if not isinstance(raw_downshift, bool):
+            raise HTTPException(
+                status_code=400,
+                detail=f"thinking_auto_downshift: 须为布尔, got {raw_downshift!r}",
+            )
+        runtime_config.feature_config.thinking_auto_downshift = raw_downshift
+        _save_setting("thinkingAutoDownshift", raw_downshift)
+
+    raw_downshift_after = request.get("downshift_after_iterations")
+    if raw_downshift_after is not None:
+        # bool 是 int 的子类, True 会被当成 1——显式排除
+        if (not isinstance(raw_downshift_after, int)
+                or isinstance(raw_downshift_after, bool)
+                or not 1 <= raw_downshift_after <= 10000):
+            raise HTTPException(
+                status_code=400,
+                detail=("downshift_after_iterations: 须为 1–10000 的整数, "
+                        f"got {raw_downshift_after!r}"),
+            )
+        runtime_config.feature_config.downshift_after_iterations = raw_downshift_after
+        _save_setting("downshiftAfterIterations", raw_downshift_after)
+
+    raw_nudge = request.get("convergence_nudge_at")
+    if raw_nudge is not None:
+        if (not isinstance(raw_nudge, int) or isinstance(raw_nudge, bool)
+                or not 0 <= raw_nudge <= 10000):
+            raise HTTPException(
+                status_code=400,
+                detail=f"convergence_nudge_at: 须为 0–10000 的整数, got {raw_nudge!r}",
+            )
+        runtime_config.feature_config.convergence_nudge_at = raw_nudge
+        _save_setting("convergenceNudgeAt", raw_nudge)
 
     # 切换激活模型（来自输入框模型下拉）
     provider_id = request.get("provider_id")

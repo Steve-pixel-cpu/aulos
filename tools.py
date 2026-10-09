@@ -34,8 +34,9 @@ _KEEP_TAIL = 6_000   # 结尾: 报错和最终状态通常在这里
 # 二段式截断（落盘）分工具上限: 超限全文写盘、会话里只回首尾 + 路径,
 # 中段信息不再永久丢失（模型需要时自己 read_file）。bash 系上限抬高到
 # 30k; grep/glob/edit_file 的输出结构性更强（表头/文件列表/diff）, 给到
-# 100k; read_file 自带分页且落盘会形成"读结果"的循环依赖, 不参与落盘,
-# 维持纯截断。上限内维持原行为（不落盘不截断）。
+# 100k。上限内维持原行为（不落盘不截断）。
+# read_file 不走这一档: 它有自己的行预算档（_budget_line_output, 前 40 行
+# + 落盘标记）, 且整读自带分页协议。
 SPILL_LIMITS = {
     "bash": 30_000,
     "powershell": 30_000,
@@ -97,9 +98,111 @@ def resumable_spill_path(output: str) -> Optional[str]:
     return match.group(1) if match else None
 
 
+# --- 按天落盘（read_file/grep 行预算档）与运行时上限覆盖 ---
+# read_file 整读有分页窗, 但显式 limit 的大段读、grep 的密集命中仍能把
+# 几十万字符塞进会话（实测一个会话 read_file×87 + grep×55 全量驻留）。
+# 这两个工具改行预算: 超限全文写 tool-outputs/<YYYYMMDD>/<hash>.txt,
+# 会话里只留前几十行 + 一行落盘标记（措辞兼容 resumable_spill_path,
+# microcompact 清理后仍可凭路径找回）。
+TOOL_OUTPUTS_DIR = USER_CONFIG_HOME / "tool-outputs"
+TOOL_RESULT_CHAR_LIMIT = MAX_TOOL_OUTPUT_CHARS   # 运行时经 set_ 覆盖
+_READ_KEEP_LINES = 40
+_GREP_MAX_LINES = 50
+
+
+def set_tool_result_char_limit(n: int) -> None:
+    """运行时覆盖 read_file/grep 的字符预算（build_runtime 按配置接线;
+    tools.py 不 import config, 由调用方把配置值推进来）。"""
+    global TOOL_RESULT_CHAR_LIMIT
+    if isinstance(n, int) and not isinstance(n, bool) and n > 0:
+        TOOL_RESULT_CHAR_LIMIT = n
+
+
+def spill_tool_output_dated(output: str) -> Optional[str]:
+    """全文落盘到 tool-outputs/<YYYYMMDD>/<hash>.txt, 返回路径字符串。
+    内容 hash 命名去重; 按天分目录便于整目录过期清理。尽力而为:
+    任何失败返回 None（截断退化为纯首尾掐, 不放大成工具失败）。"""
+    global _last_spill_cleanup
+    try:
+        day_dir = TOOL_OUTPUTS_DIR / time.strftime("%Y%m%d")
+        day_dir.mkdir(parents=True, exist_ok=True)
+        digest = hashlib.sha256(output.encode("utf-8")).hexdigest()[:16]
+        path = day_dir / f"{digest}.txt"
+        if not path.exists():
+            path.write_text(output, encoding="utf-8")
+        now = time.time()
+        if now - _last_spill_cleanup > _SPILL_CLEANUP_INTERVAL_S:
+            _last_spill_cleanup = now
+            _cleanup_dated_spills(now)
+        return str(path)
+    except Exception:
+        return None
+
+
+def _cleanup_dated_spills(now: float) -> None:
+    """过期的按天目录整目录删除（SPILL_RETENTION_DAYS, 按 mtime）。
+    只动 8 位纯数字命名的日期目录, images/ 等其他子目录不碰。"""
+    cutoff = now - SPILL_RETENTION_DAYS * 86400
+    try:
+        entries = list(TOOL_OUTPUTS_DIR.iterdir())
+    except OSError:
+        return
+    for d in entries:
+        try:
+            if (d.is_dir() and len(d.name) == 8 and d.name.isdigit()
+                    and d.stat().st_mtime < cutoff):
+                shutil.rmtree(d, ignore_errors=True)
+        except OSError:
+            continue
+
+
+def _spill_dated_marker(total_chars: int, path: str) -> str:
+    return (f"\n[truncated, {total_chars} chars total. "
+            f"Full output saved to `{path}` — inspect it with read_file "
+            f"(offset/limit) instead of repeating this call.]\n")
+
+
+# --- 重读去重指纹桥 ---
+# read_tool 把"这次全文读"的档案（解析后绝对路径 / mtime / 大小 / 总行数 /
+# 时刻）写进 runtime 注入的 sink（contextvar; 并行批次经 copy_context 快照
+# 携带进池线程）。键用模型写的原始 path 串——runtime 在结果入会话前按同一
+# 键查表决定"全文照给"还是换成一行 unchanged, 双方无需共享 workdir 解析。
+READ_FILE_FINGERPRINTS: contextvars.ContextVar = contextvars.ContextVar(
+    "read_file_fingerprints", default=None)
+
+
+# 去重命中时替换全文的一行话。措辞给足出路: 内容其实已经在上文,
+# 要么翻上面, 要么带参数精确取。
+REREAD_UNCHANGED_TEXT = (
+    "[unchanged since last read: {n} lines total, first read at {hhmm}. "
+    "The file content is already in your context above — do not re-read "
+    "the whole file. Pass offset/limit for a specific range or force=true "
+    "to get the full text again.]"
+)
+
+
+def _record_read_fingerprint(raw_path: str, resolved: Path,
+                             total_lines: int) -> None:
+    """全文读成功后建档。sink 未注入（CLI 旧执行器/去重关闭）时零开销跳过。"""
+    sink = READ_FILE_FINGERPRINTS.get()
+    if sink is None:
+        return
+    try:
+        st = resolved.stat()
+        sink[raw_path] = (str(resolved), st.st_mtime_ns, st.st_size,
+                          total_lines, time.strftime("%H:%M"))
+    except OSError:
+        pass
+
+
 def truncate_tool_output(output: str, tool_name: str = "") -> str:
-    """超限时二段式处理: 落盘型工具（SPILL_LIMITS）全文写盘、回显首尾 +
-    路径; 其余维持纯首尾截断（tool_name 缺省 = 旧调用方, 行为不变）。"""
+    """超限处理, 分工具三档:
+    - read_file/grep: 行预算档——超字符预算（read_file）或超 50 行（grep）
+      时全文落盘 tool-outputs/<日期>/, 会话里只留前 40(50) 行 + 一行标记;
+    - 其余落盘型工具（SPILL_LIMITS）: 全文写盘、回显首尾 + 路径;
+    - 其余维持纯首尾截断（tool_name 缺省 = 旧调用方, 行为不变）。"""
+    if tool_name in ("read_file", "grep"):
+        return _budget_line_output(output, tool_name)
     limit = SPILL_LIMITS.get(tool_name, MAX_TOOL_OUTPUT_CHARS)
     if len(output) <= limit:
         return output
@@ -109,6 +212,12 @@ def truncate_tool_output(output: str, tool_name: str = "") -> str:
         if path:
             return (output[:_KEEP_HEAD] + _spill_marker(omitted, path)
                     + output[-_KEEP_TAIL:])
+    return _plain_truncate(output)
+
+
+def _plain_truncate(output: str) -> str:
+    """通用首尾截断（无落盘回退档）。"""
+    omitted = len(output) - _KEEP_HEAD - _KEEP_TAIL
     return (
         output[:_KEEP_HEAD]
         + f"\n\n[... output truncated: {omitted} characters omitted. "
@@ -117,6 +226,36 @@ def truncate_tool_output(output: str, tool_name: str = "") -> str:
         f"specific grep pattern/path, or a filtered command ...]\n\n"
         + output[-_KEEP_TAIL:]
     )
+
+
+def _budget_line_output(output: str, tool_name: str) -> str:
+    """read_file/grep 行预算档: 超限全文落盘, 会话里留前 N 行 + 一行
+    落盘标记（措辞兼容 resumable_spill_path, microcompact 清理后仍可凭
+    路径找回）。落盘失败退回通用首尾截断——中段可丢, 证据不可凭空消失。"""
+    keep = _GREP_MAX_LINES if tool_name == "grep" else _READ_KEEP_LINES
+    over = (len(output) > TOOL_RESULT_CHAR_LIMIT
+            or (tool_name == "grep" and len(output.splitlines()) > keep))
+    if not over:
+        return output
+    path = spill_tool_output_dated(output)
+    if path is None:
+        return _plain_truncate(output)
+    kept_lines = output.splitlines()[:keep]
+    kept = "\n".join(kept_lines)
+    if len(kept) > TOOL_RESULT_CHAR_LIMIT:
+        # 病理长行（压缩/混淆的单行大文件）: 整行粒度收缩到预算内;
+        # 首行单独超限时掐到预算——模型看到的仍是行首起的完整前缀
+        acc, n = 0, 0
+        for i, line in enumerate(kept_lines):
+            if acc + len(line) > TOOL_RESULT_CHAR_LIMIT:
+                if i == 0:
+                    kept_lines = [line[:TOOL_RESULT_CHAR_LIMIT]]
+                    n = 1
+                break
+            acc += len(line) + 1
+            n = i + 1
+        kept = "\n".join(kept_lines[:n])
+    return kept + _spill_dated_marker(len(output), path)
 
 
 class ToolRegistry():
@@ -495,6 +634,10 @@ def read_tool(params: dict, workdir: Optional[str] = None) -> str:
         return "ERROR: offset/limit must be integers"
     offset = max(1, offset)
     if offset == 1 and limit <= 0:
+        # 全文读（含大文件的首页窗口）: 建重读去重档案——runtime 据此把
+        # 未变文件的重读换成一行 unchanged。分页读（显式 offset/limit）
+        # 不建档: 部分视图不能代表"看过全文"。
+        _record_read_fingerprint(params.get("path", ""), path, total)
         # 整读: 小文件全文原样（不加任何头）; 大文件切首页窗口
         if sum(len(line) for line in lines) <= _READ_WINDOW_CHARS:
             return "".join(lines)

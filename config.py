@@ -187,6 +187,22 @@ class RuntimeFeatureConfig(BaseModel):
     # 单轮输出预算（含思考）。与 runtime.DEFAULT_TURN_OUTPUT_BUDGET 对齐:
     # 思考型模型一次大思考烧 8k~16k, 预算太紧会把轮次掐死在动手之前。
     turn_token_budget: int = 262_144
+    # 回合内思考自动降档: 同一回合的工具迭代每越过 downshift_after_iterations
+    # 的整数倍（20/40/…）, 思考档降一级（high→medium→low, 触底 low）。
+    # 只影响当回合, 新回合恢复用户设定。长回合后段多是执行与收尾, 每轮
+    # 全额思考预算（high=16k）只白烧墙钟——单回合 50 轮能拖出半小时纯思考。
+    thinking_auto_downshift: bool = True
+    downshift_after_iterations: int = 20
+    # 迭代软收束提示: 回合迭代达到该值时注入一次 [System note], 提醒模型
+    # 汇总已有证据、直接行动或作答。0 = 关闭。硬上限仍是 maxIterations。
+    convergence_nudge_at: int = 30
+    # read_file/grep 的行预算字符上限: 超限全文落盘 tool-outputs/<日期>/,
+    # 会话里只留前 40(50) 行 + 落盘标记。读文件结果全量驻留是上下文膨胀
+    # 的最大单一来源（实测单会话 read_file×87 + grep×55 全量进上下文）。
+    tool_result_char_limit: int = 20_000
+    # 同文件重读去重: 文件未变时的整读只回一行 unchanged（带首次读取时刻）,
+    # 任何写入介入或文件变化即失效; offset/limit/force=true 永远给全文。
+    reread_dedup: bool = True
     # MCP 服务器列表（配置 mcpServers key）。空列表 = 未配置, 零开销。
     mcp_servers: list[McpServerConfig] = Field(default_factory=list)
 
@@ -234,6 +250,21 @@ class RuntimeConfig(BaseModel):
 
     def turn_token_budget(self) -> int:
         return self.feature_config.turn_token_budget
+
+    def thinking_auto_downshift(self) -> bool:
+        return self.feature_config.thinking_auto_downshift
+
+    def downshift_after_iterations(self) -> int:
+        return self.feature_config.downshift_after_iterations
+
+    def convergence_nudge_at(self) -> int:
+        return self.feature_config.convergence_nudge_at
+
+    def tool_result_char_limit(self) -> int:
+        return self.feature_config.tool_result_char_limit
+
+    def reread_dedup(self) -> bool:
+        return self.feature_config.reread_dedup
 
     def mcp_servers(self) -> list["McpServerConfig"]:
         return self.feature_config.mcp_servers
@@ -328,6 +359,40 @@ class ConfigLoader:
         token_budget = (raw_budget if raw_budget is not None
                         else int(context_window * COMPACT_THRESHOLD_RATIO))
 
+        # 回合内思考自动降档与软收束提示（长回合延迟治理, 详见字段注释）
+        raw_downshift = merged.get("thinkingAutoDownshift", True)
+        if not isinstance(raw_downshift, bool):
+            raise ConfigError(
+                f"thinkingAutoDownshift: expected boolean, got {raw_downshift!r}",
+                kind="parse",
+            )
+        downshift_after = merged.get("downshiftAfterIterations", 20)
+        if not isinstance(downshift_after, int) or isinstance(downshift_after, bool) \
+                or downshift_after <= 0:
+            raise ConfigError(
+                f"downshiftAfterIterations: expected positive integer, got {downshift_after!r}",
+                kind="parse",
+            )
+        nudge_at = merged.get("convergenceNudgeAt", 30)
+        if not isinstance(nudge_at, int) or isinstance(nudge_at, bool) or nudge_at < 0:
+            raise ConfigError(
+                f"convergenceNudgeAt: expected non-negative integer, got {nudge_at!r}",
+                kind="parse",
+            )
+        raw_char_limit = merged.get("toolResultCharLimit", 20_000)
+        if (not isinstance(raw_char_limit, int) or isinstance(raw_char_limit, bool)
+                or raw_char_limit <= 0):
+            raise ConfigError(
+                f"toolResultCharLimit: expected positive integer, got {raw_char_limit!r}",
+                kind="parse",
+            )
+        raw_dedup = merged.get("rereadDedup", True)
+        if not isinstance(raw_dedup, bool):
+            raise ConfigError(
+                f"rereadDedup: expected boolean, got {raw_dedup!r}",
+                kind="parse",
+            )
+
         return RuntimeFeatureConfig(
             hooks_pre_tool_use=pre,
             hooks_post_tool_use=post,
@@ -340,6 +405,11 @@ class ConfigLoader:
             token_budget=token_budget,
             thinking_level=raw_level.strip().lower(),
             turn_token_budget=merged.get("turnTokenBudget", 262_144),
+            thinking_auto_downshift=raw_downshift,
+            downshift_after_iterations=downshift_after,
+            convergence_nudge_at=nudge_at,
+            tool_result_char_limit=raw_char_limit,
+            reread_dedup=raw_dedup,
             mcp_servers=_parse_mcp_servers(merged),
         )
 
@@ -378,6 +448,14 @@ class ConfigLoader:
 
     @staticmethod
     def _apply_env_overrides(merged: dict) -> None:
+        def _env_bool(value: str) -> bool:
+            low = value.strip().lower()
+            if low in ("1", "true", "yes", "on"):
+                return True
+            if low in ("0", "false", "no", "off"):
+                return False
+            raise ValueError(value)
+
         env_map = {
             "ANTHROPIC_API_KEY": "api_key",
             "CLAUDE_MODEL": "model",
@@ -387,6 +465,11 @@ class ConfigLoader:
             "CLAUDE_TOKEN_BUDGET": ("tokenBudget", int),
             "CLAUDE_TURN_TOKEN_BUDGET": ("turnTokenBudget", int),
             "CLAUDE_THINKING_LEVEL": "thinkingLevel",
+            "CLAUDE_THINKING_AUTO_DOWNSHIFT": ("thinkingAutoDownshift", _env_bool),
+            "CLAUDE_DOWNSHIFT_AFTER_ITERATIONS": ("downshiftAfterIterations", int),
+            "CLAUDE_CONVERGENCE_NUDGE_AT": ("convergenceNudgeAt", int),
+            "CLAUDE_TOOL_RESULT_CHAR_LIMIT": ("toolResultCharLimit", int),
+            "CLAUDE_REREAD_DEDUP": ("rereadDedup", _env_bool),
         }
 
         for key, target in env_map.items():

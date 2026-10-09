@@ -121,10 +121,30 @@ def test_bash_overflow_spills_full_output(spill_dir):
     assert Path(path).read_text(encoding="utf-8") == output   # 全文可找回
 
 
-def test_grep_limit_is_100k(spill_dir):
-    out = "x" * 50_000
-    assert truncate_tool_output(out, "grep") is out
-    assert "Full output saved to" in truncate_tool_output("y" * 120_000, "grep")
+def test_grep_line_budget(spill_dir, tmp_path, monkeypatch):
+    # grep 改行预算档: >50 行或字符量超 TOOL_RESULT_CHAR_LIMIT 时全文落盘,
+    # 会话里只留前 50(40) 行 + 一行落盘标记
+    monkeypatch.setattr(tools, "TOOL_OUTPUTS_DIR", tmp_path / "tool-outputs")
+
+    many = "\n".join(f"match {i}" for i in range(60))
+    result = truncate_tool_output(many, "grep")
+    lines = result.splitlines()
+    assert lines[:50] == many.splitlines()[:50]
+    assert "Full output saved to" in result
+    assert Path(resumable_spill_path(result)).read_text(encoding="utf-8") == many
+
+    # 字符档: 行数 ≤50 但字符量超 TOOL_RESULT_CHAR_LIMIT → 落盘;
+    # grep 的保留窗仍是自己的 50 行上限（50 行在预算内则整窗保留）
+    monkeypatch.setattr(tools, "TOOL_RESULT_CHAR_LIMIT", 10_000)
+    long_lines = "\n".join("x" * 120 for _ in range(100))
+    result = truncate_tool_output(long_lines, "grep")
+    lines = result.splitlines()
+    assert lines[:50] == long_lines.splitlines()[:50]
+    assert len(lines) == 51
+    assert "Full output saved to" in result
+
+    small = "\n".join(f"match {i}" for i in range(30))
+    assert truncate_tool_output(small, "grep") is small
 
 
 def test_unknown_tool_keeps_pure_truncation(spill_dir):
