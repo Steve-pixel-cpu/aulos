@@ -1828,7 +1828,7 @@ async function loadSessionHistory(id) {
     if (!run.busy) {
       col.querySelectorAll('.tool-row[data-state="run"]').forEach(el => setToolState(el, "stopped"));
     }
-    collapseFinishedToolGroups(col);   // 历史回放: 已结束的大分组默认收起
+    collapseFinishedToolGroups(col);   // 历史回放: 已结束的分组回到默认折叠
     pinnedCol = null; pinnedRun = null;
     run.loaded = true;
   } catch (e) {
@@ -2463,10 +2463,10 @@ function dropOptimisticThinking(run) {
 }
 
 /* ---------- 工具调用 ---------- */
-/* 工具分组: 连续的工具调用收进同一个可折叠容器（头部显示次数/状态摘要），
- * 避免长任务十几行工具记录把正文顶出屏幕。轮次结束自动收起，运行中保持展开。
- * 纯视觉层: 不参与卡片配对（liveToolCards/toolResultIndex 仍指向行元素本身）。 */
-const TOOL_GROUP_AUTO_COLLAPSE_AT = 5;   // 分组内行数达到该值, 结束后自动收起
+/* 工具分组: 连续的工具调用收进同一个可折叠容器（头部显示次数/状态摘要）。
+ * 分组默认折叠——正文只留一行摘要, 细节点头部回看; 运行中手动展开的
+ * 分组不强制收回, 轮次收口恢复默认。纯视觉层: 不参与卡片配对
+ * （liveToolCards/toolResultIndex 仍指向行元素本身）。 */
 
 function fmtToolDur(ms) {
   if (ms < 1000) return (ms / 1000).toFixed(1) + "s";
@@ -2493,14 +2493,14 @@ function updateToolGroupHeader(group) {
     const done = rows.length - run;
     sum.textContent = rows.length === 1 ? "运行中…" : "运行中 " + done + "/" + rows.length + "…";
     sum.className = "tg-sum run";
-    // 运行中自动收起: 行数达标后只留头部摘要 + 当前运行行, 历史行点头部回看
-    if (rows.length >= TOOL_GROUP_AUTO_COLLAPSE_AT && !group._userOpen) {
-      group.classList.add("collapsed");
-    }
   } else {
-    let txt = "✓" + ok;
-    if (bad) txt += " · !" + bad;
-    sum.textContent = txt;
+    /* 摘要 = 迷你计数胶囊(成功绿/需注意橙) + 总耗时小字。
+     * 胶囊比 "✓5 · !1" 的细杆符号好认; 耗时来自各行闭合时累加的
+     * group._ms(setToolState 里 += ), 历史回放无 _t0 则无耗时, 照旧不显示。 */
+    let html = '<span class="cnt ok">' + ok + '</span>';
+    if (bad) html += '<span class="cnt bad">' + bad + '</span>';
+    if (group._ms >= 100) html += '<span class="tg-dur">' + fmtToolDur(group._ms) + '</span>';
+    sum.innerHTML = html;
     sum.className = "tg-sum" + (bad ? " bad" : "");
   }
 }
@@ -2511,7 +2511,7 @@ function groupForNewToolRow(col) {
   let g = col.lastElementChild;
   if (!g || !g.classList.contains("tool-group")) {
     g = document.createElement("div");
-    g.className = "tool-group";
+    g.className = "tool-group collapsed";   // 默认折叠: 正文只留一行摘要, 点头部展开
     const head = document.createElement("button");
     head.type = "button";
     head.className = "tg-head";
@@ -2530,23 +2530,21 @@ function groupForNewToolRow(col) {
   const prior = col.querySelectorAll(".tool-group");
   if (prior.length > 1) {
     const prev = prior[prior.length - 2];
-    const running = prev.querySelector('.tool-row[data-state="run"]');
-    if (!running && prev.querySelectorAll(".tool-row").length >= TOOL_GROUP_AUTO_COLLAPSE_AT) {
+    // 新活动开始: 上一个已结束的分组默认收回（手动展开的是运行中分组时不动）
+    if (!prev.querySelector('.tool-row[data-state="run"]')) {
       prev.classList.add("collapsed");
     }
   }
   return g;
 }
 
-/* 轮次收口/历史回放后调用: 结束且行数达标的分组收起（运行中的分组不动） */
+/* 轮次收口/历史回放后调用: 全部结束的分组回到默认折叠态（运行中的分组不动） */
 function collapseFinishedToolGroups(col) {
   if (!col) return;
   col.querySelectorAll(".tool-group").forEach(g => {
-    g._userOpen = false;   // 轮次收口: 重置手动展开标记, 新一轮恢复自动收起
+    g._userOpen = false;   // 轮次收口: 重置手动展开标记, 新一轮恢复默认折叠
     if (g.querySelector('.tool-row[data-state="run"]')) return;
-    if (g.querySelectorAll(".tool-row").length >= TOOL_GROUP_AUTO_COLLAPSE_AT) {
-      g.classList.add("collapsed");
-    }
+    g.classList.add("collapsed");
   });
 }
 
@@ -2657,9 +2655,12 @@ function setToolState(row, kind) {
   // 耗时小字: 结果闭合那一刻起算。过短（<100ms，历史回放/同 tick 闭合）不显示,
   // 避免整列 "0.0s" 噪音; 悬空收口的行没有 _t0 也不显示
   const dur = row.querySelector(".t-dur");
-  if (dur && row._t0 && kind !== "run") {
+  if (row._t0 && kind !== "run") {
     const ms = Date.now() - row._t0;
     if (ms >= 100) dur.textContent = fmtToolDur(ms);
+    // 分组总耗时: 同一把尺子, 闭合行累加到所属分组(头部摘要用)
+    const grp = row.closest(".tool-group");
+    if (grp && ms >= 100) grp._ms = (grp._ms || 0) + ms;
   }
   updateToolGroupHeader(row.closest(".tool-group"));
 }
@@ -2860,7 +2861,7 @@ function settleBackgroundTurnEnd(run, sid) {
   settlePendingPermsOnTurnEnd(run, sid);
   // 轮次收口: 悬空工具行标"已中断", 清掉流式指针
   sweepPendingToolCards(run);
-  collapseFinishedToolGroups(colOf(sid));   // 后台会话同样收起已结束的大分组
+  collapseFinishedToolGroups(colOf(sid));   // 后台会话已结束的分组回到默认折叠
   clearRateLimitNote(run);   // 限流退避提示一并撤下
   run.curBubble = null;
   // 思考行/乐观胶囊兜底收口（客户端计时）, 与前台 endTurnUiReset 一致;
@@ -3329,7 +3330,7 @@ function endTurnUiReset() {
     settlePendingPermsOnTurnEnd(run, state.sessionId);
     // 轮次结束还有工具行停在"运行中"（被打断/异常, 结果永远来不了）: 收口
     sweepPendingToolCards(run);
-    collapseFinishedToolGroups(colOf(state.sessionId));   // 大分组随轮次结束收起
+    collapseFinishedToolGroups(colOf(state.sessionId));   // 已结束的分组随轮次收口回到默认折叠
     if (run.curThinking) onThinkingEnd({}, state.sessionId);   // 思考行兜底收口（客户端计时）
   }
   syncThinkingIndicator();

@@ -1,6 +1,6 @@
 {
   "name": "x-code",
-  "version": "4.2.0",
+  "version": "4.2.5",
   "description": "x-code 桌面端: Electron 壳 + FastAPI 后端",
   "main": "electron/main.js",
   "private": true,

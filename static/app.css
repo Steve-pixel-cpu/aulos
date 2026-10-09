@@ -859,29 +859,34 @@
   /* 输出面板: 工具/命令输出, 与 diff 面板同构（错误时自动展开）。
    * 分组折叠时随组一起收起——展开组才见输出, 否则折叠态下
    * 几十条"输出"头会堆成一堵墙。 */
+  /* to-wrap 输出面板: 扁平文本风(与工具行/思考行同语言) ——
+   * 头部无底无框一行带过; 内容区不用全框卡片, 用左竖线 + 缩进表达从属,
+   * 底色保留 code-bg 但降透明度, 长输出仍需可读衬底 */
   .to-wrap {
     margin: -6px 0 10px 38px;
-    border: 1px solid var(--border);
-    border-radius: var(--r-sm);
+    border: none;
+    border-left: 2px solid var(--border);
+    border-radius: 0;
     overflow: hidden;
-    background: var(--code-bg);
+    background: color-mix(in srgb, var(--code-bg) 45%, transparent);
     animation: msg-in .22s ease;
   }
   .tool-group .to-wrap { margin: -4px 0 6px 9px; }
   .to-head {
     display: flex; align-items: center; gap: 8px;
-    width: 100%; padding: 5px 10px;
+    width: 100%; padding: 4px 8px;
     background: none; border: none; cursor: pointer;
     font-size: calc(11.5px * var(--fs-ui));
-    color: var(--text-2);
+    color: var(--text-3);
     text-align: left;
+    transition: background .15s;
   }
-  .to-head:hover { background: var(--hover); }
+  .to-head:hover { background: color-mix(in srgb, var(--text) 4%, transparent); }
   .to-caret { flex: none; font-size: 10px; color: var(--text-3); }
-  .to-body { border-top: 1px solid var(--border); }
+  .to-body { border-top: none; }
   .to-pre {
     max-height: 260px; overflow: auto;
-    padding: 8px 10px;
+    padding: 2px 10px 8px;
     font-family: var(--font-mono);
     font-size: calc(11.5px * var(--fs-ui));
     line-height: 1.5;
@@ -2987,4 +2992,150 @@ body.col-resizing, body.col-resizing * { cursor: col-resize !important; }
       animation-iteration-count: 1 !important;
       transition-duration: .01ms !important;
     }
+  }
+
+  /* ============================================================
+   * 质感增强 (2026-10): 工具卡 / 强调色存在感 / 侧栏 active /
+   * 代码块头部 / 欢迎页 / 微动效 / 环境光晕
+   * 全部基于既有令牌与状态色, 追加在
+   * 文件末尾靠顺序覆盖前面的同特异性规则; 不碰大面积背景 token,
+   * 与 data-theme / data-accent / data-bg / data-style 全正交。
+   * ============================================================ */
+
+  /* ---------- ① 工具调用行: 扁平文本行 (参考终端风) ----------
+   * 不要卡片: 无底无框, 图标 + 工具名 + 描述一行带过, 与"思考 · 持续了
+   * 几秒"同一语言。hover 只给一层极淡底提示可展开, 不位移不加边。 */
+  .tool-row {
+    background: transparent;
+    border: none;
+    border-radius: var(--r-sm);
+    transition: background .15s;
+  }
+  .tool-row:hover {
+    background: color-mix(in srgb, var(--text) 4%, transparent);
+  }
+  /* 图标: 裸露小图标(无徽章底), 与参考图一致 */
+  .tool-row .t-ico {
+    background: transparent;
+    color: var(--text-3);
+  }
+  /* 状态点: 取代「· 」前缀, ok/bad/run 三态更醒目 */
+  .tool-row .tstate::before {
+    content: ""; display: inline-block;
+    width: 6px; height: 6px; border-radius: 50%;
+    margin-right: 5px; vertical-align: 1px;
+    background: currentColor;
+  }
+  .tool-row .tstate.ok { color: var(--ok); }
+  .tool-row .tstate.bad { color: var(--warn); }
+
+  /* ---------- ② 强调色存在感: 用户气泡 / 发送键 ---------- */
+  .msg.user .bubble {
+    background: color-mix(in srgb, var(--accent) 13%, var(--surface));
+    border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+  }
+  #btn-send:not(:disabled) {
+    box-shadow: 0 2px 14px color-mix(in srgb, var(--accent) 45%, transparent);
+  }
+
+  /* ---------- ③ 侧栏 active 态: accent 染色 + 渐变指示条 ---------- */
+  .session-item.active {
+    background: color-mix(in srgb, var(--accent) 9%, var(--active));
+  }
+  .session-item.active::before {
+    background: linear-gradient(180deg, var(--accent), color-mix(in srgb, var(--accent) 30%, transparent));
+  }
+
+  /* ---------- ④ 代码块头部: 渐变底 + 语言徽标 + 复制钮描边 ---------- */
+  .code-head {
+    background: linear-gradient(180deg,
+      color-mix(in srgb, var(--text) 4%, var(--code-head)),
+      var(--code-head));
+  }
+  .code-lang { display: inline-flex; align-items: center; gap: 7px; }
+  .code-lang::before {
+    content: ""; width: 8px; height: 8px; border-radius: 2.5px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-deep));
+    flex: none;
+  }
+  .code-copy {
+    border: 1px solid var(--border); border-radius: 6px;
+  }
+  .code-copy:hover {
+    border-color: var(--accent-border);
+    color: var(--accent);
+    background: var(--accent-soft);
+  }
+
+  /* ---------- ⑤ 欢迎页: 水印光晕 + 渐变问候语 + 建议 chips ---------- */
+  .empty-state .watermark {
+    filter: drop-shadow(0 12px 38px color-mix(in srgb, var(--accent) 32%, transparent));
+  }
+  .empty-state.welcome h2 {
+    background: linear-gradient(120deg, var(--text) 30%, var(--accent-deep));
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent; color: transparent;
+  }
+  .sug-chip:hover { box-shadow: 0 6px 20px var(--accent-soft); }
+
+  /* ---------- ⑥ 微动效: 停止键呼吸光环 (系统关动效时不播) ---------- */
+  @media (prefers-reduced-motion: no-preference) {
+    #btn-send[data-mode="stop"] { animation: stop-breath 2.2s ease-in-out infinite; }
+  }
+  @keyframes stop-breath {
+    0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--err) 40%, transparent); }
+    50%      { box-shadow: 0 0 0 7px transparent; }
+  }
+
+  /* ---------- ⑦ 环境光晕: 主区顶部一层极淡 accent 径向光 ----------
+   * 只设 background-image, 不碰 background-color —— 壁纸透明 / Fluent
+   * acrylic 改的都是颜色与 backdrop-filter, 与这里零交集 */
+  #messages {
+    background-image:
+      radial-gradient(58% 42% at 50% -6%,
+        color-mix(in srgb, var(--accent) 6%, transparent), transparent 70%);
+  }
+
+  /* ---------- ①b 工具分组头部: 同样扁平, 不做卡片 ----------
+   * 与工具行同一语言: 无底无框纯文字行, hover 极淡底示意可点。
+   * 状态点颜色用 :has() 跟随分组状态, 零 JS 改动。 */
+  .tool-group .tg-head {
+    background: transparent;
+    border: none;
+    border-radius: var(--r-sm);
+    transition: background .15s;
+  }
+  .tool-group .tg-head:hover {
+    background: color-mix(in srgb, var(--text) 4%, transparent);
+  }
+  /* 标题前状态点: 默认绿(全对) / run accent 脉冲 / bad 橙 */
+  .tool-group .tg-title::before {
+    content: ""; display: inline-block;
+    width: 6px; height: 6px; border-radius: 50%;
+    margin-right: 6px; vertical-align: 1px;
+    background: var(--ok);
+  }
+  .tool-group:has(.tg-sum.run) .tg-title::before {
+    background: var(--accent); animation: pulse 1.2s infinite;
+  }
+  .tool-group:has(.tg-sum.bad) .tg-title::before { background: var(--warn); }
+
+  /* ---------- ①c 分组摘要计数胶囊: 取代 "✓5 · !1" 细杆符号 ----------
+   * 小胶囊数字比 11.5px 等宽体里的 ✓/! 好认得多; 耗时 .tg-dur 保持
+   * 等宽小字原语言, 放胶囊右侧弱展示。 */
+  .tool-group .tg-sum { display: inline-flex; align-items: center; gap: 5px; }
+  .tool-group .tg-sum .cnt {
+    min-width: 17px; padding: 0 5px; text-align: center;
+    border-radius: 999px; line-height: 15px;
+    font-size: calc(10.5px * var(--fs-ui)); font-weight: 600;
+  }
+  .tool-group .tg-sum .cnt.ok {
+    background: var(--ok-soft); color: color-mix(in srgb, var(--ok) 80%, var(--text-2));
+  }
+  .tool-group .tg-sum .cnt.bad {
+    background: var(--warn-soft); color: var(--warn);
+  }
+  .tool-group .tg-sum .tg-dur {
+    font-family: var(--font-mono); font-size: calc(10.5px * var(--fs-ui));
+    color: var(--text-3); opacity: .85;
   }
