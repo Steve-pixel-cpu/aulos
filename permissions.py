@@ -814,14 +814,21 @@ class PermissionPolicy:
 
         # "可升级弹问"分支（相邻档位）: 当前档差一档且目标可议时交给
         # prompter 裁决——workspace-write→DANGER(危险命令单次放行) 与
-        # read-only→WORKSPACE_WRITE(计划覆盖生效时 present_plan 计划审批/
-        # write_file 单次放行)。批准 present_plan 的同时关闭计划开关,
-        # 生效档位回落基础模式, 由调用方（server 的 on_plan_approved
-        # 回调 / CLI 的 /mode plan）负责, 授权层只管这一次的决定。
+        # read-only→WORKSPACE_WRITE(计划覆盖生效时 present_plan 计划审批)。
+        # 计划模式下只放 present_plan 上弹——其余写工具拒绝并附教学指引:
+        # 单次放行会让模型绕过计划工作流逐条改文件（不出计划也能干活）。
+        # 非计划的纯 read-only 基础档保持旧口径: 写工具仍可单次放行。
+        # 批准 present_plan 的同时关闭计划开关, 生效档位回落基础模式,
+        # 由调用方（server 的 on_plan_approved 回调 / CLI 的 /mode plan）
+        # 负责, 授权层只管这一次的决定。
+        plan_hint = (" Plan mode is active: do not execute or modify anything. "
+                     "Research with read_file, then call present_plan with "
+                     "your implementation plan.")
         prompter_decides = (
             prompter is not None
             and (current == READ_ONLY_MODE
                  and required == PermissionMode.WORKSPACE_WRITE)
+            and (not self._plan_active or tool_name == "present_plan")
         ) or (
             prompter is not None
             and current == PermissionMode.WORKSPACE_WRITE
@@ -833,7 +840,8 @@ class PermissionPolicy:
                 and required == PermissionMode.WORKSPACE_WRITE):
             return PermissionResult(decision= PermissionDecision.DENY,
                                     reason= f"tool '{tool_name}' requires approval to escalate "
-                                    f"from {current.as_str()} to {required.as_str()}")
+                                    f"from {current.as_str()} to {required.as_str()}"
+                                    + (plan_hint if self._plan_active else ""))
         if current == PermissionMode.WORKSPACE_WRITE and required == PermissionMode.DANGER_FULL_ACCESS:
             return PermissionResult(decision= PermissionDecision.DENY,
                                     reason= f"tool '{tool_name}' requires approval to escalate "

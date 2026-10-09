@@ -179,6 +179,7 @@ class _FakeRuntime:
         self._level = level
         self.api_client = None
         self.model = None
+        self.plan_active = None
 
     def set_thinking_level(self, level):
         self._level = level
@@ -191,6 +192,9 @@ class _FakeRuntime:
 
     def set_model(self, model):
         self.model = model
+
+    def set_plan_mode(self, active):
+        self.plan_active = active
 
 
 def test_post_settings_thinking_does_not_touch_live_sessions(
@@ -205,6 +209,61 @@ def test_post_settings_thinking_does_not_touch_live_sessions(
     assert resp.json()["thinking_level"] == "high"   # 全局默认已更新
     assert ws.thinking_level == "low"                # 存活会话不受波及
     assert ws.runtime.thinking_level() == "low"
+
+
+def test_post_settings_thinking_persists_and_seeds_new_sessions(
+        client, isolated_store, tmp_path, monkeypatch):
+    """回归（计划模式下思考等级回落）: 草稿态 POST high 后
+    1) 落盘 settings.json（重启不丢）;
+    2) 新建 WebSession 初值取运行中的全局默认——不是启动磁盘快照
+       （runtime_config 可能仍是 medium）。"""
+    import server as _srv
+    # 隔离落盘路径 + 模拟"启动快照还是旧档": 全局默认已 high, 快照仍 medium
+    settings_file = tmp_path / "settings.json"
+    settings_file.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(_srv, "SETTINGS_FILE", settings_file)
+
+    class _FakeCfg:
+        def __init__(self, real):
+            self._real = real
+        def __getattr__(self, name):
+            return getattr(self._real, name)
+        def thinking_level(self):
+            return "medium"
+    monkeypatch.setattr(_srv, "runtime_config", _FakeCfg(_srv.runtime_config))
+    server.api_client.set_thinking_level("medium")
+    try:
+        resp = client.post("/api/settings", json={"thinking_level": "high"})
+        assert resp.status_code == 200
+        assert server.api_client.thinking_level == "high"
+
+        # 1) 已落盘
+        assert json.loads(settings_file.read_text(encoding="utf-8")) \
+            .get("thinkingLevel") == "high"
+
+        # 2) 新会话播种自全局默认而非快照
+        ws = server.get_or_create_web_session("s-seed")
+        assert ws.thinking_level == "high"
+    finally:
+        server.api_client.set_thinking_level("medium")
+
+
+def test_plan_approval_persists_plan_false(client, isolated_store):
+    """回归（批准计划后再进计划不出计划）: _upgrade_after_plan 批准后
+    必须把 plan=false 落盘——否则刷新页面后会话列表读回 plan=true,
+    下拉框假显示计划档而服务端实际已退出。"""
+    isolated_store.set_permission_mode("s-plan", "prompt", True)
+    ws = server.get_or_create_web_session("s-plan")
+    ws.plan_active = True
+    ws.runtime = _FakeRuntime("medium")
+
+    server._upgrade_after_plan_impl(ws)   # 真实落盘路径（工厂闭包绑定 store）
+
+    assert ws.plan_active is False
+    assert ws.runtime.plan_active is False   # runtime 同步回退
+    mode, plan = isolated_store.get_permission_mode("s-plan")
+    assert mode == "prompt"
+    assert plan is False
 
 
 # ------------------------------------------------------------

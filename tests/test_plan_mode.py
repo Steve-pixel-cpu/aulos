@@ -114,6 +114,35 @@ def test_plan_mode_denies_shell_even_with_prompter():
     assert prompter.requests == []   # 根本不弹
 
 
+def test_plan_mode_denies_writes_even_with_prompter():
+    """回归（批准后再进计划不出计划）: 计划开着时, 除 present_plan 外的
+    写工具即使有 prompter 也直接拒绝（旧口径是单次放行弹问——模型逐条
+    改文件绕过计划工作流）。拒绝理由必须带教学指引, 逼模型先出计划。"""
+    for tool, args in (("edit_file", "{}"), ("write_file", "{}"),
+                       ("browser_click", "{}")):
+        p = _plan_policy()
+        prompter = RecordingPrompter(approved=True)
+        r = p.authorize(tool, args, prompter)
+        assert r.decision == PermissionDecision.DENY, tool
+        assert prompter.requests == [], tool   # 不再单次放行
+        assert "present_plan" in r.reason, tool   # 教学指引
+        # 计划没开时同一调用回到旧口径（行为收紧只限计划档）:
+        # required==WORKSPACE_WRITE（如 write_file）→ 相邻档仍弹单次放行;
+        # required 更高（如路径逃出 workspace 的 edit_file 被升到 DANGER,
+        # 差两档）→ 本来就拒, 无弹问。路径全部落在 workspace 内。
+        ws_path = json.dumps({"path": "a/b.ts"})
+        p2 = _policy(PermissionMode.READ_ONLY)
+        required_mode = p2.required_mode_for(tool)
+        pr2 = RecordingPrompter(approved=True)
+        r2 = p2.authorize(tool, ws_path, pr2)
+        if required_mode == WORKSPACE_WRITE:
+            assert r2.decision == PermissionDecision.ALLOW, tool
+            assert len(pr2.requests) == 1, tool
+        else:
+            assert r2.decision == PermissionDecision.DENY, tool
+            assert pr2.requests == [], tool
+
+
 def test_after_approval_present_plan_no_longer_prompts():
     """批准升级到 workspace-write 后, 修订计划再次 present_plan 不再弹
     （2<=2 快速放行）——重复弹窗会打断实施流。"""

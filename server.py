@@ -442,11 +442,13 @@ def _apply_provider_config(cfg: dict) -> None:
         api_key = prov.get("api_key")
         model = active.get("model")   # None/缺失 = 保持当前模型
         if protocol != api_client.protocol:
-            # 跨协议切换: 线格式完全不同, 必须换实现（重试/打断/镜像钩子原样平移）
+            # 跨协议切换: 线格式完全不同, 必须换实现（重试/打断/镜像钩子原样平移）。
+            # 思考等级保留当前运行值——runtime_config 是启动快照, 用它会把
+            # 设置页在运行期改过的全局默认打回旧档。
             api_client = make_api_client(
                 protocol, api_key=api_key, model=model or "", base_url=base_url,
                 tools=TOOLS, emit_output=False,
-                thinking_level=runtime_config.thinking_level(),
+                thinking_level=api_client.thinking_level,
                 on_retry=_mirror_rate_limit_retry,
                 should_stop_provider=_should_stop_now,
                 on_event_provider=lambda: _mirror_on_event(dispatch.current_sink()),
@@ -768,8 +770,11 @@ class WebSession:
         self.stop_requested = False
         self.titled = store.get_title(session_id) is not None  # 自动命名一次
         self.workdir = store.get_workdir(session_id)  # 会话工作目录（项目）
-        # 会话级思考等级: 初值取全局默认; 切换只影响本会话（runtime 注入）
-        self.thinking_level = runtime_config.thinking_level()
+        # 会话级思考等级: 初值取"运行中的全局默认"（api_client; POST
+        # /api/settings 维护的那份）。runtime_config 持有的是启动时的
+        # 磁盘快照——设置页在运行期改档后, 快照不会跟着变, 用它会让
+        # 新会话静默回落旧档位。切换只影响本会话（runtime 注入）。
+        self.thinking_level = api_client.thinking_level
         # 会话级权限模式: 基础模式 + 计划开关, 双状态独立叠加。持久值优先
         # （重启不丢）, 没有记录回落全局默认; 下拉框切换只影响本会话,
         # 全局设置页改的是"新会话的默认值"。旧记录里的 "plan"/"read-only"
@@ -1114,6 +1119,19 @@ def _parse_attachments(raw) -> tuple[Optional[list[dict]], Optional[str]]:
 _turn_slots = threading.BoundedSemaphore(MAX_CONCURRENT_TURNS)
 
 
+def _upgrade_after_plan_impl(web_session: WebSession) -> None:
+    """计划批准的落盘+内存回退（闭包与测试复用）。只动状态, 不广播——
+    广播归调用方（需要 emitter）。落盘与 set_permission_mode 消息处理
+    同口径: 不写 store 的话刷新页面后会话列表读回 plan=true, 下拉框
+    假显示计划档而服务端实际已退出（"再进计划不出计划"的脱节源）。"""
+    web_session.plan_active = False
+    store.set_permission_mode(
+        web_session.session_id,
+        MODE_TO_NAME[web_session.permission_mode], False)
+    if web_session.runtime is not None:
+        web_session.runtime.set_plan_mode(False)
+
+
 def _start_turn(web_session: WebSession, text: str, emit: Callable,
                 attachments: Optional[list[dict]] = None) -> None:
     """开一轮对话: 占坑、准备事件出口、起工作线程。调用方已确认 !busy。
@@ -1137,11 +1155,10 @@ def _start_turn(web_session: WebSession, text: str, emit: Callable,
 
     def _upgrade_after_plan() -> None:
         """计划批准: 关闭本会话的计划开关, 生效档位回落基础模式（本轮立即
-        生效, 持久到会话）。广播 mode_changed 让前端下拉框跟随;
+        生效, 持久到会话）。落盘逻辑在 _upgrade_after_plan_impl（与测试
+        共用）; 这里补 mode_changed 广播让前端下拉框跟随。
         不写全局设置（会话级隔离）。"""
-        web_session.plan_active = False
-        if web_session.runtime is not None:
-            web_session.runtime.set_plan_mode(False)
+        _upgrade_after_plan_impl(web_session)
         web_session.broadcast({
             "type": "mode_changed",
             "session_id": web_session.session_id,
@@ -2522,8 +2539,10 @@ async def api_post_settings(request: dict):
                 detail=f"未知思考等级: {thinking}（可选: {' | '.join(THINKING_LEVELS)}）",
             )
         api_client.set_thinking_level(level)  # 新会话的默认值
+        _save_setting("thinkingLevel", level)
         # 存活会话各自持有等级（WS set_thinking_level 单独切换）,
-        # 这里只改全局默认——与其他设置的会话隔离语义对齐
+        # 这里只改全局默认——与其他设置的会话隔离语义对齐。
+        # 必须落盘: 不写的话重启后 settings.json 还是旧档, 新会话静默回落。
 
     mode_name = request.get("permission_mode")
     if mode_name is not None:
