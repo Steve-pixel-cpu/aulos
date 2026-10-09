@@ -1,68 +1,131 @@
 # x-code
 
-一个 Claude Code 风格的 AI 编程 Agent，从零实现的完整学习项目：终端 REPL + Web 桌面端双入口，内置工具循环、权限体系、多 Agent 编排、会话持久化与自动压缩。
+**中文** | [English](README_EN.md)
 
-> Python 3.14 + FastAPI + Tauri 2，兼容任意 Anthropic API 格式的模型服务（可自定义接口地址）。
+一个 Claude Code 风格的 AI 编程 Agent，从零实现的完整开源项目：终端 REPL + 桌面端双入口，
+内置工具循环、上下文工程（三层压缩 + 主上下文瘦身）、MCP 接入、三级权限体系、多 Agent
+编排、Agent 级评测框架与会话持久化。
+
+> Python 3.14 + FastAPI + Tauri 2，兼容任意 Anthropic / OpenAI API 格式的模型服务
+>（接口地址、Key、模型均可自定义）。
 >
-> 本项目基于 [MiniCC](https://github.com/Louisym/MiniCC) 开发，在其 Agent 架构基础上扩展而来。
+> 本项目基于 [MiniCC](https://github.com/Louisym/MiniCC) 开发，在其 Agent 架构基础上
+> 扩展而来，详见[致谢](#项目来源与致谢)。
 
 ## 功能特性
 
-- **Agent 工具循环**：模型自主决定调用工具 → 执行 → 回传结果，循环往复直到完成；支持 SSE 流式输出、thinking 块、单轮/循环层 token 与迭代预算
-- **MCP 客户端**：配置文件里声明 MCP 服务器（stdio 子进程 / streamable HTTP / SSE），启动时自动连接，外部工具以 `mcp__<服务器>__<工具>` 注入工具循环，与内置工具同管线（权限审批、hooks、输出截断）；Web 端支持 `/api/mcp/reload` 热重载
-- **Skills 技能包**：Claude Code 兼容的 `SKILL.md`（YAML frontmatter + 正文指令，可捆绑脚本/模板），任务匹配时模型先用 `skill_read` 读正文再遵循（渐进式披露，只注入 name+description 清单省 token）；项目级 `.claude/skills/` 与用户级 `~/.x-code/skills/` 两级发现、同名覆盖；Web 设置页从 GitHub 仓库一键安装社区 skills（如 `anthropics/skills`），装完即时生效无需重启；CLI `/skills` 查看
-- **内置工具集**：`bash` / `powershell`（Windows 下走 Git Bash，UTF-8 无乱码）、`read_file` / `write_file`、`grep` / `glob`（纯 Python 实现，免 shell）、后台任务 `task_output` / `task_stop`、任务清单 `todo`、计划卡 `present_plan`、浏览器实测 `browser_navigate` / `browser_snapshot` / `browser_click` / `browser_type` / `browser_console` 等（Playwright 无头 Chromium，可实际操作 Web 系统做功能测试）；工具输出二段式截断——bash/搜索类超限全文落盘（`~/.x-code/tool-results/`），会话里回首尾 + 路径，中段信息可经 read_file 找回
-- **三级权限体系**：`plan`（只读）→ `workspace-write`（workspace 根内可写，写路径分级：根外审批/敏感路径任何模式都强制确认）→ `danger-full-access`（全放行）；每个工具登记权限档位，越权时 CLI 弹审批面板、Web 端弹审批卡；只读命令白名单 + 命令前缀白名单（全局/会话级）+ 附加目录记忆治审批疲劳，plan 模式下可一键升级
-- **多 Agent 编排**：Leader 通过 `agent_tool` / `agent_status` / `agent_reap` / `agent_list` 派生 subagent 并行干活，白名单 + 规格过滤防递归失控，孤儿 agent 启动对账
-- **Headless 模式**：`-p "任务"` 一次性执行后退出，脚本/管道/定时任务可直接调用（`git diff | python main.py -p "审查这次改动"`）；stdout 只出最终结果（`--output-format json` 另含用量/子状态），进度走 stderr；退出码表意（0=完成 1=错误 2=中断 3=预算收束 4=用法错误）；`--model` / `--permission-mode` 单次覆盖；无人值守下权限升级自动拒绝
-- **会话持久化**：JSONL 增量落盘、断点恢复（`-c` / `--resume`）、自动命名、auto-compact（上下文超阈值自动压缩，保留近几条消息；Session Memory 中间层后台预建滚动摘要，压缩时零 LLM 调用；摘要连续失败熔断，规则摘要兜底）
-- **用户记忆**：跨会话画像事实记忆，让 Agent 更懂你。对话中模型用 `memory_write` / `memory_update` / `memory_delete` 三工具自动沉淀（免审批、写入反馈可见），每次会话注入系统提示词（prompt cache 友好：静态指引 + 动态边界之下独立 section）；存储为结构化 JSON（`~/.x-code/memory.json`），`MemoryStore` 抽象为 RAG 检索预留接口；零参数遗忘机制——200 条容量触发 LRU 淘汰（hits 为主权重、user 来源豁免、淘汰归档可找回）；CLI `/memory` 管理命令 + Web 设置页"记忆"区块
-- **Hooks**：`PreToolUse` / `PostToolUse` 挂 shell 命令，工具执行前后触发
-- **配置分层**：用户全局 → 项目 → 本地三级 JSON 配置深度合并，环境变量可覆盖；模型、思考档位（low/medium/high/max）、超时、预算均可配；`utilityProvider` 可把压缩摘要/自动命名等 side-call 指到便宜小模型
-- **限流重试**：连接抖动指数退避 + 429 专用长退避曲线（累计约 30s），重试进度实时上报界面
-- **摸鱼电台**：Web 端内置网易云音乐公开接口的在线电台（搜索 + 流式播放 + 歌词 + 本地收藏/自定义歌单，收藏与歌单存 `~/.x-code/music-library.json`，播放列表跨重启恢复）
+### Agent 内核
+
+- **工具循环**：模型自主决定调用工具 → 执行 → 回传结果，循环往复直到完成；SSE/WS 流式
+  输出、thinking 块、循环层 token 与迭代预算、超预算软收束（收束原因写入历史，
+  下一轮模型接着干而不是从头查）
+- **Headless 模式**：`main.py -p "任务" --output-format json` 单命令执行，结构化输出
+  退出码 / 结果 / usage——评测框架与脚本化调用的底座
+- **多 Agent 编排**：Leader 通过 `agent_tool` / `agent_status` / `agent_reap` /
+  `agent_list` 派生 subagent 并行干活，白名单防递归、孤儿 agent 启动对账
+
+### 上下文工程
+
+- **三层压缩体系**：MicroCompact（估算超阈值时把保留窗外的高产出可复现工具结果
+  替换为占位符，零 LLM 调用）→ Session Memory（后台代理空闲时增量维护滚动摘要，
+  压缩激活时直接采用，零现场调用）→ Full Compact（超压缩阈值时 side-call 生成
+  结构化摘要，规则摘要兜底，一次大调用）
+- **主上下文瘦身四件套**（治"进上下文的东西太多"）：
+  - `read_file` / `grep` 行预算：超限全文落盘 `~/.x-code/tool-outputs/`，会话只留
+    首部 + 落盘标记，需要时可读回
+  - 同文件重读去重：未变文件的整读回一行 `unchanged`；写入推进变异序号、外部修改、
+    `force=true` 均回全文
+  - 贴图降采样：单边超限或体积超限的截图等比压缩，原图落盘，会话只带缩后版
+  - subagent 委派引导：宽泛调研类任务在系统提示层引导派生 subagent，避免主上下文堆积
+- **重复只读护栏**：同一只读调用（read_file/grep/glob，路径规范化记账）第 2 次警告、
+  第 3 次拒绝——治理模型反自旋；另有回合级结论检查点提醒对靶
+- **Prompt cache 友好**：系统提示词设动态边界，稳定前缀（OS 信息/CLAUDE.md/技能清单）
+  与动态尾段分离，命中缓存
+
+### 工具与生态
+
+- **内置工具集**：`bash` / `powershell`（Windows 走 Git Bash，UTF-8 无乱码）、
+  `read_file` / `write_file` / `edit_file`（read-before-write + stale 检查）、
+  `grep` / `glob`（纯 Python，免 shell）、后台任务 `task_output` / `task_stop`、
+  任务清单 `todo`、计划卡 `present_plan`、网页抓取 `web_fetch` / `web_search`
+- **浏览器实测**：`browser_navigate` / `browser_snapshot` / `browser_click` /
+  `browser_type` / `browser_console` 等（Playwright 无头 Chromium），可实际操作
+  Web 系统做功能验证
+- **MCP 客户端**：接入外部 MCP 服务器（`stdio` / `http` / `sse` 三种 transport），
+  工具以 `mcp__<server>__<tool>` 命名进注册表；官方 SDK 是 asyncio 的而工具循环是
+  同步线程模型，每台服务器一个 daemon 线程独占 event loop 桥接；连接失败仅告警不挡
+  启动；未登记权限的外部工具走保守审批默认。详见 [MCP 配置](#mcp-配置)
+- **Skills 技能包**：Claude Code 兼容的 `SKILL.md` 技能（YAML frontmatter + 正文指令 +
+  任意辅助文件），用户级 / 项目级两级作用域；渐进式披露——系统提示只进 name +
+  description 清单，正文按需 `skill_read`，十个技能不撑爆上下文
+- **跨会话记忆**：对话中让模型记、或 `/memory add` 手动添加；结构化 JSON 存储，
+  容量触发淘汰（hits 主导 + 新近度加权，`source:user` 永不自动淘汰，淘汰条目归档）
+
+### 可靠性与观测
+
+- **三级权限体系**：`plan`（只读）→ `workspace-write`（工作目录内可写）→
+  `danger-full-access`（全放行）；越权触发审批（CLI y/N 面板 / Web 审批卡）。
+  敏感路径（`.git/`、`~/.x-code/`、`~/.ssh/`、shell 配置文件）**任何模式含全放行
+  都强制人工裁决**——防"rm -rf .git"类不可逆破坏与模型自逃脱
+- **限流重试**：连接抖动指数退避 + 429 专用长退避曲线，重试进度实时上报界面
+- **max_tokens 截断自愈**：截断后注入恢复提示继续循环
+- **长回合延迟治理**：回合内思考自动降档（只改请求参数不改用户设置）、迭代软收束
+  提醒、每轮调用耗时/用量一行 JSON 落盘 `~/.x-code/logs/`（"哪轮慢、慢在哪"直接看日志）
+- **会话持久化**：JSONL 增量落盘（原子写）、断点恢复（`-c` / `--resume`）、自动命名、
+  并发会话隔离
+
+### 界面
+
+- **CLI REPL**：斜杠命令、语法高亮、流式渲染
+- **桌面端**（Tauri 2 为主壳，Electron 备选壳）：自定义标题栏、计划卡、设置页、
+  多供应商随时切换、气泡/文档流两种回复风格
+- **摸鱼电台**：内置在线电台（网易云音乐 + B 站视频转音频，榜单 + 流式播放 + 歌词）
+- **桌宠**：独立悬浮窗，可与后台会话交互
 
 ## 架构总览
 
 ```
-┌─────────────┐   ┌──────────────────────────────┐
-│  CLI (main) │   │  桌面端: Tauri 2 壳 + WebView │
-└──────┬──────┘   │  static/ 前端 (原生 JS/CSS)   │
-       │          └──────────────┬───────────────┘
+┌─────────────┐   ┌──────────────────────────────────┐
+│  CLI (main) │   │  桌面端: Tauri 2 壳 + WebView    │
+└──────┬──────┘   │  (Electron 备选壳) static/ 前端  │
+       │          └──────────────┬───────────────────┘
        │            WebSocket/REST (token 门禁)
-       │          ┌──────────────┴───────────────┐
-       └──────────►   server.py (FastAPI 后端)    │
-                  └──────────────┬───────────────┘
+       │          ┌──────────────┴───────────────────┐
+       └──────────►   server.py (FastAPI 后端)        │
+                  └──────────────┬───────────────────┘
                                  │
         ┌────────────────────────┴───────────────────────┐
         │ runtime.py  Agent 工具循环（线程池并行工具执行） │
         ├────────────────────────────────────────────────┤
-        │ api_client  流式客户端 + 重试    tools  工具集  │
-        │ permissions 权限模式/审批        hooks  生命周期│
-        │ multi_agent 多Agent编排          compact 压缩   │
-        │ config      分层配置             storage 会话库 │
+        │ api_client  流式客户端+重试    tools  工具集    │
+        │ mcp_client  MCP 接入           skills 技能包    │
+        │ permissions 权限/审批          hooks  生命周期  │
+        │ multi_agent 多Agent编排        compact 压缩     │
+        │ memory      跨会话记忆         call_log 调用日志│
+        │ config      分层配置           storage  会话库  │
         └────────────────────────────────────────────────┘
                     数据目录: ~/.x-code/
 ```
 
 | 模块 | 职责 |
 |---|---|
-| `main.py` | CLI 入口：REPL、斜杠命令、工具 spec、装配（CLI 与 Web 共用） |
-| `server.py` | FastAPI 后端：WebSocket 推流、权限审批桥、会话/设置 REST API |
-| `mcp_client.py` | MCP 客户端：外部服务器连接管理、工具注入（同步桥接异步 SDK） |
-| `runtime.py` | Agent 主循环：事件流、并行工具执行、打断、循环预算 |
-| `api_client.py` | Anthropic API 流式客户端、思考档位、退避重试 |
-| `tools.py` | 工具实现与注册表（后台任务、取消检查点） |
-| `permissions.py` | 权限模式层级、策略、CLI/Web 审批器 |
+| `main.py` | CLI 入口：REPL、斜杠命令、headless、工具 spec、装配（CLI 与 Web 共用） |
+| `server.py` | FastAPI 后端：WebSocket 推流、权限审批桥、会话/设置/MCP/记忆 REST API |
+| `runtime.py` | Agent 主循环：事件流、并行工具执行、打断、预算、护栏与检查点 |
+| `api_client.py` | Anthropic / OpenAI 流式客户端、思考档位、退避重试 |
+| `tools.py` | 内置工具实现与注册表（后台任务、行预算落盘、取消检查点） |
+| `mcp_client.py` | MCP 客户端：三种 transport、同步-异步桥接、工具名前缀注册 |
+| `skills.py` | SKILL.md 发现与渐进式披露注入 |
+| `memory/` | 跨会话记忆：存储、淘汰、注入渲染、工具接线 |
+| `permissions.py` | 权限模式层级、策略、敏感路径强制裁决、CLI/Web 审批器 |
 | `multi_agent.py` / `agent_tools.py` | 多 Agent 编排内核 / 工具接线层 |
-| `config.py` | 三级配置发现合并、供应商配置读写 |
+| `compact.py` | 三层压缩：MicroCompact、Session Memory、LLM 摘要与续接 |
+| `config.py` | 三级配置发现合并、MCP/供应商配置读写 |
 | `storage.py` / `fsatomic.py` | 会话存储（JSONL）/ Windows 原子文件写 |
-| `compact.py` | auto-compact 会话压缩 |
-| `prompt.py` | 系统提示词构建（OS 信息、CLAUDE.md 指令、plan 模式段） |
-| `hooks.py` | Pre/PostToolUse shell 钩子 |
-| `retry.py` | 指数退避 + 429 长曲线 |
+| `call_log.py` | 每轮模型调用耗时/用量日志 |
+| `hooks.py` / `retry.py` / `prompt.py` | Pre/PostToolUse 钩子 / 退避曲线 / 系统提示词构建 |
 | `static/` | Web 前端（无框架，原生 JS） |
-| `src-tauri/` | 桌面壳：拉起后端、令牌门禁、单实例、看门狗 |
+| `src-tauri/` / `electron/` | 桌面壳：拉起后端、令牌门禁、单实例、看门狗 |
 
 ## 快速开始
 
@@ -99,7 +162,17 @@ uv run python main.py --resume <id>   # 恢复指定会话
 uv run python main.py --list     # 列出全部会话
 ```
 
-CLI 斜杠命令：`/help` `/status` `/compact` `/mode` `/thinking` `/rename` `/exit`
+CLI 斜杠命令：`/help` `/status` `/compact` `/mode` `/thinking` `/rename` `/skills`
+`/memory` `/exit`
+
+### Headless / 脚本调用
+
+```bash
+uv run python main.py -p "统计 src 下函数总数写入 count.txt" --output-format json
+```
+
+`--output-format json` 输出结构化结果（退出码、最终回复、usage），`--model` 与
+`--permission-mode` 可临时覆盖配置。评测框架即构建在此入口之上。
 
 ### 启动 Web 端
 
@@ -109,7 +182,58 @@ uv run python server.py --port 8020
 ```
 
 浏览器打开后即与 CLI 共享同一份会话记录与工具集；带图形界面（自定义标题栏、
-计划卡、设置页、摸鱼电台）建议用桌面端。
+计划卡、设置页、摸鱼电台、桌宠）建议用桌面端。
+
+## MCP 配置
+
+在任意配置层级（见[配置说明](#配置说明)）的 JSON 里加 `mcpServers`：
+
+```json
+{
+  "mcpServers": {
+    "filesystem": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "D:/tmp"]
+    },
+    "remote-tools": {
+      "type": "http",
+      "url": "https://example.com/mcp",
+      "headers": { "Authorization": "Bearer <token>" },
+      "timeout": 30
+    }
+  }
+}
+```
+
+- `type` 支持 `stdio`（本地子进程）/ `http` / `sse`；`stdio` 可带 `args`、`env`、`cwd`
+- 工具以 `mcp__<server>__<tool>` 命名注册，与内置工具永不冲突
+- 单台服务器连接失败只标记 failed + 告警，不阻塞启动，其余服务器正常工作
+- MCP 工具的权限、钩子、输出截断复用内置管线；未在权限表登记的工具按"任意命令"档
+  审批（能力未知的外部工具，保守默认）
+- 桌面端设置页可视化管理 MCP 服务器
+
+## Agent 评测（evals/）
+
+Agent 级评测框架：用真实的 `main.py -p` 跑任务夹具，确定性断言 + LLM 判分打分，
+产出可对比的回归基线。改 prompt、调压缩参数、上新功能之后跑一遍，就知道整体是
+变好还是变坏。
+
+```bash
+uv run python evals/run_evals.py                        # 全量, 有基线则自动对比
+uv run python evals/run_evals.py --only fix-failing-test  # 只跑指定任务
+uv run python evals/run_evals.py --save-baseline        # 本次结果存为基线
+uv run python evals/run_evals.py --list                 # 只列任务不跑
+```
+
+- 内置任务：`count-functions` / `fix-failing-test` / `implement-function` /
+  `rename-across-files` / `review-buggy-code` / `delegate-subagent`
+- 退出码全过 0 / 有失败 1，可直接当 CI 门槛；基线 `evals/baseline.json` 随仓库走
+- 被测 Agent 是 subprocess（走真实入口），评测不 import 被测代码——测的是用户实际
+  拿到的东西；`--agent-cmd` 可换桩 Agent，框架自测不烧 token
+- 加任务：`evals/tasks/<名字>/` 下放 `task.txt`（任务文本）+ `project/`（夹具项目，
+  每次复制到全新临时工作区）+ 可选 `checks.py`（确定性断言）与 `judge.txt`（LLM 判分标准）
+- 跑真任务要花钱（每任务一次完整 Agent 会话），`--only` 挑任务、先小后大
 
 ## 配置说明
 
@@ -132,118 +256,35 @@ uv run python server.py --port 8020
   "maxIterations": 128,
   "tokenBudget": 100000,
   "turnTokenBudget": 65536,
+  "contextWindow": 1000000,
+  "mcpServers": {},
   "hooks": {
     "PreToolUse": ["python check.py"],
     "PostToolUse": []
-  },
-  "mcpServers": {
-    "fetch": { "command": "uvx", "args": ["mcp-server-fetch"] },
-    "docs":  { "type": "http", "url": "http://localhost:3000/mcp",
-               "headers": { "Authorization": "Bearer ${DOCS_TOKEN}" } }
   }
 }
 ```
 
-### MCP 服务器
-
-在任意一级配置里声明 `mcpServers`（格式与 Claude Code 兼容，三级之间
-字段级深度合并，项目级可覆盖用户级同名服务器的字段）：
-
-| 字段 | 适用传输 | 说明 |
-|---|---|---|
-| `type` | 全部 | `stdio`（默认）/ `http`（streamable HTTP）/ `sse` |
-| `command` / `args` / `env` / `cwd` | stdio | 子进程命令、参数、额外环境变量、工作目录 |
-| `url` / `headers` | http / sse | 端点地址与请求头 |
-| `timeout` | 全部 | 单次工具调用超时秒数（默认 60） |
-
-字符串值里的 `${VAR}` 会展开为环境变量（适合注入 API key）。
-
-- 连接在启动时并行进行，失败的服务器降级为警告，不阻塞启动
-- **桌面端「设置 → MCP 服务器」可视化编辑**：添加/改名/删除、传输类型切换、
-  连接状态徽标与失败原因就地显示，改动停顿后自动保存并热生效（无需重启）；
-  手改配置文件后点「重连全部」同样即时生效
-- 工具以 `mcp__<服务器名>__<工具名>` 注入，CLI 与 Web 端同时生效
-- 权限上按"能力未知的外部工具"保守处理：plan 模式直接拒绝，
-  其余模式每次调用走审批；Pre/PostToolUse hooks 与输出截断照常生效
-- Web 端运维接口：`GET /api/mcp/status` 看连接状态，
-  `POST /api/mcp/reload` 重读配置热重载（改完配置无需重启）
-- 依赖：`mcp` Python SDK（`uv sync` 自动安装）；stdio 服务器需要
-  对应运行时（如 `uvx` / `npx`）
-
-环境变量覆盖：`CLAUDE_MODEL`、`CLAUDE_TIMEOUT`、`CLAUDE_MAX_ITERATIONS`、
-`CLAUDE_TOKEN_BUDGET`、`CLAUDE_TURN_TOKEN_BUDGET`、`CLAUDE_THINKING_LEVEL`。
-
-### Skills 技能包
-
-一个技能 = 一个目录 + 一份 `SKILL.md`（YAML frontmatter + Markdown 正文
-指令），可捆绑任意辅助文件（脚本/模板/数据），目录即技能工作区：
-
-```markdown
----
-name: pdf-tools
-description: 处理 PDF 拆分/合并/提取文本时的标准流程与脚本
----
-# 步骤
-1. 先用 scripts/extract.py 提取文本……
-```
-
-- **两级发现**：用户级 `~/.x-code/skills/<名称>/SKILL.md`（跨项目可用）、
-  项目级 `<项目>/.claude/skills/<名称>/SKILL.md`（随仓库走，同名覆盖用户级）；
-  与 Claude Code 的技能目录兼容，已有的技能仓库可直接放进项目使用
-- **渐进式披露**：系统提示词只注入 name + description 清单（几百 token），
-  任务匹配时模型先用 `skill_read` 工具读 SKILL.md 全文再遵循——十个技能
-  也不会把上下文吃满；`skill_read` 限定只能读技能目录内的文件，
-  越界（含捆绑文件里的 `../` 穿越）一律拒绝
-- **CLI**：启动摘要显示已装技能；`/skills` 列出全部，
-  `/skills <名称>` 预览该技能的 SKILL.md
-- **Web 端「设置 → Skills」**：输入 GitHub 仓库一键安装社区 skills
-  （支持 `anthropics/skills` 短格式或完整 URL；仓库根目录、指定子目录、
-  `skills/*/<名称>/` 一仓多技能三种布局都识别），装完所有活跃会话
-  即时生效、无需重启；同名技能默认拒绝覆盖，勾选"覆盖同名"放行；
-  用户级技能可就地卸载，项目级技能请回项目仓库管理
-- 对应 REST 接口：`GET /api/skills`、`POST /api/skills/install`
-  （body: `repo` / `subpath` / `overwrite`）、`DELETE /api/skills/{name}`
+- `contextWindow` 影响 auto-compact 阈值（默认按 1M 窗口的 75% 推导）；第三方中转
+  若砍窗口务必调小
+- 环境变量覆盖：`CLAUDE_MODEL`、`CLAUDE_TIMEOUT`、`CLAUDE_MAX_ITERATIONS`、
+  `CLAUDE_TOKEN_BUDGET`、`CLAUDE_TURN_TOKEN_BUDGET`、`CLAUDE_THINKING_LEVEL`、
+  `CLAUDE_CONTEXT_WINDOW`
 
 ## 权限模式
 
 | 模式 | 说明 |
 |---|---|
-| `plan` | 只读：仅放行读文件/搜索类工具，写操作被硬拒（并附提示引导切模式） |
-| `workspace-write` | workspace 根内可写文件（工作目录 + 附加目录）、可派生 subagent；执行命令仍需审批 |
-| `danger-full-access` | 全放行（含任意命令执行）；仅敏感路径仍强制确认 |
+| `plan` | 计划模式：读文件/搜索类工具放行，写操作硬拒（附提示引导切模式或一键批准计划） |
+| `workspace-write` | 工作目录内可写文件、可派生 subagent；执行命令仍需审批 |
+| `danger-full-access` | 全放行（含任意命令执行） |
 
 工具按"只读 / 本地写 / 任意命令"三档登记所需权限，越权即触发审批：
-CLI 是黄色面板（y 本次 / a 总是 / s 本会话 / N 拒绝，Ctrl+C 一律朝安全侧
-拒绝），Web 端是弹窗审批卡（同样带"总是允许 / 本会话允许"记忆按钮）。
+CLI 是黄色 y/N 面板（Ctrl+C 一律朝安全侧拒绝），Web 端是弹窗审批卡。
 
-**写路径分级（应用层策略沙箱）**：`write_file`/`edit_file` 的目标路径
-resolve 后与 workspace 根（会话工作目录 + `additionalDirectories` 附加目录）
-比对——根内静默放行（零新增弹窗）；写出根外升档弹审批，审批卡上可
-"允许并记住该目录"（目录进附加目录，之后免问）；命中敏感路径
-（`.git/`、`~/.ssh`、shell 配置文件、`~/.x-code` 本应用配置）则
-bypass-immune：任何模式（含 danger-full-access/allow）都强制人工裁决，
-不可被白名单或记忆机制豁免。shell 侧同口径：`rm`/`mv`/`cp`/`tee` 等
-破坏族点名敏感路径、或显式重定向写入敏感文件（`echo x > ~/.bashrc`）
-同样强制弹审批；`git commit`/`git add` 等正常工作流不受影响。
-
-**审批疲劳治理**：shell 只读白名单（ls/cat/git log 等探查命令免问，
-纯 `--version`/`--help` 查询同样免问）+ 用户命令前缀白名单（全局持久，
-设置页与审批卡可维护）+ 会话级白名单（只对本会话生效）三层免问；
-组合命令逐段取并集——每段"命中规则或属于只读探查"即放行，
-`git status && uv run pytest` 不再因 status 段无规则而白弹；重复命令
-靠 a/s 记忆消除逐条审批。
-
-**拒绝清单与敏感路径**：`commandDenylist` 的前缀规则任一段命中即整体
-拒绝，优先于一切放行路径——白名单放行 `git push` 的同时可加
-`git push --force` 拦住强推；`sensitivePaths` 可声明项目级敏感路径
-（如 `secrets/`、`.env.production`，相对路径按会话根解析），命中与
-内置敏感清单同一语义。两者都在设置页"行为"分区维护，保存即对所有
-会话生效。
-
-**诚实边界**：这是应用层策略沙箱 + 人工审核（policy gate），没有内核
-强制力——用户批准的 shell 命令仍以完整用户权限执行，审批本身就是闸门
-而非技术隔离；shell 命令的路径静态分析是已知盲区（命令替换等构造无法
-可靠解析），靠"变异命令需审批"兜底。
+**敏感路径强制裁决**：写/删 `.git/`、`~/.x-code/`、`~/.ssh/`、shell 配置文件等
+敏感路径时，无论当前权限模式（含 `danger-full-access`）都强制人工确认——命令
+白名单不能短路，防止模型改掉自己的权限配置或不可逆破坏。
 
 ## 桌面端打包
 
@@ -253,19 +294,19 @@ bypass-immune：任何模式（含 danger-full-access/allow）都强制人工裁
 build-exe.cmd
 ```
 
-产物在 `dist\`：`x-code_0.1.0_x64-setup.exe`（NSIS 安装包，Tauri 2 + WebView2，
-约 28MB）。细节见 [PACKAGING.md](PACKAGING.md)：端口自动避让（8000 被占时退让
-8010–8019）、父子进程看门狗、令牌门禁等。
+产物在 `dist\`（NSIS 安装包，Tauri 2 + WebView2）。细节见 [PACKAGING.md](PACKAGING.md)：
+端口自动避让（8000 被占时退让 8010–8019）、父子进程看门狗、令牌门禁等。
 
-`build-mac.sh` 提供 macOS 打包入口。
+`build-mac.sh` 与 `scripts/build-linux-tauri.sh` 提供 macOS / Linux 打包入口；
+`electron/` 为备选桌面壳（Electron + electron-builder，跨平台 dmg/NSIS/portable）。
 
 ## 发版
 
 三平台产物由 GitHub Actions 在打 tag 时自动构建并发布（`.github/workflows/release.yml`）：
 
 ```bash
-git tag v3.3.9
-git push origin v3.3.9
+git tag v4.2.0
+git push origin v4.2.0
 # 等 Release workflow 跑完（约 15-25 分钟）, 产物自动挂到 GitHub Release
 ```
 
@@ -304,25 +345,32 @@ git push origin v3.3.9
 uv run pytest
 ```
 
-测试覆盖：runtime 工具循环、权限模式、多 Agent、auto-compact、限流重试、
-原子落盘、并发会话、后台任务、附件、Windows shell 选壳等。
+70+ 个测试文件（800+ 用例），CI 在 GitHub Actions 上跑（`ci.yml`）。覆盖：runtime
+工具循环、权限模式与敏感路径、多 Agent、三层压缩（MicroCompact / Session Memory /
+auto-compact）、MCP 客户端与配置、记忆、Skills、评测 harness（桩 Agent 端到端）、
+限流重试、原子落盘、并发会话、后台任务、附件、上下文瘦身、延迟治理、Windows shell
+选壳等。
 
 ## 深入阅读
 
 [guides/](guides/) 下有 13 篇按模块拆解的实现笔记（models / tools / api_client /
 config / permissions / hooks / retry / prompt / compact / storage / multi_agent /
-runtime / main），适合按顺序阅读源码。
+runtime / main），适合按顺序阅读源码。[docs/optimization-backlog.md](docs/optimization-backlog.md)
+记录了对照 Claude Code 参考设计逐项评估后的优化清单与落地状态。
 
 ## 项目来源与致谢
 
 本项目基于 [Louisym/MiniCC](https://github.com/Louisym/MiniCC) 开发，在其 Agent
-架构的基础上进行了多方向扩展与定制，例如桌面端 Tauri 2 壳、三级权限体系、
-多 Agent 编排、Hooks、auto-compact、限流重试与摸鱼电台等。
+架构的基础上进行了多方向扩展与定制，例如 MCP 接入、三层压缩体系、上下文瘦身、
+评测框架、三级权限体系、多 Agent 编排、Skills、跨会话记忆、桌面端多壳与摸鱼电台等。
 
-感谢 MiniCC 原作者的工作；本项目同样以学习 Agent 架构设计为目的，
-欢迎参考与交流。
+感谢 MiniCC 原作者的工作；欢迎参考、交流与 PR。
 
 ## 免责声明
 
 本项目用于学习 Agent 架构设计，`danger-full-access` 模式下模型可执行任意命令，
 请注意在可信环境下使用。
+
+## License
+
+[MIT](LICENSE)
