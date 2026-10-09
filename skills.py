@@ -4,7 +4,7 @@
 # 可选捆绑任意辅助文件（脚本/模板/数据），目录就是技能的工作区。
 #
 # 发现规则（与指令文件同思路的两级作用域）:
-#   用户级  ~/.x-code/skills/<name>/SKILL.md        —— 跨项目可用
+#   用户级  ~/.aulos/skills/<name>/SKILL.md        —— 跨项目可用
 #   项目级  <项目>/.claude/skills/<name>/SKILL.md   —— 随仓库走, 同名覆盖用户级
 #
 # 注入策略 = 渐进式披露（省 token 的关键）: 系统提示词只进 name + description

@@ -6,7 +6,7 @@ tmp, A 的 replace 发布出半截内容 → 读者撞见非法 JSON, 数据看�
 PermissionError（CPython 不带 FILE_SHARE_DELETE）, 杀软扫描 tmp 也是
 同样的瞬时锁。test_agent_tools 的偶发红就是这两件事叠加。
 
-运行方式（在 x-code 目录下）:
+运行方式（在 aulos 目录下）:
     uv run pytest tests/test_fsatomic.py -v
 """
 

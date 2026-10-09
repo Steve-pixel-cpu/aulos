@@ -1,7 +1,7 @@
 """长回合延迟治理三件套测试: 回合内思考自动降档、迭代软收束提示、
 配置解析与 build_runtime 接线、每轮调用耗时日志。
 
-运行方式（在 x-code 目录下）:
+运行方式（在 aulos 目录下）:
     uv run pytest tests/test_latency_governance.py -v
 """
 

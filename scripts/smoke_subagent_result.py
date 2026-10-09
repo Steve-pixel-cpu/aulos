@@ -28,7 +28,7 @@ from multi_agent import AgentOrchestrator
 # 端点选 ZAI-ANTHROPIC(coding paas v4): 实测有余额; glm-4.7 支持 tool use。
 def _smoke_api_config():
     import json as _json
-    cfg = _json.load(open(os.path.expanduser("~/.x-code/settings.json"),
+    cfg = _json.load(open(os.path.expanduser("~/.aulos/settings.json"),
                           encoding="utf-8"))
     p = next(x for x in cfg["providers"] if x.get("name") == "ZAI-ANTHROPIC")
     return (p["api_key"], p["base_url"].strip('"'),

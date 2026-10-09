@@ -1,6 +1,6 @@
 """设置 → 外观: 图标/壁纸持久化接口（/api/icon, /api/bg）。
 
-规格钉子: 用户上传件必须落在 APPEARANCE_DIR（~/.x-code/appearance/,
+规格钉子: 用户上传件必须落在 APPEARANCE_DIR（~/.aulos/appearance/,
 重启存活）, 绝不写进 STATIC_DIR——PyInstaller onefile 下那是 _MEIxxxx
 临时解包目录, 退出即焚（头像/壁纸"重启就丢"的根因）。读取走 GET 端点
 带出厂兜底, 前端不再引用 /static 下的用户资产。

@@ -1,5 +1,5 @@
 # 记忆 Web API 测试: CRUD / 校验 / 404 / user 来源
-# 隔离口径: monkeypatch memory.tools 的 store 单例（不触真实 ~/.x-code）,
+# 隔离口径: monkeypatch memory.tools 的 store 单例（不触真实 ~/.aulos）,
 # server 端点在请求路径上惰性导入 get_memory_store, 单例替换即全链路生效。
 import pytest
 

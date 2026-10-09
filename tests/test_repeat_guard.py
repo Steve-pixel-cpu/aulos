@@ -10,7 +10,7 @@ grep/git log 这类确定性只读探查不清零计数——旧规则"任何 ba
 让 bash 密集的排查会话里护栏形同虚设（实测同一文件重读 4 次无告警）。
 判定保守: 白名单 + 危险构造（命令替换/重定向写/未知名令）一票否决。
 
-运行方式（在 x-code 目录下）:
+运行方式（在 aulos 目录下）:
     uv run pytest tests/test_repeat_guard.py -v
 """
 

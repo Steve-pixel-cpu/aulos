@@ -1,6 +1,6 @@
 """记忆存储: MemoryStore 抽象接口 + JsonFileStore 实现。
 
-存储形态是结构化 JSON（~/.x-code/memory.json, 路径见 config.MEMORY_FILE）,
+存储形态是结构化 JSON（~/.aulos/memory.json, 路径见 config.MEMORY_FILE）,
 而非 CC 式 MEMORY.md —— id/category/hits 等字段是 RAG 检索与 Web API 的地基。
 单用户桌面应用, 与 settings.json 同读写约定: 读-改-写, 不加锁。
 

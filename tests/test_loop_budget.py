@@ -1,6 +1,6 @@
 """循环层预算测试: usage 计量打通、单轮输出预算、迭代上限优雅收束、auto-compact 信号、配置接线。
 
-运行方式（在 x-code 目录下）:
+运行方式（在 aulos 目录下）:
     uv run pytest tests/test_loop_budget.py -v
 """
 

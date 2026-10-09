@@ -1,6 +1,6 @@
 """main.py 纯逻辑部分的验收测试（REPL 交互本身靠人工冒烟）。
 
-运行方式（在 x-code 目录下）:
+运行方式（在 aulos 目录下）:
     uv run pytest tests/test_main.py -v
 """
 

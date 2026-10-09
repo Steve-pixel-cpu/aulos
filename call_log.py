@@ -2,7 +2,7 @@
 
 应用此前没有任何逐日运行日志——"这个对话为什么跑了这么久"只能翻
 会话 jsonl 拿相邻时间戳倒推。这里把主循环每次调用的墙钟与用量记成
-一行 JSON, 按天落在 ~/.x-code/logs/runtime-YYYYMMDD.log。
+一行 JSON, 按天落在 ~/.aulos/logs/runtime-YYYYMMDD.log。
 
 写入 best-effort: 任何异常（目录只读、磁盘满……）静默吞掉——日志
 只是观测手段, 绝不影响主流程。

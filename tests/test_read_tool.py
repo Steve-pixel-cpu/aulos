@@ -4,7 +4,7 @@
 模型只能绕道 bash sed——多花调用数还助长"反复排查"。行窗口让 read_file
 自己能翻页, 返回头里带续读 offset。
 
-运行方式（在 x-code 目录下）:
+运行方式（在 aulos 目录下）:
     uv run pytest tests/test_read_tool.py -v
 """
 

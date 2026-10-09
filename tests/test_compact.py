@@ -1,7 +1,7 @@
 """compact_session 切割边界的规格钉子: 切割点绝不落在 tool_use 与它的
 tool_result 之间——悬空 tool_result 会让下一轮请求被 API 400 掉整轮。
 
-运行方式（在 x-code 目录下）:
+运行方式（在 aulos 目录下）:
     uv run pytest tests/test_compact.py -v
 """
 

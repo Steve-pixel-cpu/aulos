@@ -1,7 +1,7 @@
 """记忆工具: memory_write / memory_update / memory_delete 三件套。
 
 spec 与实现同源（对齐 music.py 的 MUSIC_PLAY_SPEC 模式）, main.py 导入注册。
-三个工具都是免审批档位（READ_ONLY）——记忆是 ~/.x-code/ 本机数据读写,
+三个工具都是免审批档位（READ_ONLY）——记忆是 ~/.aulos/ 本机数据读写,
 写入反馈经工具结果回传自然可见（CLI 打印 / Web 工具卡）, 不新增 UI 组件。
 
 store 用模块级单例: CLI 命令、Web API、Agent 工具三方共用同一实例,

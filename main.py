@@ -1032,7 +1032,7 @@ def do_skills(runtime: "ConversationRuntime", name_arg: str) -> None:
     skills = _discover(Path.cwd(), USER_DIR)
     if not skills:
         print(c_dim("没有已安装的技能。把 SKILL.md 放进 "
-                    "~/.x-code/skills/<name>/ 或 <项目>/.claude/skills/<name>/, "
+                    "~/.aulos/skills/<name>/ 或 <项目>/.claude/skills/<name>/, "
                     "或用 Web 设置页从 GitHub 仓库安装。"))
         return
     if name_arg:
@@ -1214,7 +1214,7 @@ TOOL_REQUIREMENTS = {
     "task_output": READ_ONLY_MODE,      # 读后台任务日志, 只读
     "grep": READ_ONLY_MODE,             # 纯只读搜索
     "glob": READ_ONLY_MODE,             # 纯只读列文件
-    "todo": READ_ONLY_MODE,             # 会话任务清单（只写 ~/.x-code/todos/ 元数据）
+    "todo": READ_ONLY_MODE,             # 会话任务清单（只写 ~/.aulos/todos/ 元数据）
     "web_search": READ_ONLY_MODE,       # 免 key 网页搜索, 纯只读
     "web_fetch": READ_ONLY_MODE,        # 抓 URL 提取正文, 不落盘
     "skill_read": READ_ONLY_MODE,       # 读已装技能目录内文件, 只读且限技能目录
@@ -1235,7 +1235,7 @@ TOOL_REQUIREMENTS = {
     # 聊天点歌: 上游搜索纯只读, 播放动作在前端电台（副作用不出本机 UI）,
     # 与 browser_navigate 同一档位——只读模式也能点歌
     "music_play": READ_ONLY_MODE,
-    # 记忆三件套: 只写 ~/.x-code/memory.json 本机数据, 半自动可见（写入
+    # 记忆三件套: 只写 ~/.aulos/memory.json 本机数据, 半自动可见（写入
     # 反馈经工具结果回传）, 与 todo 同档免审批——"顺手记一下"不该打断对话
     "memory_write": READ_ONLY_MODE,
     "memory_update": READ_ONLY_MODE,

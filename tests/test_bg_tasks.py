@@ -7,7 +7,7 @@ task_output、task_stop。
 - task_output 只回日志尾部 + 存活状态——服务日志再大也不撑上下文。
 - task_stop 杀整棵进程树——服务常带子进程, 只杀主进程会漏。
 
-运行方式（在 x-code 目录下）:
+运行方式（在 aulos 目录下）:
     uv run pytest tests/test_bg_tasks.py -v
 """
 

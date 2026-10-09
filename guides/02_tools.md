@@ -45,7 +45,7 @@ write_tool(input_json) -> str   # 写文件
 `truncate_tool_output(output, tool_name)` 现在分两级：
 
 1. **落盘型工具**（`SPILL_LIMITS`: bash/powershell 30k, grep/glob/edit_file 100k）:
-   超限全文写 `~/.x-code/tool-results/{sha256前16}.txt`（同内容去重）,
+   超限全文写 `~/.aulos/tool-results/{sha256前16}.txt`（同内容去重）,
    会话里只回首尾预览 + ``Full output saved to `{path}` `` 标记。模型需要
    中段时自己 `read_file`——中段信息不再永久丢失。
 2. **其余工具**（含 read_file——自带分页且落盘会形成"读结果"循环依赖）:

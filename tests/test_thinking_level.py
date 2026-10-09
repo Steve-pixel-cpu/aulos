@@ -1,6 +1,6 @@
 """思考等级（thinking level）功能测试: 配置解析、env 覆盖、请求参数映射、/thinking 命令。
 
-运行方式（在 x-code 目录下）:
+运行方式（在 aulos 目录下）:
     uv run pytest tests/test_thinking_level.py -v
 """
 

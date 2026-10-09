@@ -1,6 +1,6 @@
 """-p headless 模式的验收测试（REPL 路径由 test_main 覆盖）。
 
-运行方式（在 x-code 目录下）:
+运行方式（在 aulos 目录下）:
     uv run pytest tests/test_headless.py -v
 
 覆盖:

@@ -4,7 +4,7 @@
 压缩是"给模型的请求期视图": 历史不被改写, 存储永远只追加,
 on_compacted 只是纯通知(旧版会原地替换历史并重写会话文件, 已退役)。
 
-运行方式（在 x-code 目录下）:
+运行方式（在 aulos 目录下）:
     uv run pytest tests/test_incremental_persist.py -v
 """
 

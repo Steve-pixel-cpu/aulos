@@ -128,7 +128,7 @@ import bilibili as _bili
 
 setup_console()  # Windows 控制台 UTF-8 兜底（服务器日志不乱码，与 CLI 同一入口）
 
-# --- 配置来源: 只有 ~/.x-code/settings.json 的 providers/activeProvider
+# --- 配置来源: 只有 ~/.aulos/settings.json 的 providers/activeProvider
 #     （设置页/初始化页写入, 读写逻辑在 config.py）。
 #     没有 .env 兜底——未配置时 api_key 为空串照常起服务,
 #     前端检测到(/api/settings.configured=false)会弹初始化页引导填写 ---
@@ -146,7 +146,7 @@ runtime_config: RuntimeConfig = ConfigLoader(
     cwd=Path.cwd(), config_home=USER_DIR   # x-code 自己的用户配置目录
 ).load()
 
-# --- 连接门禁: 桌面壳与后端共享 ~/.x-code/token 里的随机令牌 ---
+# --- 连接门禁: 桌面壳与后端共享 ~/.aulos/token 里的随机令牌 ---
 # 所有请求必须携带 x-aulos-token 头 / cookie / query 之一, 否则 403 拒绝——
 # 浏览器直接访问 127.0.0.1:8000 因此被挡在门外, 只有桌面壳能进来
 _TOKEN_FILE = USER_DIR / "token"
@@ -397,7 +397,7 @@ def _mirror_on_event(sink: Optional[Callable[[dict], None]]) -> Optional[WireObs
 
 
 # ============================================================================
-# 模型供应商配置: 读写归口 config.py（~/.x-code/settings.json 的
+# 模型供应商配置: 读写归口 config.py（~/.aulos/settings.json 的
 # providers / activeProvider 两个 key）, 这里只保留运行态副本
 # ============================================================================
 
@@ -1436,7 +1436,7 @@ async def favicon():
 
 
 # --- 外观资产（应用图标/壁纸）: 用户上传件一律落在 APPEARANCE_DIR
-#     (~/.x-code/appearance/)。绝对不能写进 STATIC_DIR——PyInstaller
+#     (~/.aulos/appearance/)。绝对不能写进 STATIC_DIR——PyInstaller
 #     onefile 模式下那是 _MEIxxxx 临时解包目录, 进程退出即焚, 用户上传
 #     的壁纸/头像重启全丢（实测 4 个历史 _MEI 目录里全是残骸）。
 #     icon-default.png 是打包进来的出厂副本, 只读。 ---
@@ -1922,7 +1922,7 @@ _pet_sheets: dict[str, Path] = {}
 
 def _pets_dirs() -> list[tuple[Path, str]]:
     """宠物目录候选（按优先级, id 冲突靠前者胜）: 用户目录 → 安装目录 → Codex。
-    用户目录 ~/.x-code/pets 是唯一可写目录, 「打开目录」开的就是它——
+    用户目录 ~/.aulos/pets 是唯一可写目录, 「打开目录」开的就是它——
     用户宠物不能往安装目录里放: 冻结态装在 Program Files 下不可写,
     升级换目录还会被清掉; 源码态写仓库会污染源码树。
     安装目录候选是安装包自带的只读样例（冻结态后端在 <安装>/resources/server/
@@ -2298,7 +2298,7 @@ async def api_get_skills(workdir: Optional[str] = None):
 @app.post("/api/skills/install")
 async def api_install_skills(request: dict):
     """从 GitHub 仓库安装社区 skills: git clone → 解析 SKILL.md → 拷入
-    ~/.x-code/skills/。body: {repo, subpath?, overwrite?}。
+    ~/.aulos/skills/。body: {repo, subpath?, overwrite?}。
     仓库布局三种都认: 根目录即技能 / subpath 指向单个技能 / skills/*/ 一仓多技能。"""
     repo = str(request.get("repo") or "").strip()
     subpath = str(request.get("subpath") or "").strip()
@@ -2644,7 +2644,7 @@ async def api_post_settings(request: dict):
 
 
 def _save_setting(key: str, value) -> None:
-    """单个用户级设置持久化到 ~/.x-code/settings.json（读-改-写）。
+    """单个用户级设置持久化到 ~/.aulos/settings.json（读-改-写）。
 
     文件里其他 key（providers / activeProvider / permissionMode / ...）
     原样保留。读写都走 config.SETTINGS_FILE, 测试 monkeypatch 该路径即可
@@ -2666,7 +2666,7 @@ def _save_setting(key: str, value) -> None:
 
 
 def _save_permission_mode(mode: PermissionMode) -> None:
-    """权限模式持久化到 ~/.x-code/settings.json 的 permissionMode key。
+    """权限模式持久化到 ~/.aulos/settings.json 的 permissionMode key。
 
     值用 resolve_permission_mode / config mode_map 认的规范名, 重启后能原样
     读回; 不写 "allow"（同 POST 入口, 配置口径拒绝它）。
@@ -3014,7 +3014,7 @@ async def api_test_provider(request: dict):
 
 @app.post("/api/open-config")
 async def api_open_config():
-    """设置页「打开配置文件」: 用系统默认程序打开 ~/.x-code/settings.json。
+    """设置页「打开配置文件」: 用系统默认程序打开 ~/.aulos/settings.json。
     文件不存在时先创建空配置, 保证每次都能打开。"""
     path = SETTINGS_FILE
     if not path.exists():
@@ -3273,7 +3273,7 @@ if __name__ == "__main__":
     import socket
     import uvicorn
 
-    # 命令执行器依赖 Git Bash: 没有就拒绝启动。原因落盘到 ~/.x-code/,
+    # 命令执行器依赖 Git Bash: 没有就拒绝启动。原因落盘到 ~/.aulos/,
     # 桌面壳只显示通用的"后端未就绪", 具体原因以这里为准
     reason = git_bash_unavailable_reason()
     if reason:

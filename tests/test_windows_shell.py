@@ -4,7 +4,7 @@
 系统安装的 Git(从 git.exe 推导根目录) → PATH 里的 bash(排除 System32 的
 WSL 启动器); 找不到 Git Bash 才退回 PowerShell。PowerShell 自身 pwsh 7 优先。
 
-运行方式（在 x-code 目录下）:
+运行方式（在 aulos 目录下）:
     uv run pytest tests/test_windows_shell.py -v
 """
 
@@ -53,7 +53,7 @@ def test_环境变量资源目录优先级最高(monkeypatch, tmp_path):
 
 def test_内置副本次之(monkeypatch, tmp_path):
     home = tmp_path / "home"
-    bundled = _mk_bash(home / ".x-code" / "git-bash")
+    bundled = _mk_bash(home / ".aulos" / "git-bash")
     reset(monkeypatch, tmp_path, home=home)
 
     assert tools._git_bash() == bundled

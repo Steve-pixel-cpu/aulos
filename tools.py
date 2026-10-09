@@ -22,7 +22,7 @@ NL = chr(10)   # LF: splitlines/endswith 的换行判定用, 避免源码里写�
 
 # 用户级配置目录（todo 清单等）: 与 config.USER_DIR 同一处, 但 tools.py
 # 不 import config（避免引入配置加载副作用）, 直接推导
-USER_CONFIG_HOME = Path.home() / ".x-code"
+USER_CONFIG_HOME = Path.home() / ".aulos"
 
 # 工具输出进入会话历史前的硬上限。模型的思考长度随上下文膨胀，无界的
 # 工具输出（大文件、长命令输出）是透支上下文、诱发过度思考的根源，所以
@@ -466,7 +466,7 @@ def _git_bash_candidates() -> list[str]:
     if env_home:
         candidates += [str(Path(env_home) / "bin" / "bash.exe"),
                        str(Path(env_home) / "bash.exe")]
-    bundled = Path.home() / ".x-code" / "git-bash" / "bin" / "bash.exe"
+    bundled = Path.home() / ".aulos" / "git-bash" / "bin" / "bash.exe"
     candidates.append(str(bundled))
     git = shutil.which("git")
     if git:
@@ -851,7 +851,7 @@ def edit_file_tool(params: dict, workdir: Optional[str] = None) -> str:
 # --- 任务清单 (todo): 会话级进度追踪, 与 Claude Code 的 TodoWrite 同构 ---
 #
 # 为什么做进工具而不是提示词: 模型对"多步任务"的进度管理一旦只靠脑内
-# 记忆, 长会话压缩后必丢。落一份结构化清单在 ~/.x-code/todos/, 既给模型
+# 记忆, 长会话压缩后必丢。落一份结构化清单在 ~/.aulos/todos/, 既给模型
 # 一个"当前该干什么"的外部记忆, 也给前端一份可渲染的任务面板数据源。
 # 单会话单清单: 文件名 = session_id, 线程锁串行化写入。
 

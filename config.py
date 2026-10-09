@@ -7,7 +7,7 @@ from typing import Literal, Optional, Any
 from pydantic import BaseModel, Field
 
 # 应用名与用户级目录的唯一来源: ~/.aulos（目录名跟 APP_NAME 走, 改名只动这一处）。
-# 前身 x-code: 首次启动时若存在 ~/.x-code 且 ~/.aulos 不存在, 自动整体迁移
+# 前身 x-code: 首次启动时若存在 ~/.aulos 且 ~/.aulos 不存在, 自动整体迁移
 # （会话/设置/令牌/技能/宠物等全部数据, 见 _migrate_legacy_dir()）。
 APP_NAME = "aulos"
 LEGACY_APP_NAME = "x-code"
@@ -15,7 +15,7 @@ USER_DIR = Path.home() / ("." + APP_NAME)
 
 
 def _migrate_legacy_dir() -> None:
-    """一次性迁移: ~/.x-code → ~/.aulos（仅当旧目录存在且新目录不存在）。
+    """一次性迁移: ~/.aulos → ~/.aulos（仅当旧目录存在且新目录不存在）。
     原子性: 同盘 rename, 瞬间完成; 迁移后旧目录不存在, 回滚 = 改回名字重跑。
     失败(跨盘/占用)不致命: 退回旧目录继续跑, 下次启动再试。"""
     legacy = Path.home() / ("." + LEGACY_APP_NAME)
@@ -35,7 +35,7 @@ MEMORY_FILE = USER_DIR / "memory.json"
 
 
 class ConfigSource(Enum):
-    USER = "user"         # 用户全局 (~/.x-code/settings.json)
+    USER = "user"         # 用户全局 (~/.aulos/settings.json)
     PROJECT = "project"   # 项目级别 (.claude/settings.json)
     LOCAL = "local"       # 本地个人 (.claude/settings.local.json)
 
@@ -298,7 +298,7 @@ class ConfigLoader:
     """
         参数:
             cwd: 当前工作目录（项目根目录）
-            config_home: 用户配置目录（x-code 使用 ~/.x-code）
+            config_home: 用户配置目录（aulos 使用 ~/.aulos）
     """
     def __init__(self, cwd: Path, config_home: Path):
         self.cwd = cwd
@@ -547,7 +547,7 @@ class ConfigLoader:
 
 
 # ============================================================================
-# x-code 用户设置: SETTINGS_FILE（~/.x-code/settings.json）
+# aulos 用户设置: SETTINGS_FILE（~/.aulos/settings.json）
 # 供应商配置的读写归口在此（providers / activeProvider 是其中的普通 key,
 # 其余 key 原样保留——以后的用户级设置也放这个文件, 不再另起文件名）
 # ============================================================================

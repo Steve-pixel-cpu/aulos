@@ -84,7 +84,7 @@ blockingLimit        = effectiveWindow -  3_000   # 强制手动压缩
 ## 待办 3：工具结果超限落盘（替代中段丢弃）✅（已落地 2026-09）
 
 **状态**：已落地。`tools.SPILL_LIMITS`（bash/powershell 30k, grep/glob/edit_file
-100k）→ 超限全文写 `~/.x-code/tool-results/{hash}.txt`, 回显首尾 + 路径标记；
+100k）→ 超限全文写 `~/.aulos/tool-results/{hash}.txt`, 回显首尾 + 路径标记；
 `resumable_spill_path` 让 MicroCompact 占位符带落盘路径（被清结果可找回）；
 mtime 清 7 天过期文件, 落盘失败静默退化为纯截断。read_file 维持纯截断。
 
@@ -99,7 +99,7 @@ mtime 清 7 天过期文件, 落盘失败静默退化为纯截断。read_file �
 | Read | ∞（有自己的分页限制；落盘会让"读结果"形成循环依赖，故排除） |
 
 **实现要点**：
-- 落盘目录 `~/.x-code/tool-results/{hash}.txt`（对齐现有 `USER_CONFIG_HOME` 约定）
+- 落盘目录 `~/.aulos/tool-results/{hash}.txt`（对齐现有 `USER_CONFIG_HOME` 约定）
 - 截断消息里带路径 + 指引："Full output saved to {path}; use read_file to inspect specific ranges"
 - 与 MicroCompact 的关系：落盘后，被 MicroCompact 清掉的旧结果理论上可从盘上找回（Claude 没做这层，
   占位符不可恢复；x-code 可以做——占位符里带落盘路径即可，成本几乎为零，**建议顺手做**）
@@ -114,7 +114,7 @@ mtime 清 7 天过期文件, 落盘失败静默退化为纯截断。read_file �
 **状态**：已在 permissions.py 落地（2026-09）——写路径分级
 `classify_write_path`（inside/outside/sensitive）+ shell 破坏族敏感路径
 扫描 `shell_command_touches_sensitive_path`，敏感路径（`.git/`、
-`~/.x-code/`、`~/.ssh/`、shell 配置文件）在任何模式（含
+`~/.aulos/`、`~/.ssh/`、shell 配置文件）在任何模式（含
 danger-full-access/allow）下都强制人工裁决，不可被命令白名单短路；
 无 prompter（subagent）直接拒绝。测试见 tests/test_path_policy.py。
 设计说明见 guides/05_permissions.md 末节。
@@ -123,9 +123,9 @@ danger-full-access/allow）下都强制人工裁决，不可被命令白名单�
 1. 工具实现级 denied（如 BashTool 对单个危险子命令的判定）
 2. `requiresUserInteraction()` 为 true 的场景
 3. 内容级 ask 规则（如 `Bash(npm publish:*)`）
-4. **敏感路径安全检查**：`.git/`、`.claude/`（x-code 对应 `.x-code/`）、`.vscode/`、shell 配置文件
+4. **敏感路径安全检查**：`.git/`、`.claude/`（x-code 对应 `.aulos/`）、`.vscode/`、shell 配置文件
 
-对 x-code 最直接的是第 4 条：**写/删 `.git/`、`.x-code/`、shell 配置文件（.bashrc/.zshrc）等路径时，
+对 x-code 最直接的是第 4 条：**写/删 `.git/`、`.aulos/`、shell 配置文件（.bashrc/.zshrc）等路径时，
 无论当前权限模式（包括 danger-full-access）都强制询问或拒绝**。防的两类事故：
 - 模型抽风改掉自己的权限配置/护栏配置（自逃脱）
 - " rm -rf .git" 类不可逆破坏被 ALLOW 模式静默放行

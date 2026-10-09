@@ -12,7 +12,7 @@ api_client 流处理)/或纯 tool_use, build_assistant_message 收到空事件
   L2 部分结果  — 兜底也失败时, 从会话历史提取产物清单回传(COMPLETED)
   L3 thinking  — 空 blocks 时用 thinking 文本降级为 text 块(带标记)
 
-运行方式（在 x-code 目录下）:
+运行方式（在 aulos 目录下）:
     uv run pytest tests/test_agent_empty_final.py -v
 """
 import json

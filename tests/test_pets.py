@@ -4,7 +4,7 @@
 图集资产只需一个合法文件头——_image_size 只读前 32 字节,
 不必真的生成 1536x1872 图片。
 
-运行方式(在 x-code 目录下):
+运行方式(在 aulos 目录下):
     .venv/Scripts/python.exe -m pytest tests/test_pets.py -v
 """
 
@@ -89,7 +89,7 @@ def test_pets_dirs_source_mode(monkeypatch):
     monkeypatch.delenv("CODEX_HOME", raising=False)
     dirs = server._pets_dirs()
     # 首候选=用户目录(可写, 打开目录指向它), 其后是仓库开发样例与 Codex
-    assert dirs[0] == (Path.home() / ".x-code" / "pets", "user")
+    assert dirs[0] == (Path.home() / ".aulos" / "pets", "user")
     assert dirs[1] == (Path(server.__file__).resolve().parent / "pets", "install")
     assert dirs[-1][1] == "codex" and dirs[-1][0].name == "pets"
 
@@ -103,12 +103,12 @@ def test_pets_dirs_codex_home_override(monkeypatch, tmp_path):
 def test_pets_dirs_frozen_layouts(monkeypatch, tmp_path):
     """冻结态: 后端在 <安装>/resources/server/ 下, 候选必须覆盖
     Tauri(<安装>/pets)与 Electron(<安装>/resources/pets)两种布局。"""
-    exe = tmp_path / "install" / "resources" / "server" / "x-code-server.exe"
+    exe = tmp_path / "install" / "resources" / "server" / "aulos-server.exe"
     exe.parent.mkdir(parents=True)
     monkeypatch.setattr(server.sys, "frozen", True, raising=False)
     monkeypatch.setattr(server.sys, "executable", str(exe))
     dirs = server._pets_dirs()
-    assert dirs[0] == (Path.home() / ".x-code" / "pets", "user")
+    assert dirs[0] == (Path.home() / ".aulos" / "pets", "user")
     assert dirs[1][0] == tmp_path / "install" / "pets"
     assert dirs[2][0] == tmp_path / "install" / "resources" / "pets"
 

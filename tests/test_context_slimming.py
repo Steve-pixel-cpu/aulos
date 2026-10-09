@@ -1,7 +1,7 @@
 """主上下文瘦身四件套测试: 工具结果行预算+落盘、同文件重读去重、
 贴图降采样、subagent 委派引导。
 
-运行方式（在 x-code 目录下）:
+运行方式（在 aulos 目录下）:
     uv run pytest tests/test_context_slimming.py -v
 """
 

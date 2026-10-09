@@ -179,7 +179,7 @@ def clean_slots():
 def no_auto_title(monkeypatch):
     """跳过自动命名: turn_done 后 worker 还会跑 maybe_auto_title（真实网络
     调用）, 若超出用例的 join 时限, monkeypatch 拆除后 store.set_title 会
-    落到真实 ~/.x-code/sessions——垃圾标题文件就这样写进了用户数据。"""
+    落到真实 ~/.aulos/sessions——垃圾标题文件就这样写进了用户数据。"""
     monkeypatch.setattr(server, "maybe_auto_title", lambda ws: False)
 
 

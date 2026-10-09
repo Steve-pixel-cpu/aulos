@@ -1,10 +1,10 @@
 """摸鱼电台（网易云代理层 + 本地曲库）测试。
 
 music.py 的网络调用全部 monkeypatch 掉, 不出真网;
-本地曲库 monkeypatch 到 tmp_path, 不碰真实 ~/.x-code;
+本地曲库 monkeypatch 到 tmp_path, 不碰真实 ~/.aulos;
 server 路由走 TestClient 验证响应结构与错误映射。
 
-运行方式（在 x-code 目录下）:
+运行方式（在 aulos 目录下）:
     .venv/Scripts/python.exe -m pytest tests/test_music.py -v
 """
 

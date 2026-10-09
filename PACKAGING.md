@@ -43,7 +43,7 @@ WebView2 窗口加载本地服务；如果 8000 端口已有 x-code 在跑则直
 
 8000 端口常被其他程序抢占（**C-Lodop 云打印服务默认占 8000/18000**，装了它的电脑
 最容易撞上）。因此后端绑定失败会自动尝试 8010–8019，并把最终端口写入
-`~/.x-code/port`；桌面壳读取该文件动态访问，无需人工干预。想固定端口可给后端传
+`~/.aulos/port`；桌面壳读取该文件动态访问，无需人工干预。想固定端口可给后端传
 `--port` 参数或设置 `XCODE_PORT` 环境变量。
 
 ## 桌面端的浏览器测试工具
@@ -60,7 +60,7 @@ driver 打进 exe（`--collect-all playwright`），无需 `playwright install`�
 不需要带任何配置文件。拿到 exe 的人首次打开会进入**初始化页**，填入 API Key
 （和可选的接口地址）即可；配置保存在 `C:\Users\<用户名>\.x-code\settings.json`。
 
-会话记录、多 agent 存档同样存于 `~/.x-code\`，与 exe 安装位置无关，升级覆盖安装不丢数据。
+会话记录、多 agent 存档同样存于 `~/.aulos\`，与 exe 安装位置无关，升级覆盖安装不丢数据。
 
 **运行前提**：Windows 10/11 自带 WebView2 运行时（Tauri 渲染层）。极少数精简系统
 可能没有，安装包会引导安装，或从微软官网下载 WebView2 Runtime。
@@ -68,7 +68,7 @@ driver 打进 exe（`--collect-all playwright`），无需 `playwright install`�
 ## 运行前提：Git for Windows（工具执行器 / 中文编码）
 
 **启动时强校验**：CLI 与后端服务启动都会检测 Git Bash，检测不到就拒绝启动
-（CLI 打印说明后退出；桌面端后端退出时把原因写入 `~/.x-code/startup-error.log`，
+（CLI 打印说明后退出；桌面端后端退出时把原因写入 `~/.aulos/startup-error.log`，
 启动成功会自动删除该文件）。安装 [Git for Windows](https://git-scm.com/download/win)
 后重启即可，默认选项、无需配置。
 
@@ -77,7 +77,7 @@ UTF-8 不经转码；PowerShell 5.1 的 cmdlet 会按 ANSI(GBK) 转码，读 UTF
 必乱。选壳顺序（`tools._git_bash_candidates`）：
 
 1. `XCODE_BASH_HOME` 环境变量指向的目录（预留的打包/定制入口）
-2. `~/.x-code/git-bash/bin/bash.exe`（预留的内置副本位置）
+2. `~/.aulos/git-bash/bin/bash.exe`（预留的内置副本位置）
 3. 系统安装的 Git for Windows（从 `git.exe` 推导根目录）← 绝大多数机器走这里
 4. PATH 里的 bash（排除 System32 的 WSL 启动器）
 5. 都没有才退回 PowerShell——但正常情况下启动门禁已经把这条路挡住了
@@ -100,7 +100,7 @@ UTF-8 不经转码；PowerShell 5.1 的 cmdlet 会按 ANSI(GBK) 转码，读 UTF
 发布新版后，已安装旧版的用户**重启应用**即可收到更新提示：启动时静默检查
 GitHub Release 上的更新清单，发现新版本 → 标题栏版本号出现红点 + toast 提示 →
 点击版本号弹更新框（版本号/更新说明/进度条）→「立即更新」应用内下载并自动
-运行安装包（NSIS passive 模式，无交互）→ 重启进入新版。数据都在 `~/.x-code/`，
+运行安装包（NSIS passive 模式，无交互）→ 重启进入新版。数据都在 `~/.aulos/`，
 更新不丢配置与会话。
 
 ### 更新链路
@@ -140,7 +140,7 @@ scripts\publish.cmd <版本> "说明"    ← git tag v<版本> + gh release crea
 | 前端 | `static/app.js`（UPD 段） | 启动静默检查、徽标红点、更新弹窗与进度轮询 |
 | 进度 | 轮询 `update_status` | 下载进度经静态原子量传递（不用插件事件——远端页面事件 ACL 不可靠） |
 
-更新检查失败的常见原因看 `~/.x-code/boot.log` 的 `[updater]` 段：无网/清单 404
+更新检查失败的常见原因看 `~/.aulos/boot.log` 的 `[updater]` 段：无网/清单 404
 （还没发过版）/签名不匹配（私钥换过）。
 
  |
@@ -148,10 +148,10 @@ scripts\publish.cmd <版本> "说明"    ← git tag v<版本> + gh release crea
 ## 常见问题
 
 - **启动弹「Python 后端在 30 秒内未能就绪」**：一般是 8000–8019 端口全被占用，或后端
-  进程启动即崩（查看 `~/.x-code/` 下的日志）。按提示关闭占用端口的程序后重试。
-  机器没装 Git 时后端也会拒绝启动，具体原因看 `~/.x-code/startup-error.log`；
+  进程启动即崩（查看 `~/.aulos/` 下的日志）。按提示关闭占用端口的程序后重试。
+  机器没装 Git 时后端也会拒绝启动，具体原因看 `~/.aulos/startup-error.log`；
   装 [Git for Windows](https://git-scm.com/download/win) 后重启即可。
-- **端口**：默认 8000，被占自动避让 8010–8019（实际端口见 `~/.x-code/port`）；
+- **端口**：默认 8000，被占自动避让 8010–8019（实际端口见 `~/.aulos/port`）；
   可用 `--port` 参数或 `XCODE_PORT` 环境变量固定。
 - **杀毒软件误报**：PyInstaller onefile 常见误报，可换 onedir（去掉 `--onefile`，并把
   tauri.conf.json 的 resources 放行目录）或对 exe 做签名。

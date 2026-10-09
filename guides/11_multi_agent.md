@@ -121,7 +121,7 @@ AgentOrchestrator
 |------|------|
 | `agent_tool` | 派 worker: description + prompt + subagent_type，立即返回 agent_id |
 | `agent_status` | 按 id 查状态; completed 时 manifest.result = worker 汇报原文 |
-| `agent_list` | 列出全部 worker（跨会话共享, 存 `~/.x-code/agents/`） |
+| `agent_list` | 列出全部 worker（跨会话共享, 存 `~/.aulos/agents/`） |
 
 关键改动:
 

@@ -9,7 +9,7 @@ JSON 字符串里出现原始 U+0085 字符。splitlines() 把 U+0085(U+2028/U+2
 写入方 _append_entry 只写 "\\n"(json.dumps 不转义 U+0085/U+2028/U+2029),
 因此读取必须与写入对齐: 只有 "\\n" 是行边界。
 
-运行方式（在 x-code 目录下）:
+运行方式（在 aulos 目录下）:
     uv run pytest tests/test_storage_jsonl_split.py -v
 """
 

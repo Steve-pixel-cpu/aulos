@@ -8,7 +8,7 @@ cache 才保得住（中段变动打穿该点之后全部缓存, 最贵 12 倍�
    （sync_tools_list）
 3. 两个同步操作任意次组合, 不变式不破
 
-运行方式（在 x-code 目录下）:
+运行方式（在 aulos 目录下）:
     uv run pytest tests/test_tool_order.py -v
 """
 

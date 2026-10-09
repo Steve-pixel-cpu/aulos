@@ -125,7 +125,7 @@ agent_list_spec = {
 class _AgentToolbox:
     """持有一个懒构建的 AgentOrchestrator（线程安全的单例入口）。
 
-    agent 存储在用户级目录（~/.x-code/agents）, 跨会话/跨启动共享;
+    agent 存储在用户级目录（~/.aulos/agents）, 跨会话/跨启动共享;
     workdir 不在这里设置 —— spawn 时按调用参数传入（无共享中间状态）。"""
 
     def __init__(self):

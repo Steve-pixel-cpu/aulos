@@ -411,9 +411,9 @@ PATH_SCOPED_WRITE_TOOLS = frozenset({"write_file", "edit_file"})
 
 # 敏感路径（bypass-immune 清单）:
 # - 路径里任何一段精确叫 ".git"（版本库元数据; .gitignore 等正常文件不中招）
-# - ~/.ssh、~/.x-code（本应用自身配置——白名单/设置就在里面, 防自逃脱）
+# - ~/.ssh、~/.aulos（本应用自身配置——白名单/设置就在里面, 防自逃脱）
 # - ~/.bashrc/.zshrc/.profile/.gitconfig（shell 配置, 写它们=持久化任意命令）
-SENSITIVE_HOME_DIRS = frozenset({".ssh", ".x-code"})
+SENSITIVE_HOME_DIRS = frozenset({".ssh", ".aulos"})
 SENSITIVE_HOME_FILES = frozenset({".bashrc", ".zshrc", ".profile", ".gitconfig"})
 
 

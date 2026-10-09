@@ -1,6 +1,6 @@
 """evals 框架自身的验收测试 (不烧 token: judge 用桩, 端到端用桩 Agent)。
 
-运行方式（在 x-code 目录下）:
+运行方式（在 aulos 目录下）:
     uv run pytest tests/test_evals_harness.py -v
 """
 

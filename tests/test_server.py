@@ -1,6 +1,6 @@
 """server.py 协议层 / 设置接口测试（不起真实 LLM 请求，不动全局单例状态）。
 
-运行方式（在 x-code 目录下）:
+运行方式（在 aulos 目录下）:
     .venv/Scripts/python.exe -m pytest tests/test_server.py -v
 
 说明: server.py 在 import 时做启动装配（读 .env、建 SessionStore），模块级
@@ -41,7 +41,7 @@ def test_index_serves_html(client):
     r = client.get("/")
     assert r.status_code == 200
     assert "text/html" in r.headers["content-type"]
-    assert "x-code" in r.text
+    assert "aulos" in r.text
 
 
 def test_settings_roundtrip_and_validation(client):
@@ -419,10 +419,10 @@ def test_token_gate_disabled_when_empty(client, monkeypatch):
 
 
 def test_ping_identifies_backend(client):
-    """探测端点: 桌面壳靠它区分 x-code 后端和抢占 8000 的其他程序。"""
+    """探测端点: 桌面壳靠它区分 aulos 后端和抢占 8000 的其他程序。"""
     r = client.get("/api/ping")
     assert r.status_code == 200
-    assert r.json() == {"app": "x-code"}
+    assert r.json() == {"app": "aulos"}
 
 
 # ------------------------------------------------------------
@@ -896,7 +896,7 @@ def test_history_api_returns_attachment_blocks(client, isolated_store):
     assert msgs[0]["blocks"][2]["name"] == "a.py"
 
 # ------------------------------------------------------------
-# 设置: permission_mode 持久化（写 ~/.x-code/settings.json 的 permissionMode）
+# 设置: permission_mode 持久化（写 ~/.aulos/settings.json 的 permissionMode）
 # ------------------------------------------------------------
 
 @pytest.fixture()

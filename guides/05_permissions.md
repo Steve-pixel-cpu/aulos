@@ -124,7 +124,7 @@ classify_write_path(path, workspace_roots):
   `tools.resolve_path` 同口径；未配置根时退为进程 cwd（对齐 Popen 继承
   cwd 的实际行为）。
 - 敏感根：路径里任何一段精确叫 `.git`（`.gitignore` 不中招）、
-  `~/.ssh`、`~/.bashrc/.zshrc/.profile/.gitconfig`、`~/.x-code`
+  `~/.ssh`、`~/.bashrc/.zshrc/.profile/.gitconfig`、`~/.aulos`
   （本应用自身配置——白名单就在里面，防"自逃脱"）。
 - bypass-immune 检查放在 authorize **最前面**：先于 ALLOW 快速路径、
   先于命令白名单——danger/allow 模式和已入白名单的前缀都豁免不了它。

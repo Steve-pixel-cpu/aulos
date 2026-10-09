@@ -1,7 +1,7 @@
 """Skills 设置 API 集成测试: GET 清单 / POST 安装（本地真 git 仓库端到端,
 覆盖三种仓库布局与重名/覆盖）/ DELETE 卸载（含项目级拒删）/ 热生效。
 
-安装走真实 git clone（git 是 x-code 硬依赖, CI 与本机都有）, 仓库用
+安装走真实 git clone（git 是 aulos 硬依赖, CI 与本机都有）, 仓库用
 tmp_path 里 git init + commit 出来的本地路径——不打真网。"""
 
 import subprocess

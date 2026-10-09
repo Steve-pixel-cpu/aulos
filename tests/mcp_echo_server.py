@@ -10,7 +10,7 @@ import sys
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 
-server = MCPServer("x-code-mcp-test")
+server = MCPServer("aulos-mcp-test")
 
 
 @server.tool(description="Echo the given text back.")

@@ -7,7 +7,7 @@
 system 的缓存读。断点数超 4 会被 API 拒绝; 打进共享的 tools spec 列表
 会污染其他会话——这两类错误都在这里钉死。
 
-运行方式（在 x-code 目录下）:
+运行方式（在 aulos 目录下）:
     uv run pytest tests/test_prompt_cache.py -v
 """
 

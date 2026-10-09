@@ -1,7 +1,7 @@
 """命令前缀白名单: 匹配语义 / 策略行为 / 配置存取 / REST 端点。
 
 事故驱动: 权限审批体验差——每条 shell 命令都要手点"允许"。加"总是允许
-（前缀入白名单）": 规则存 ~/.x-code/settings.json 的 commandAllowlist,
+（前缀入白名单）": 规则存 ~/.aulos/settings.json 的 commandAllowlist,
 授权层按 shlex 词对齐前缀匹配, 组合命令每段都必须命中, 带命令替换或
 写文件重定向的命令一律不命中（保守方向, 与只读白名单同一口径）。
 

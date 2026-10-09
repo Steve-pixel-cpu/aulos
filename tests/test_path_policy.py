@@ -83,7 +83,7 @@ def test_classify_home_sensitive(workspace):
     assert classify_write_path(str(home / ".ssh" / "known_hosts"),
                                [str(workspace)]) == "sensitive"
     # 本应用自身配置（白名单/设置就在里面）: 自逃脱防护
-    assert classify_write_path(str(home / ".x-code" / "settings.json"),
+    assert classify_write_path(str(home / ".aulos" / "settings.json"),
                                [str(workspace)]) == "sensitive"
     assert classify_write_path(str(home / "notes.txt"),
                                [str(workspace)]) == "outside"

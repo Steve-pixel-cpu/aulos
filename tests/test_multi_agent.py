@@ -1,6 +1,6 @@
 """multi_agent.py 的验收测试。
 
-运行方式（在 x-code 目录下）:
+运行方式（在 aulos 目录下）:
     uv run pytest            # 全部
     uv run pytest -v         # 带用例名
     uv run pytest -k spawn   # 按关键字筛选用例

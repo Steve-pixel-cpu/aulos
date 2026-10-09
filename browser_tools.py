@@ -12,7 +12,7 @@ _BROWSER_POOL 那一个线程里跑。
 
 降级: playwright 未安装/未 download 浏览器时返回安装指引的 ERROR 文本，
 不抛异常——模型看到文本能把指引转述给用户，异常只会变成裸 ToolError。
-截图 PNG 落在用户目录（~/.x-code/screenshots/），不污染项目 git。
+截图 PNG 落在用户目录（~/.aulos/screenshots/），不污染项目 git。
 """
 import threading
 import time
@@ -404,7 +404,7 @@ browser_screenshot_spec = {
     "name": "browser_screenshot",
     "description": (
         "Save a PNG screenshot of the current page. Returns the absolute "
-        "file path (default under ~/.x-code/screenshots/). Set full_page=true "
+        "file path (default under ~/.aulos/screenshots/). Set full_page=true "
         "to capture beyond the viewport."),
     "input_schema": {
         "type": "object",

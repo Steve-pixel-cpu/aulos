@@ -1,7 +1,7 @@
 """测试全局夹具:
 - 默认关闭连接门禁（API_TOKEN 置空）, 避免每个用例都要携带 x-aulos-token;
   门禁自身的行为在 test_server 里单独验证。
-- 掐断真实供应商连接: server 导入时会应用用户真实 ~/.x-code/settings.json
+- 掐断真实供应商连接: server 导入时会应用用户真实 ~/.aulos/settings.json
   （api_client 带真 key/base_url）, multi_agent 的 subagent
   工厂镜像同一份连接信息——测试里泄漏的工作线程会拿真实额度打真网
   （表现为用户账户莫名 1302 限流、测试进程被 300s 的 SSL 读拖住）。
@@ -24,7 +24,7 @@ def _disable_token_gate(monkeypatch):
 def _no_user_mcp_in_tools():
     """测试进程内全局 TOOLS 不携带用户真实 MCP 工具。
 
-    server 在 import 时按用户真实 ~/.x-code/settings.json 装配; 若用户
+    server 在 import 时按用户真实 ~/.aulos/settings.json 装配; 若用户
     配了 MCP 服务器, mcp__* spec 会混进共享的 main.TOOLS —— 依赖
     "TOOLS 末尾四位是 agent 四件套"之类结构断言的用例就会假失败
     (本地复现不了、只在配了 MCP 的机器上翻车)。会话内清一次即可:

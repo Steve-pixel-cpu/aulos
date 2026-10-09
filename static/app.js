@@ -867,7 +867,7 @@ async function startUpdateInstall(ov) {
   UPD.pollTimer = setInterval(async () => {
     let st;
     try { st = await window.aulosDesktopUpdater.status(); } catch (_) { return; }
-    if (st.phase === 3) return updateInstallFail(ov, "下载或安装出错（详见 ~/.x-code/boot.log）");
+    if (st.phase === 3) return updateInstallFail(ov, "下载或安装出错（详见 ~/.aulos/boot.log）");
     if (st.phase === 2) {
       fill.style.width = "100%";
       status.textContent = "下载完成, 正在启动安装程序…";
@@ -4696,7 +4696,7 @@ async function loadSettings() {
   } catch (e) { console.error("加载设置失败", e); }
 }
 
-/* ---------- 应用图标: 设置 → 外观 可上传替换, 服务端落盘 ~/.x-code/appearance/icon.png ---------- */
+/* ---------- 应用图标: 设置 → 外观 可上传替换, 服务端落盘 ~/.aulos/appearance/icon.png ---------- */
 let iconVer = 0;   // 图标文件版本（mtime）: 用 ?v= 穿透浏览器缓存
 const iconUrl = () => "/api/icon" + (iconVer ? `?v=${iconVer}` : "");
 function applyIconEverywhere(src) {
@@ -4961,7 +4961,7 @@ $("btn-add-provider").onclick = () => {
 };
 
 /* ---------- 设置 → 外观: 背景图片（壁纸） ----------
- * 与应用图标同模式: POST /api/bg 落盘 ~/.x-code/appearance/bg-user.png, localStorage 只存
+ * 与应用图标同模式: POST /api/bg 落盘 ~/.aulos/appearance/bg-user.png, localStorage 只存
  * 启用标记（xc-bg=1）。应用方式: <html data-bg="1"> 让遮罩/半透明令牌生效
  * （预绘制脚本抢在首帧前设置, 避免闪烁）; 壁纸本体由 syncBgLayers 预加载
  * 成功后再写到 body 内联背景上, 避免解码期间半成品闪烁。 */

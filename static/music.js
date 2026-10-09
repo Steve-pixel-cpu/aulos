@@ -3,7 +3,7 @@
  * 摸鱼电台: 网易云迷你播放器（独立文件, 不碰 app.js 的会话逻辑）
  * 播放条停靠在侧栏底部空白区（#side-chat 内, 会话列表下方）,
  * 不与主区输入框重叠; 面板从其上方弹出。
- * 找歌只有搜索; 收藏与自定义歌单存服务端 ~/.x-code/music-library.json,
+ * 找歌只有搜索; 收藏与自定义歌单存服务端 ~/.aulos/music-library.json,
  * 当前播放列表（队列）存 localStorage —— 重启后接着听。
  * 在线流式播放免费曲库; VIP/无版权歌（后端 url=null）自动跳下一首。
  * 聊天点播: 模型调 music_play 工具后, app.js 把 result_meta.music 转给

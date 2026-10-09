@@ -1,6 +1,6 @@
 """上下文卫生测试: 工具输出截断 + 系统提示动作经济性指令。
 
-运行方式（在 x-code 目录下）:
+运行方式（在 aulos 目录下）:
     uv run pytest tests/test_output_truncation.py -v
 """
 

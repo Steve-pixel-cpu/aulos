@@ -1490,7 +1490,7 @@ class ConversationRuntime:
             if token_usage:
                 self.usage().record(usage=token_usage)
                 # 每次调用的耗时与用量日志（best-effort, 失败静默）:
-                # "这轮对话为什么这么久"以后直接看 ~/.x-code/logs/
+                # "这轮对话为什么这么久"以后直接看 ~/.aulos/logs/
                 call_log.log_model_call(
                     session=self._log_tag, iteration=iterations,
                     thinking_level=effective_level,
