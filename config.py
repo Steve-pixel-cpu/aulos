@@ -7,7 +7,7 @@ from typing import Literal, Optional, Any
 from pydantic import BaseModel, Field
 
 # 应用名与用户级目录的唯一来源: ~/.aulos（目录名跟 APP_NAME 走, 改名只动这一处）。
-# 前身 x-code: 首次启动时若存在 ~/.aulos 且 ~/.aulos 不存在, 自动整体迁移
+# 前身 x-code: 首次启动时若存在 ~/.xcode 且 ~/.aulos 不存在, 自动整体迁移
 # （会话/设置/令牌/技能/宠物等全部数据, 见 _migrate_legacy_dir()）。
 APP_NAME = "aulos"
 LEGACY_APP_NAME = "x-code"
