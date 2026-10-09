@@ -1,6 +1,6 @@
 [package]
 name = "aulos"
-version = "4.2.7"
+version = "5.0.0"
 description = "aulos 桌面壳（Tauri 版）"
 edition = "2021"
 

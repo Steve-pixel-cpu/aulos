@@ -1,6 +1,6 @@
 {
   "name": "aulos",
-  "version": "4.2.7",
+  "version": "5.0.0",
   "description": "aulos 桌面端: Electron 壳 + FastAPI 后端",
   "main": "electron/main.js",
   "private": true,
