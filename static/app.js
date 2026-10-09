@@ -2506,13 +2506,15 @@ function updateToolGroupHeader(group) {
 }
 
 /* 新工具行的落点: 上一个元素是分组就续用, 否则开新分组。
- * 思考行(think-row)是工具之间的帧间噪音, 向前跳过不打断连续性——
- * 否则「工具→思考→工具」会裂成每工具一个分组(截图已复现)。
- * 真正终结分组的是正文气泡/代码块等"结论型"节点。
+ * 帧间噪音向前跳过不打断连续性: 思考行(think-row)与"工作中"转圈(#thinking)。
+ * 转圈是 syncThinkingIndicator 在每次工具事件后 appendChild 到列尾的,
+ * class 里没有 think-row——645ad08 只跳 think-row, 转圈挡在中间时下一
+ * 个工具又裂成新组(v4.2.6 回归, 复现页已复现)。正文气泡/代码块等
+ * "结论型"节点才终结分组。
  * 新分组创建时顺手收起同列里上一个已结束的旧分组（新活动开始了, 旧的让位）。 */
 function groupForNewToolRow(col) {
   let g = col.lastElementChild;
-  while (g && g.classList.contains("think-row")) g = g.previousElementSibling;
+  while (g && (g.classList.contains("think-row") || g.id === "thinking")) g = g.previousElementSibling;
   if (!g || !g.classList.contains("tool-group")) {
     g = document.createElement("div");
     g.className = "tool-group collapsed";   // 默认折叠: 正文只留一行摘要, 点头部展开
