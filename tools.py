@@ -312,7 +312,7 @@ def resolve_path(path: str, workdir: Optional[str]) -> Path:
 # contextvars 随 runtime 的 copy_context() 传进并行工具池线程。
 # 长命令的等待循环里轮询它, 触发即杀树返回。CLI 不设置, 行为不变。
 TOOL_CANCEL_CHECK: contextvars.ContextVar[Optional[Callable[[], bool]]] = \
-    contextvars.ContextVar("xcode_tool_cancel", default=None)
+    contextvars.ContextVar("aulos_tool_cancel", default=None)
 
 DEFAULT_CMD_TIMEOUT = 30
 MAX_CMD_TIMEOUT = 600
@@ -448,12 +448,12 @@ def _run_command(argv: List[str], cwd: Optional[str], timeout: int) -> str:
 # cmdlet (Get-Content/Select-String) 会按 ANSI(GBK) 主动转码, 读 UTF-8 源码
 # 必乱。Claude Code 在 Windows 上同样走 Git Bash。
 #
-# 选壳顺序: XCODE_BASH_HOME(打包场景指向资源目录) → ~/.x-code/git-bash(内置
+# 选壳顺序: AULOS_BASH_HOME(打包场景指向资源目录) → ~/.aulos/git-bash(内置
 # 副本) → 系统安装的 Git(从 git.exe 推导) → PATH 里的 bash(排除 System32 的
 # WSL 假 bash) → 都没有才退回 PowerShell。
-# 打包集成: 把 PortableGit 解压目录带进安装包, 首发放到 ~/.x-code/git-bash,
-# 或让桌面壳以 XCODE_BASH_HOME 指向资源目录即可, 三个位置都会被探测到。
-BASH_HOME_ENV = "XCODE_BASH_HOME"
+# 打包集成: 把 PortableGit 解压目录带进安装包, 首发放到 ~/.aulos/git-bash,
+# 或让桌面壳以 AULOS_BASH_HOME 指向资源目录即可, 三个位置都会被探测到。
+BASH_HOME_ENV = "AULOS_BASH_HOME"
 
 _git_bash_exe: Optional[str] = None    # 进程内缓存: 外壳在会话中途不会变
 _powershell_exe: Optional[str] = None
@@ -972,7 +972,7 @@ def present_plan_tool(params: dict, workdir: Optional[str] = None) -> str:
 # 注册表是进程内存 dict: 服务进程生命周期 = x-code 服务进程生命周期,
 # 重启后残留的日志文件无害, 条目丢失只影响对旧任务的查询/停止。
 
-_BG_DIR = Path(tempfile.gettempdir()) / "xcode-bg"
+_BG_DIR = Path(tempfile.gettempdir()) / "aulos-bg"
 _bg_tasks: dict[str, dict] = {}
 _bg_lock = threading.Lock()
 _bg_seq = 0

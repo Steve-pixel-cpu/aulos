@@ -295,7 +295,7 @@ def install_from_repo(repo: str, user_dir: Path,
 
     import subprocess
     import tempfile
-    with tempfile.TemporaryDirectory(prefix="xcode-skills-") as tmp:
+    with tempfile.TemporaryDirectory(prefix="aulos-skills-") as tmp:
         dest = Path(tmp) / "repo"
         proc = subprocess.run(
             ["git", "clone", "--depth", "1", repo, str(dest)],

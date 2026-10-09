@@ -57,14 +57,14 @@ class _BrowserState:
         return sync_playwright
 
     def _launch(self):
-        """起 playwright + headless chromium。渠道顺序: 环境变量 XCODE_BROWSER_CHANNEL
+        """起 playwright + headless chromium。渠道顺序: 环境变量 AULOS_BROWSER_CHANNEL
         指定 > chromium（playwright 自带） > 本机 chrome > 本机 msedge（Windows
         全机自带）。桌面端/冻结 exe 没法跑 `playwright install`，靠后面的本机
         浏览器渠道兜底——Win10/11 必有 Edge，等效"零额外下载"。"""
         sync_playwright = self._import_playwright()
         self._pw = sync_playwright().start()
         import os
-        forced = os.environ.get("XCODE_BROWSER_CHANNEL", "").strip() or None
+        forced = os.environ.get("AULOS_BROWSER_CHANNEL", "").strip() or None
         channels = [forced] if forced else [None, "chrome", "msedge"]
         last_err: Exception | None = None
         for channel in channels:
@@ -82,7 +82,7 @@ class _BrowserState:
             raise RuntimeError(
                 f"failed to launch any Chromium channel ({last_err}). "
                 f"Fix: run `playwright install chromium`, or install "
-                f"Chrome/Edge, or set XCODE_BROWSER_CHANNEL to a specific "
+                f"Chrome/Edge, or set AULOS_BROWSER_CHANNEL to a specific "
                 f"channel") from last_err
         self._page = None
         self.console = []

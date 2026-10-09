@@ -1,6 +1,6 @@
 """Windows 执行器选择的规格钉子: Git Bash 优先, PowerShell 兜底。
 
-选壳顺序: XCODE_BASH_HOME(打包资源目录) → ~/.x-code/git-bash(内置副本) →
+选壳顺序: AULOS_BASH_HOME(打包资源目录) → ~/.aulos/git-bash(内置副本) →
 系统安装的 Git(从 git.exe 推导根目录) → PATH 里的 bash(排除 System32 的
 WSL 启动器); 找不到 Git Bash 才退回 PowerShell。PowerShell 自身 pwsh 7 优先。
 

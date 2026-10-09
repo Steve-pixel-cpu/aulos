@@ -27,18 +27,18 @@
   .t1 { font-size: 15px; }
   .t2 { font-size: 12px; color: #a8a29e; }
   html.dark .t2 { color: #6b6862; }
-  /* 自绘标题栏: 与应用内同款（BRIDGE_JS 注入的 html.xcode-desktop 类） */
+  /* 自绘标题栏: 与应用内同款（BRIDGE_JS 注入的 html.aulos-desktop 类） */
   #titlebar {
     display: none; position: fixed; top: 0; left: 0; right: 0;
     height: 42px; align-items: center; gap: 9px; padding-left: 14px;
     background: #efedeb; border-bottom: 1px solid #ddd6cb;
   }
-  html.xcode-desktop #titlebar { display: flex; }
-  html.xcode-desktop body { padding-top: 42px; box-sizing: border-box; }
+  html.aulos-desktop #titlebar { display: flex; }
+  html.aulos-desktop body { padding-top: 42px; box-sizing: border-box; }
   /* Win11 风格圆角窗口: 与 app.css 同款。DWM 原生圆角(main.rs)生效时
      此裁切与其重合不可见; Win10 由它兜底。最大化回方角(dataset.max 由壳推) */
-  html.xcode-desktop { clip-path: inset(0 round 8px); }
-  html.xcode-desktop[data-max="1"] { clip-path: inset(0 round 0); }
+  html.aulos-desktop { clip-path: inset(0 round 8px); }
+  html.aulos-desktop[data-max="1"] { clip-path: inset(0 round 0); }
   html.dark #titlebar { background: #232323; border-bottom-color: #333; }
   .tb-icon { width: 17px; height: 17px; pointer-events: none; }
   .tb-name { font-size: 12.5px; font-weight: 600; color: #78716c; flex: 1; }
@@ -73,7 +73,7 @@
   <div class="t1">正在启动 aulos…</div>
   <div class="t2">首次启动需要初始化本地服务，通常几秒钟</div>
   <script>
-    // BRIDGE_JS 注入 xcode-desktop 类; 窗口控制按钮直接走命令
+    // BRIDGE_JS 注入 aulos-desktop 类; 窗口控制按钮直接走命令
     if (window.__TAURI_INTERNALS__) {
       const inv = c => window.__TAURI_INTERNALS__.invoke(c).catch(() => {});
       document.getElementById("tb-min").onclick = () => inv("minimize_main");

@@ -1,4 +1,4 @@
-// pick_folder 经 window.xcodePickFolder() 从 http://127.0.0.1 页面调用——
+// pick_folder 经 window.aulosPickFolder() 从 http://127.0.0.1 页面调用——
 // Tauri v2 把页面 origin 视为 remote, 自定义命令默认对 remote 拒绝
 // （"not allowed by ACL"）。
 //

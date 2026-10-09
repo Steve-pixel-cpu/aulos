@@ -7,7 +7,7 @@
 //   4. 复用: 已有 aulos 服务在跑 → 直接连, 不拉进程、退出时不杀
 //   5. 拉起: 打包态用冻结后端（resources/server/aulos-server.exe, cwd=~/.aulos）,
 //            开发态用 .venv 的 python server.py; 退出整树杀
-//   6. 前端: 窗口加载本地服务; 注入 window.xcodeDesktop 标记 + xcodePickFolder 原生选文件夹桥;
+//   6. 前端: 窗口加载本地服务; 注入 window.aulosDesktop 标记 + aulosPickFolder 原生选文件夹桥;
 //            外部链接转交系统浏览器
 //   7. 诊断: 后端输出与壳侧启动步骤追加写 ~/.aulos/boot.log; 后端提前退出立即报错
 //            （带退出码）而非干等超时; 首启探活窗 60s（杀软首扫 + onefile 解压很慢）
@@ -144,7 +144,7 @@ static CURSOR_TRACKABLE: OnceLock<bool> = OnceLock::new();
 /// gtk_window_move 在原生 Wayland 后端上是空操作。检测到 Wayland 且有
 /// XWayland (DISPLAY 存在) 时强制 GDK_BACKEND=x11 走 XWayland, 恢复 X11
 /// 语义; 三种不强制/退出的情形都写 boot.log 留痕:
-///   - XCODE_GDK_BACKEND 已显式设置: 尊重用户选择 (含 =wayland 回原生
+///   - AULOS_GDK_BACKEND 已显式设置: 尊重用户选择 (含 =wayland 回原生
 ///     Wayland, 代价是桌宠可能被遮挡、拖不动);
 ///   - Wayland 但无 DISPLAY: 无 XWayland 的纯 Wayland, 保应用至少能启动;
 ///   - 非 Wayland 会话 (X11): 现状即正确。
@@ -180,13 +180,13 @@ fn apply_linux_gdk_backend() {
         boot_log("shell", "非 Wayland 会话: 不调整 GDK_BACKEND");
         return;
     }
-    if let Some(backend) = std::env::var_os("XCODE_GDK_BACKEND") {
+    if let Some(backend) = std::env::var_os("AULOS_GDK_BACKEND") {
         // 用户显式指定后端: 只有 x11 系才有全局光标坐标可查
         let trackable = backend.to_string_lossy().contains("x11");
         let _ = CURSOR_TRACKABLE.set(trackable);
         boot_log(
             "shell",
-            "XCODE_GDK_BACKEND 已显式设置: 不调整 GDK_BACKEND (桌宠置顶/拖动在原生 Wayland 下受限)",
+            "AULOS_GDK_BACKEND 已显式设置: 不调整 GDK_BACKEND (桌宠置顶/拖动在原生 Wayland 下受限)",
         );
         return;
     }
@@ -202,7 +202,7 @@ fn apply_linux_gdk_backend() {
     let _ = CURSOR_TRACKABLE.set(true);
     boot_log(
         "shell",
-        "Wayland 会话: 已设 GDK_BACKEND=x11 走 XWayland (恢复桌宠置顶/拖动; 启动前 export XCODE_GDK_BACKEND=wayland 可回原生 Wayland)",
+        "Wayland 会话: 已设 GDK_BACKEND=x11 走 XWayland (恢复桌宠置顶/拖动; 启动前 export AULOS_GDK_BACKEND=wayland 可回原生 Wayland)",
     );
 }
 
@@ -252,7 +252,7 @@ fn ping_server(port: u16, token: &str, timeout: Duration) -> bool {
     let _ = stream.set_read_timeout(Some(timeout));
     let _ = stream.set_write_timeout(Some(timeout));
     let req = format!(
-        "GET /api/ping HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\nx-xcode-token: {token}\r\n\r\n"
+        "GET /api/ping HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\nx-aulos-token: {token}\r\n\r\n"
     );
     if stream.write_all(req.as_bytes()).is_err() {
         return false;
@@ -616,7 +616,7 @@ fn error_box(title: &str, text: &str) {
 /// pick_folder 链路日志 tag（落 ~/.aulos/boot.log, 打包版无控制台时的可见性兜底）
 const PICK_LOG: &str = "pick_folder";
 
-/// 原生"选择文件夹"对话框（前端经 window.xcodePickFolder() 调用）
+/// 原生"选择文件夹"对话框（前端经 window.aulosPickFolder() 调用）
 ///
 /// 必须是 async + spawn_blocking: 同步命令在主线程执行, 阻塞式 rfd 对话框
 /// 会在主线程上等窗口消息——而消息循环正是被它自己卡住的 → 对话框永远
@@ -641,7 +641,7 @@ fn notify_desktop(app: AppHandle, title: String, body: String) -> Result<(), Str
         .map_err(|e| e.to_string())
 }
 
-/// 读系统剪贴板文本（前端经 window.xcodeReadClipboard() 调用, 右键菜单"粘贴"用）。
+/// 读系统剪贴板文本（前端经 window.aulosReadClipboard() 调用, 右键菜单"粘贴"用）。
 /// 不直接用插件自己的 JS 命令: 远程上下文(127.0.0.1 页面)调插件命令会被 ACL 拒
 /// （同 notify_desktop 的教训）, 包成应用命令走 capabilities 白名单。
 /// 没有这个桥, 前端会回退到 navigator.clipboard.readText()——WebView2 对网页读
@@ -852,7 +852,7 @@ async fn open_pet_window(
     #[cfg(not(target_os = "macos"))]
     let builder = builder.transparent(true);
     // 悬浮窗自身也需要桥: startDragPet（拖动）/ petClose（双击收起）/
-    // setClickThrough（右键穿透）都经 window.xcodeDesktopPet 走 IPC
+    // setClickThrough（右键穿透）都经 window.aulosDesktopPet 走 IPC
     builder
     .initialization_script(BRIDGE_JS)
     .build()
@@ -1007,64 +1007,64 @@ async fn resize_pet_window(app: AppHandle, scale: f64) {
 
 // ---------- 注入页面的桥（对齐 electron/preload.js） ----------
 
-/// 桌面桥: window.xcodeDesktop 标记（app.js 入口守卫依赖）+
-/// window.xcodePickFolder() 原生选文件夹桥 + 掐掉浏览器行为。
-/// 幂等（__xcodeBridgeInstalled 哨兵）: initialization_script 之外,
+/// 桌面桥: window.aulosDesktop 标记（app.js 入口守卫依赖）+
+/// window.aulosPickFolder() 原生选文件夹桥 + 掐掉浏览器行为。
+/// 幂等（__aulosBridgeInstalled 哨兵）: initialization_script 之外,
 /// on_page_load 还会 eval 重申一次——注入偶发失效时兜底。
 const BRIDGE_JS: &str = r#"
 (() => {
   // 结构即健壮性: 哨兵必须在全部安装完成后才置位。此前哨兵在最前, 脚本中途
   // 抛错(注入脚本跑在文档解析前, documentElement 可能为 null → classList
   // 抛 TypeError)会留下"哨兵已装、桥没装"的半安装态, on_page_load 的重申
-  // 也被哨兵拦截 → xcodePickFolder 永远缺失, 页面静默走进浏览器兜底
+  // 也被哨兵拦截 → aulosPickFolder 永远缺失, 页面静默走进浏览器兜底
   // (#dir-pop), 用户看到的就是"弹不出原生文件夹对话框"。
-  // 1) 桥最优先: 后面任何一步失败都不影响 xcodePickFolder 存在
-  if (!window.xcodePickFolder) {
-    window.xcodePickFolder = async () => {
+  // 1) 桥最优先: 后面任何一步失败都不影响 aulosPickFolder 存在
+  if (!window.aulosPickFolder) {
+    window.aulosPickFolder = async () => {
       // 失败必须可见: Promise reject = 真实失败（ACL/IPC/对话框崩溃）,
       // 页面 catch 据此 toast 报错; 用户取消由 Rust 返回 null 表达, 不走 reject。
       if (!window.__TAURI_INTERNALS__) {
-        console.error('[xcode] __TAURI_INTERNALS__ 缺失: pick_folder 无法调用');
+        console.error('[aulos] __TAURI_INTERNALS__ 缺失: pick_folder 无法调用');
         throw new Error('桌面桥未就绪（__TAURI_INTERNALS__ 缺失）');
       }
       try {
         return await window.__TAURI_INTERNALS__.invoke('pick_folder');
       } catch (e) {
-        console.error('[xcode] pick_folder IPC 失败:', e);
+        console.error('[aulos] pick_folder IPC 失败:', e);
         throw e;
       }
     };
   }
-  if (!window.xcodeDesktop) {
-    Object.defineProperty(window, 'xcodeDesktop', { value: true });
+  if (!window.aulosDesktop) {
+    Object.defineProperty(window, 'aulosDesktop', { value: true });
   }
   // 剪贴板读取桥（右键菜单"粘贴"用）: 必须走 Rust 侧 clipboard API。
   // 缺桥时前端回退 navigator.clipboard.readText(), WebView2 对网页读剪贴板
   // 会弹"是否允许"权限窗——用户看到的粘贴弹窗就是它。
-  if (!window.xcodeReadClipboard) {
-    window.xcodeReadClipboard = async () => {
+  if (!window.aulosReadClipboard) {
+    window.aulosReadClipboard = async () => {
       if (!window.__TAURI_INTERNALS__) return null;   // 页面在浏览器里预览: 无壳
       try {
         return await window.__TAURI_INTERNALS__.invoke('read_clipboard_text');
       } catch (e) {
-        console.error('[xcode] read_clipboard_text IPC 失败:', e);
+        console.error('[aulos] read_clipboard_text IPC 失败:', e);
         throw e;
       }
     };
   }
   // 应用版本号桥: 标题栏徽标用。打包后的 Python 后端不带 pyproject.toml,
   // 服务端读不到版本 → 壳内一律问壳自己。版本号由 Rust 在注入脚本头部
-  // 烤成 window.__XCODE_VERSION__（create_main_window 处拼接）, 这里直接读;
+  // 烤成 window.__AULOS_VERSION__（create_main_window 处拼接）, 这里直接读;
   // invoke('plugin:app|version') 做兜底（remote 上下文的 ACL 曾实测拒掉该命令,
   // 故不作为主路径）。
-  if (!window.xcodeAppVersion) {
-    window.xcodeAppVersion = async () => {
-      if (window.__XCODE_VERSION__) return window.__XCODE_VERSION__;
+  if (!window.aulosAppVersion) {
+    window.aulosAppVersion = async () => {
+      if (window.__AULOS_VERSION__) return window.__AULOS_VERSION__;
       if (!window.__TAURI_INTERNALS__) return null;   // 页面在浏览器里预览: 无壳
       try {
         return await window.__TAURI_INTERNALS__.invoke('plugin:app|version');
       } catch (e) {
-        console.error('[xcode] get app version 失败:', e);
+        console.error('[aulos] get app version 失败:', e);
         return null;
       }
     };
@@ -1072,7 +1072,7 @@ const BRIDGE_JS: &str = r#"
   // 桌宠悬浮窗桥: petFloat 打开/聚焦悬浮窗（token 从本页 cookie 取——
   // 后端门禁认它）; petClose 关窗; startDragPet 把拖动交给系统;
   // setClickThrough 右键鼠标穿透。全部走"失败必须可见": reject 而非静默 null。
-  if (!window.xcodeDesktopPet) {
+  if (!window.aulosDesktopPet) {
     const petInvoke = async (cmd, payload) => {
       if (!window.__TAURI_INTERNALS__) {
         throw new Error('桌面桥未就绪（__TAURI_INTERNALS__ 缺失）');
@@ -1080,14 +1080,14 @@ const BRIDGE_JS: &str = r#"
       try {
         return await window.__TAURI_INTERNALS__.invoke(cmd, payload);
       } catch (e) {
-        console.error('[xcode] ' + cmd + ' IPC 失败:', e);
+        console.error('[aulos] ' + cmd + ' IPC 失败:', e);
         throw e;
       }
     };
-    window.xcodeDesktopPet = {
+    window.aulosDesktopPet = {
       petFloat: (scale) => petInvoke('open_pet_window', {
-        token: (document.cookie.match(/(?:^|;\s*)xcode_token=([^;]*)/) || [])[1]
-          ? decodeURIComponent((document.cookie.match(/(?:^|;\s*)xcode_token=([^;]*)/) || [])[1])
+        token: (document.cookie.match(/(?:^|;\s*)aulos_token=([^;]*)/) || [])[1]
+          ? decodeURIComponent((document.cookie.match(/(?:^|;\s*)aulos_token=([^;]*)/) || [])[1])
           : '',
         scale: Number(scale) || 1
       }),
@@ -1102,7 +1102,7 @@ const BRIDGE_JS: &str = r#"
   }
   // 自动更新桥: 检查/安装/进度查询。安装进度走轮询而非事件监听——
   // 远端上下文的事件 ACL 曾实测拒过插件命令, invoke 应用命令是已验证的路子。
-  if (!window.xcodeDesktopUpdater) {
+  if (!window.aulosDesktopUpdater) {
     const updInvoke = async (cmd) => {
       if (!window.__TAURI_INTERNALS__) {
         throw new Error('桌面桥未就绪（__TAURI_INTERNALS__ 缺失）');
@@ -1110,11 +1110,11 @@ const BRIDGE_JS: &str = r#"
       try {
         return await window.__TAURI_INTERNALS__.invoke(cmd);
       } catch (e) {
-        console.error('[xcode] ' + cmd + ' IPC 失败:', e);
+        console.error('[aulos] ' + cmd + ' IPC 失败:', e);
         throw e;
       }
     };
-    window.xcodeDesktopUpdater = {
+    window.aulosDesktopUpdater = {
       check: () => updInvoke('check_update'),
       install: () => updInvoke('install_update'),
       status: () => updInvoke('update_status'),
@@ -1122,13 +1122,13 @@ const BRIDGE_JS: &str = r#"
   }
   // 2) DOM 相关: 注入时机 documentElement 可能尚未创建 → 空值安全 + 就绪后补挂
   const installDom = () => {
-    if (document.documentElement.dataset.xcodeDomInstalled) return;  // 重申幂等
-    document.documentElement.dataset.xcodeDomInstalled = '1';
+    if (document.documentElement.dataset.aulosDomInstalled) return;  // 重申幂等
+    document.documentElement.dataset.aulosDomInstalled = '1';
     // 桌面应用形态, 三层配合:
     // 1) Rust: SetAreDefaultContextMenusEnabled(false) + SetAreBrowserAcceleratorKeysEnabled(false)
     // 2) 这里: contextmenu 捕获阶段 preventDefault（右键菜单由 app.js 自建）
     // 3) 这里: F5/Ctrl+R 兜底拦截——设置应用前的窗口期也不许刷新
-    document.documentElement.classList.add('xcode-desktop');   // 显示自绘标题栏
+    document.documentElement.classList.add('aulos-desktop');   // 显示自绘标题栏
     document.addEventListener('contextmenu', e => e.preventDefault(), true);
     document.addEventListener('keydown', e => {
       const isReload = e.key === 'F5' || (e.ctrlKey && e.key.toLowerCase() === 'r');
@@ -1140,7 +1140,7 @@ const BRIDGE_JS: &str = r#"
   if (document.documentElement) installDom();
   else document.addEventListener('DOMContentLoaded', installDom, { once: true });
   // 3) 哨兵最后: 只有全部装完才标记——半安装态不再拦截重申, 重申反而能自愈
-  window.__xcodeBridgeInstalled = true;
+  window.__aulosBridgeInstalled = true;
 })();
 "#;
 
@@ -1317,10 +1317,10 @@ fn create_main_window(app: &AppHandle) -> Result<(), String> {
     // 现在窗口秒开, bootstrap 完成后由启动线程导航到真正的应用地址。
     let app_for_nav = app.clone();   // 闭包要求 'static: 捕获克隆而非函数引用
     // 版本号烤进注入脚本头部: 编译期常量（tauri.conf.json 的 version）,
-    // 前端 window.__XCODE_VERSION__ 直接读, 不经 IPC——remote 页面对
+    // 前端 window.__AULOS_VERSION__ 直接读, 不经 IPC——remote 页面对
     // plugin:app 命令的 ACL 曾实测不放行, invoke 路线不可靠。
     let version = &app.package_info().version;
-    let bridge_js = format!("window.__XCODE_VERSION__ = '{version}';\n{BRIDGE_JS}");
+    let bridge_js = format!("window.__AULOS_VERSION__ = '{version}';\n{BRIDGE_JS}");
     let builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("loading.html".into()))
         .title("aulos")
         .decorations(false)   // 自绘标题栏: 高度可控, 主题跟随应用深浅色

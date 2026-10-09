@@ -1,5 +1,5 @@
 """测试全局夹具:
-- 默认关闭连接门禁（API_TOKEN 置空）, 避免每个用例都要携带 x-xcode-token;
+- 默认关闭连接门禁（API_TOKEN 置空）, 避免每个用例都要携带 x-aulos-token;
   门禁自身的行为在 test_server 里单独验证。
 - 掐断真实供应商连接: server 导入时会应用用户真实 ~/.x-code/settings.json
   （api_client 带真 key/base_url）, multi_agent 的 subagent

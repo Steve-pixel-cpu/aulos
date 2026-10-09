@@ -57,7 +57,7 @@ function pingServer(port, timeoutMs) {
   return new Promise((resolve) => {
     const req = http.get(`${baseUrl(port)}/api/ping`, {
       timeout: timeoutMs,
-      headers: { "x-xcode-token": API_TOKEN },
+      headers: { "x-aulos-token": API_TOKEN },
     }, (res) => {
       let body = "";
       res.on("data", (d) => { body += d; });
@@ -186,7 +186,7 @@ async function createWindow() {
   win.once("ready-to-show", () => win.show());
   // 门禁: 本会话的所有请求（页面/静态/API/WS 握手）自动携带令牌
   win.webContents.session.webRequest.onBeforeSendHeaders((details, cb) => {
-    details.requestHeaders["x-xcode-token"] = API_TOKEN;
+    details.requestHeaders["x-aulos-token"] = API_TOKEN;
     cb({ requestHeaders: details.requestHeaders });
   });
   win.loadURL(baseUrl() + "/?token=" + encodeURIComponent(API_TOKEN));

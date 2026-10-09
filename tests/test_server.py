@@ -402,14 +402,14 @@ def test_token_gate_blocks_and_allows(client, monkeypatch):
     r = client.get("/api/settings")
     assert r.status_code == 403
     # 错误令牌 -> 403
-    r = client.get("/api/settings", headers={"x-xcode-token": "wrong"})
+    r = client.get("/api/settings", headers={"x-aulos-token": "wrong"})
     assert r.status_code == 403
     # 正确令牌 -> 放行
-    r = client.get("/api/settings", headers={"x-xcode-token": "secret-token"})
+    r = client.get("/api/settings", headers={"x-aulos-token": "secret-token"})
     assert r.status_code == 200
     # query/cookie 亦可
     assert client.get("/api/settings?token=secret-token").status_code == 200
-    client.cookies.set("xcode_token", "secret-token")
+    client.cookies.set("aulos_token", "secret-token")
     assert client.get("/api/settings").status_code == 200
 
 

@@ -228,7 +228,7 @@ def make_judge_client(model: str | None = None):
     from api_client import make_api_client, normalize_protocol
     from main import DEFAULT_MODEL
     try:
-        protocol = normalize_protocol(os.getenv("XCODE_PROTOCOL"))
+        protocol = normalize_protocol(os.getenv("AULOS_PROTOCOL"))
     except ValueError:
         protocol = "anthropic"
     return make_api_client(protocol, api_key=api_key,

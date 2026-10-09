@@ -1416,10 +1416,10 @@ def _assemble(session_store: SessionStore, session_id: str, *,
         skills_section = render_skills_section(skills)
         if skills_section:
             system_prompt.append(skills_section)
-    # CLI 侧协议选择: XCODE_PROTOCOL 环境变量（anthropic 默认; openai 兼容
+    # CLI 侧协议选择: AULOS_PROTOCOL 环境变量（anthropic 默认; openai 兼容
     # 端点可直接本地起 CLI 用）。非法值回退 anthropic, 不挡启动。
     try:
-        cli_protocol = normalize_protocol(os.getenv("XCODE_PROTOCOL"))
+        cli_protocol = normalize_protocol(os.getenv("AULOS_PROTOCOL"))
     except ValueError:
         cli_protocol = DEFAULT_PROTOCOL
     api_client = make_api_client(

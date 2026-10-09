@@ -7,16 +7,16 @@
  * 当前播放列表（队列）存 localStorage —— 重启后接着听。
  * 在线流式播放免费曲库; VIP/无版权歌（后端 url=null）自动跳下一首。
  * 聊天点播: 模型调 music_play 工具后, app.js 把 result_meta.music 转给
- * window.xcodeMusicPlay —— 整队换队列 + 亮播放条 + 开播（见文件底部）。
+ * window.aulosMusicPlay —— 整队换队列 + 亮播放条 + 开播（见文件底部）。
  * ============================================================ */
 (function () {
-  if (window.__xcodeMusic) return;      // 防重复初始化
-  window.__xcodeMusic = true;
+  if (window.__aulosMusic) return;      // 防重复初始化
+  window.__aulosMusic = true;
 
   const DESKTOP_PAGE = !!document.getElementById("messages");   // 主界面才挂播放器
   const $ = id => document.getElementById(id);
   const $$ = sel => document.querySelectorAll(sel);
-  const toastFn = window.xcodeToast || (msg => console.log("[music]", msg));
+  const toastFn = window.aulosToast || (msg => console.log("[music]", msg));
 
   const mstate = {
     queue: [],            // 当前播放队列 [{id,name,artist,album,duration,fee,pic,source}]
@@ -1014,7 +1014,7 @@
    * 整队替换当前队列（点播是新意图, 不与旧队列混排）, 直接开播。
    * 摸鱼原则: 不自动弹播放条/面板 —— 播放条收着就继续收着, 照样出声;
    * 想看队列再点侧栏 ♫。面板若已开着, 顺手刷新播放列表 Tab。 */
-  window.xcodeMusicPlay = function (cmd) {
+  window.aulosMusicPlay = function (cmd) {
     if (!DESKTOP_PAGE) return false;
     const songs = (cmd && Array.isArray(cmd.queue) ? cmd.queue : [])
       .filter(s => s && s.name && String(s.id));
@@ -1037,7 +1037,7 @@
    * 暂停/续播当前歌(续播含刷新后首播的挂源路径)。返回切换后的
    * {title, artist, playing} 供桌宠气泡回显; 队列是空的返回 null——
    * 此时 togglePlay 已顺带打开选歌面板引导。 */
-  window.xcodeMusicToggle = function () {
+  window.aulosMusicToggle = function () {
     if (!DESKTOP_PAGE) return null;
     togglePlay();
     const s = curSong();

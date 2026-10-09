@@ -1,11 +1,11 @@
 "use strict";
 /* 桌面态判定: 壳注入的标记优先, URL 参数 desktop=1 兜底——
  * initialization_script 偶发不注入时菜单/标题栏照常工作 */
-const DESKTOP = window.xcodeDesktop
+const DESKTOP = window.aulosDesktop
   || new URLSearchParams(location.search).has("desktop");
 /* ============================================================
  * 入口守卫: 网页入口已关闭, 仅允许 x-code 桌面壳打开
- * （桌面壳注入 window.xcodeDesktop 标记或 URL 带 desktop=1;
+ * （桌面壳注入 window.aulosDesktop 标记或 URL 带 desktop=1;
  *   浏览器直接访问 127.0.0.1:8000 只会看到提示, 应用不初始化）
  * ============================================================ */
 if (!DESKTOP) {
@@ -20,7 +20,7 @@ if (!DESKTOP) {
     "<div>请通过 x-code 桌面应用打开</div></div></body>";
   throw new Error("x-code: 网页入口已关闭, 请使用桌面应用");
 }
-if (DESKTOP) document.documentElement.classList.add("xcode-desktop");
+if (DESKTOP) document.documentElement.classList.add("aulos-desktop");
 /* ============================================================
  * 状态
  * ============================================================ */
@@ -470,7 +470,7 @@ function notifyTurnEnd(msg, sid) {
   }
   if (!("Notification" in window) || Notification.permission !== "granted") return;
   try {
-    const n = new Notification(title, { body, tag: "xcode-turn-" + sid, silent: true });
+    const n = new Notification(title, { body, tag: "aulos-turn-" + sid, silent: true });
     n.onclick = () => {
       window.focus();
       if (sid !== state.sessionId) selectSession(sid);
@@ -647,7 +647,7 @@ function toast(text, ms = 1600) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => t.classList.remove("show"), ms);
 }
-window.xcodeToast = toast;   // 摸鱼电台(music.js)共用同一枚轻提示
+window.aulosToast = toast;   // 摸鱼电台(music.js)共用同一枚轻提示
 
 /* ============================================================
  * 确认弹窗 — 替代原生 confirm(): WebView2 的 confirm 顶着
@@ -738,7 +738,7 @@ function promptDialog(msg, { title = "输入", value = "", placeholder = "", okT
 }
 
 /* ============================================================
- * 自动更新（仅桌面壳, 经 window.xcodeDesktopUpdater 桥调 Rust 命令）:
+ * 自动更新（仅桌面壳, 经 window.aulosDesktopUpdater 桥调 Rust 命令）:
  *  - 启动后静默检查一次（check_update）; 发现新版本 → 版本徽标加红点 + toast 提示
  *  - 点标题栏版本徽标 = 有更新则打开更新弹窗, 无更新则手动检查一次
  *  - 立即更新 → install_update, 前端 300ms 轮询 update_status 画进度条;
@@ -764,10 +764,10 @@ function updateBadgeMark(on, verText) {
 }
 
 async function checkForUpdates(manual = false) {
-  if (!window.xcodeDesktopUpdater || UPD.checking) return null;
+  if (!window.aulosDesktopUpdater || UPD.checking) return null;
   UPD.checking = true;
   try {
-    const info = await window.xcodeDesktopUpdater.check();
+    const info = await window.aulosDesktopUpdater.check();
     UPD.info = info;
     if (info && info.hasUpdate) {
       updateBadgeMark(true, info.version);
@@ -787,7 +787,7 @@ async function checkForUpdates(manual = false) {
 }
 
 function initUpdateCheck() {
-  if (!window.xcodeDesktopUpdater) return;   // 浏览器/源码运行: 无壳
+  if (!window.aulosDesktopUpdater) return;   // 浏览器/源码运行: 无壳
   const badge = $("tb-version");
   if (badge) badge.addEventListener("click", () => {
     if (UPD.info && UPD.info.hasUpdate) openUpdateDialog();
@@ -859,14 +859,14 @@ async function startUpdateInstall(ov) {
   bar.hidden = false;
   ov.dataset.busy = "1";
   try {
-    await window.xcodeDesktopUpdater.install();
+    await window.aulosDesktopUpdater.install();
   } catch (e) {
     return updateInstallFail(ov, (e?.message || e) || "无法启动下载");
   }
   // install_update 立即返回（Rust 侧异步任务在跑）, 进度靠轮询
   UPD.pollTimer = setInterval(async () => {
     let st;
-    try { st = await window.xcodeDesktopUpdater.status(); } catch (_) { return; }
+    try { st = await window.aulosDesktopUpdater.status(); } catch (_) { return; }
     if (st.phase === 3) return updateInstallFail(ov, "下载或安装出错（详见 ~/.x-code/boot.log）");
     if (st.phase === 2) {
       fill.style.width = "100%";
@@ -959,8 +959,8 @@ function showDesktopCtxMenu(ev) {
         // Electron: 经 preload 桥在主进程读系统剪贴板（渲染层 execCommand('paste')
         // 受浏览器安全模型限制不可用）; 旧壳无桥时退回 async Clipboard API。
         // insertText 走编辑命令栈——可撤销, 且正常触发 input 事件
-        const text = (window.xcodeReadClipboard
-          ? await window.xcodeReadClipboard()
+        const text = (window.aulosReadClipboard
+          ? await window.aulosReadClipboard()
           : await navigator.clipboard.readText()) || "";
         editable.focus();
         if (!text) { toast("剪贴板是空的"); return; }
@@ -1515,7 +1515,7 @@ function renderSessionList() {
   addBtn.onclick = async ev => {
     ev.stopPropagation();
     // 桌面端: 系统原生"选择文件夹"对话框; 浏览器/预览: 页面内目录选择兜底
-    if (window.xcodePickFolder) {
+    if (window.aulosPickFolder) {
       const dir = await pickNativeFolder();
       if (dir) addProject(dir);
       return;
@@ -1647,7 +1647,7 @@ async function removeProject(wd, count) {
       if (s.id === state.sessionId) refreshWorkdirTag();
     } catch (e) {
       failed++;
-      console.error("[xcode] 解绑会话失败:", s.id, e);
+      console.error("[aulos] 解绑会话失败:", s.id, e);
     }
   }
   if (failed) {
@@ -1667,9 +1667,9 @@ async function removeProject(wd, count) {
  * 用户取消（桥返回 null）静默返回 null——只有真实失败才打扰用户。 */
 async function pickNativeFolder() {
   try {
-    return await window.xcodePickFolder();
+    return await window.aulosPickFolder();
   } catch (e) {
-    console.error("[xcode] 打开文件夹失败:", e);
+    console.error("[aulos] 打开文件夹失败:", e);
     toast("打开文件夹失败：" + (e && e.message ? e.message : e), 4000);
     return null;
   }
@@ -1994,7 +1994,7 @@ function openWsPop(anchor) {
   pop.querySelector(".ws-search").addEventListener("input", ev => renderList(ev.target.value));
   pop.querySelector("[data-act='browse']").onclick = async () => {
     closeWsPop();
-    if (window.xcodePickFolder) {   // 桌面端: 原生文件夹对话框
+    if (window.aulosPickFolder) {   // 桌面端: 原生文件夹对话框
       const dir = await pickNativeFolder();
       if (dir) { addProject(dir); state.draftDir = dir; renderWsChip(); }
       return;
@@ -2216,7 +2216,7 @@ function scheduleReconnect(id) {
  * 服务端消息分派
  * ============================================================ */
 /* 桌宠悬浮窗标注权限气泡的会话名: 只读查询, 不暴露 state 本体 */
-window.xcodeSessionTitle = (sid) => {
+window.aulosSessionTitle = (sid) => {
   const s = state.sessions.find(x => x.id === sid);
   return s ? (s.title || s.name || "") : "";
 };
@@ -2226,7 +2226,7 @@ function handleServerMessage(msg, sid) {
   // 桌宠悬浮窗(pet.js 转发): 前后台会话的运行事件都镜像一份给它做状态机。
   // 装饰性钩子必须隔离——它内部抛错不能拖垮消息主处理链(曾因 pet.js
   // 引用未定义变量, turn_done 全部炸在中断, 界面永远转圈且无法中断)。
-  try { window.xcodePet?.onEvent?.(msg, sid); } catch (e) { console.warn("[pet]", e); }
+  try { window.aulosPet?.onEvent?.(msg, sid); } catch (e) { console.warn("[pet]", e); }
   // 桌宠任务桥: 桌宠专属会话的正文流攒进缓冲, 轮次收口时把回复回传给
   // 悬浮窗气泡(任务由悬浮输入框派来, 走完整 agent 轮次——见文件尾 pet 桥)
   if (petTaskSid && sid === petTaskSid) petTaskObserve(msg);
@@ -2816,7 +2816,7 @@ function onToolResult(msg, sid) {
   // 只在实时事件里播——历史回放（completeToolCard 的 result_meta 只渲染 diff）
   // 不重播旧歌, 刷新页面不会凭空响起来。
   if (msg.result_meta && msg.result_meta.music && !msg.is_error) {
-    const ok = window.xcodeMusicPlay && window.xcodeMusicPlay(msg.result_meta.music);
+    const ok = window.aulosMusicPlay && window.aulosMusicPlay(msg.result_meta.music);
     if (!ok) toast("电台没接住点播指令, 点侧栏 ♫ 手动播吧");
   }
   if (msg.plan_rejected) {
@@ -4688,8 +4688,8 @@ async function loadSettings() {
     // 服务端值兜底（浏览器/源码运行）。都拿不到就藏着, 不留空壳。
     const ver = $("tb-version");
     let v = null;
-    if (window.xcodeAppVersion) {
-      try { v = await window.xcodeAppVersion(); } catch (_) { /* 壳异常 → 兜底 */ }
+    if (window.aulosAppVersion) {
+      try { v = await window.aulosAppVersion(); } catch (_) { /* 壳异常 → 兜底 */ }
     }
     if (!v) v = s.app_version || null;
     if (ver && v) { ver.textContent = "v" + v; ver.hidden = false; }
@@ -6905,7 +6905,7 @@ window.addEventListener("storage", (e) => {
     if (text) petTaskRun(text.slice(0, 2000));
   } else if (cmd.type === "music_toggle") {
     // 桌宠点击 = 开/关音乐: 结果回传, 桌宠气泡回显歌名/暂停态
-    const st = window.xcodeMusicToggle ? window.xcodeMusicToggle() : null;
+    const st = window.aulosMusicToggle ? window.aulosMusicToggle() : null;
     petBridgeSend({
       type: "chat",
       text: !st ? "还没选歌, 去面板点一首吧"

@@ -147,7 +147,7 @@ runtime_config: RuntimeConfig = ConfigLoader(
 ).load()
 
 # --- 连接门禁: 桌面壳与后端共享 ~/.x-code/token 里的随机令牌 ---
-# 所有请求必须携带 x-xcode-token 头 / cookie / query 之一, 否则 403 拒绝——
+# 所有请求必须携带 x-aulos-token 头 / cookie / query 之一, 否则 403 拒绝——
 # 浏览器直接访问 127.0.0.1:8000 因此被挡在门外, 只有桌面壳能进来
 _TOKEN_FILE = USER_DIR / "token"
 
@@ -247,8 +247,8 @@ app = FastAPI(title="aulos web")
 async def _token_gate(request: Request, call_next):
     """连接门禁: 缺少有效令牌的请求一律 403（API_TOKEN 为空 = 门禁关闭, 供测试）。"""
     if API_TOKEN:
-        provided = (request.headers.get("x-xcode-token")
-                    or request.cookies.get("xcode_token")
+        provided = (request.headers.get("x-aulos-token")
+                    or request.cookies.get("aulos_token")
                     or request.query_params.get("token"))
         if provided != API_TOKEN:
             return JSONResponse(
@@ -289,7 +289,7 @@ class _TurnBinding:
 
 
 _binding_var: ContextVar[Optional[_TurnBinding]] = ContextVar(
-    "xcode_turn_binding", default=None)
+    "aulos_turn_binding", default=None)
 
 
 class TurnDispatch:
@@ -3040,7 +3040,7 @@ async def api_open_config():
 async def ws_endpoint(websocket: WebSocket, session_id: str):
     # WS 握手同样过门禁: 令牌可在 query 或 cookie（页面已种入）
     provided = (websocket.query_params.get("token")
-                or websocket.cookies.get("xcode_token"))
+                or websocket.cookies.get("aulos_token"))
     if API_TOKEN and provided != API_TOKEN:
         await websocket.close(code=1008)
         return
@@ -3287,7 +3287,7 @@ if __name__ == "__main__":
 
     args = sys.argv[1:]
     port = int(args[args.index("--port") + 1]) if "--port" in args \
-        else int(os.getenv("XCODE_PORT") or 8000)
+        else int(os.getenv("AULOS_PORT") or 8000)
     # 端口文件: 壳由此得知避让后的实际端口。发布壳与开发态各用各的文件
     # （发布壳以 --port/--port-file 显式传入, 两种形态可同时存活互不抢占）
     port_file = USER_DIR / "port"

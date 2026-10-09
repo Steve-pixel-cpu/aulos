@@ -14,7 +14,7 @@
     "electron-builder": "^26.0.12"
   },
   "build": {
-    "appId": "com.xcode.desktop",
+    "appId": "com.aulos.desktop",
     "productName": "aulos",
     "directories": {
       "output": "dist"

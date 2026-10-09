@@ -9,8 +9,8 @@
  * 行/帧时长是 Codex 官方契约(见 ROWS_SPEC), pet.json 不携带时序。
  * ============================================================ */
 (function () {
-  if (window.__xcodePet) return;   // 防重复初始化
-  window.__xcodePet = true;
+  if (window.__aulosPet) return;   // 防重复初始化
+  window.__aulosPet = true;
 
   const $ = (id) => document.getElementById(id);
   const PKEY = "xc-pet";
@@ -77,7 +77,7 @@
     if (!Number.isFinite(n)) return 1;
     return Math.min(SCALE_RANGE[1], Math.max(SCALE_RANGE[0], n));
   };
-  const toast = window.xcodeToast || (msg => console.log("[pet]", msg));
+  const toast = window.aulosToast || (msg => console.log("[pet]", msg));
 
   // ---------- 精灵图渲染器 ----------
   class PetSprite {
@@ -702,7 +702,7 @@
       onEvent(msg);
     };
     try {
-      const ch = new BroadcastChannel("xcode-pet");
+      const ch = new BroadcastChannel("aulos-pet");
       ch.onmessage = (e) => dispatch(e.data);
     } catch { }
     window.addEventListener("storage", (e) => {
@@ -711,7 +711,7 @@
     });
 
     // ---- 交互: 按住拖动(宠物随鼠标跑动) / 点击打招呼 ----
-    const bridge = () => window.xcodeDesktopPet;
+    const bridge = () => window.aulosDesktopPet;
     const floatEl = $("pet-float");
     // 输入框显隐 = 单一权威通道: .pointer-inside 类 (pet.css 里唯一显形
     // 规则, :hover/:focus 已退出显隐)。生效值 pointerIn 由三路真值推导:
@@ -762,7 +762,7 @@
           if (++hitErrors >= 5) {
             hitAlive = false;
             hitInside = null;
-            console.warn("[xcode] pet_hit_test 轮询停用, 显隐由事件+静默通道接管:", e);
+            console.warn("[aulos] pet_hit_test 轮询停用, 显隐由事件+静默通道接管:", e);
           }
         }
       }
@@ -771,7 +771,7 @@
         && Date.now() - lastPetPointerEvtAt > POINTER_SILENCE_MS;
       if (stale !== wasStale) {
         wasStale = stale;
-        if (stale) console.warn("[xcode] 指针静默超时但 hit 报在窗内, 按窗外处理 (XWayland 冻结: 指针已离开 X 区域, 光标查询冻结在窗内)");
+        if (stale) console.warn("[aulos] 指针静默超时但 hit 报在窗内, 按窗外处理 (XWayland 冻结: 指针已离开 X 区域, 光标查询冻结在窗内)");
       }
       pointerIn = rawInside && !stale;
       if (!pointerIn && inputFocused()) {
@@ -1005,7 +1005,7 @@
     // localStorage 的 storage 事件是同源多窗的可靠第二条路。两条都写,
     // 悬浮窗按序号去重。只转状态事件——text_delta 这类流式令牌不转发。
     let ch = null;
-    try { ch = new BroadcastChannel("xcode-pet"); } catch { }
+    try { ch = new BroadcastChannel("aulos-pet"); } catch { }
     const PET_EVT = new Set(["turn_started", "tool_use_started", "tool_result",
       "permission_request", "permission_resolved", "await_output", "turn_done",
       "error", "rate_limited_retry", "turn_interrupting"]);
@@ -1018,7 +1018,7 @@
         return raw.replace(/\s+/g, " ").trim().slice(0, 80);
       } catch { return ""; }
     }
-    window.xcodePet = {
+    window.aulosPet = {
       // sid 由 app.js handleServerMessage 调用时传入（本 IIFE 里没有这个变量,
       // 早期版本在这里读裸名 sid —— 每条无 session_id 的服务端事件都抛
       // ReferenceError, 把 turn_done/tool_result 的处理一起炸掉, 表现为
@@ -1031,7 +1031,7 @@
         // 权限请求要标注会话名 + 具体命令（多会话聚合后宠物说得出"谁想跑什么"）
         if (withSid.type === "permission_request") {
           let title = "";
-          try { title = window.xcodeSessionTitle?.(withSid.session_id) || ""; } catch { }
+          try { title = window.aulosSessionTitle?.(withSid.session_id) || ""; } catch { }
           withSid = {
             ...withSid,
             session_title: title,
@@ -1048,10 +1048,10 @@
     // 召唤入口: 底栏按钮 + 设置页按钮。悬浮窗是 Tauri 命令开的,
     // 其他环境(Electron/浏览器)没有桥——底栏按钮藏掉, 设置按钮置灰提示。
     // scale 传当前缩放, 开窗即按用户设置定尺寸。
-    const petFloat = () => window.xcodeDesktopPet.petFloat(pref().scale).catch(e => console.error("[pet]", e));
+    const petFloat = () => window.aulosDesktopPet.petFloat(pref().scale).catch(e => console.error("[pet]", e));
     const btn = $("btn-pet");
     if (btn) {
-      if (!window.xcodeDesktopPet) btn.hidden = true;
+      if (!window.aulosDesktopPet) btn.hidden = true;
       else {
         btn.hidden = false;
         btn.addEventListener("click", petFloat);
@@ -1059,7 +1059,7 @@
     }
     const summon = $("btn-pet-summon");
     if (summon) {
-      if (!window.xcodeDesktopPet) {
+      if (!window.aulosDesktopPet) {
         summon.disabled = true;
         summon.title = "悬浮窗仅桌面版(Tauri)支持";
       } else {
@@ -1096,7 +1096,7 @@
         $("pet-size-val").textContent = `${pct}%`;
         const s = clampScale(pct / 100);
         savePref({ ...pref(), scale: s });
-        try { window.xcodeDesktopPet?.resizePet?.(s); } catch { }
+        try { window.aulosDesktopPet?.resizePet?.(s); } catch { }
       });
     }
     // ---- AI 互动: 开关 + 桌宠专属模型。偏好同住 xc-pet, 悬浮窗经 storage
