@@ -2549,6 +2549,10 @@ function collapseFinishedToolGroups(col) {
 }
 
 function describeInput(raw, name) {  // 卡片标题一行摘要: JSON 先取 command/path 等关键字段，失败展示原文
+  const clip = (s) => {
+    const t = String(s || "").replace(/\s+/g, " ").trim();
+    return t.length > 90 ? t.slice(0, 90) + "…" : t;
+  };
   try {
     const data = JSON.parse(raw);
     if (data && typeof data === "object") {
@@ -2566,14 +2570,14 @@ function describeInput(raw, name) {  // 卡片标题一行摘要: JSON 先取 co
       if (name === "glob") return String(data.pattern || "");
       for (const k of ["command", "path", "file_path", "url", "content", "plan"]) {
         if (typeof data[k] === "string" && data[k].trim()) {
-          return data[k].replace(/\s+/g, " ").slice(0, 90);
+          return clip(data[k]);
         }
       }
-      return Object.keys(data)
-        .map(k => `${k}=${String(data[k])}`).join(" ").slice(0, 90);
+      return clip(Object.keys(data)
+        .map(k => `${k}=${String(data[k])}`).join(" "));
     }
   } catch (e) { /* not json */ }
-  return String(raw || "").replace(/\s+/g, " ").slice(0, 90);
+  return clip(String(raw || ""));
 }
 
 function addToolCard({ id, name, input, result }, col) {
@@ -2588,7 +2592,10 @@ function addToolCard({ id, name, input, result }, col) {
   row.dataset.tool = name;
   row.dataset.input = input || "";
   row._t0 = Date.now();   // 结果到达时在 setToolState 里折算耗时小字
-  // 不设 title: 悬停不再弹入参 JSON, 行内摘要足够
+  // 悬停给完整入参（压平空白, 截 2000 字防巨体）——摘要 90 字截断曾把
+  // 命令尾部的 `| xargs sh -c …` 藏掉, 只读白名单拒绝看起来像误拒
+  const hover = String(input || "").replace(/\s+/g, " ").trim();
+  if (hover.length > 90) row.title = hover.slice(0, 2000);
   // 落进工具分组（连续调用折叠为一组）, 不再逐条平铺在消息列
   groupForNewToolRow(col || msgCol()).querySelector(".tg-body").appendChild(row);
   if (result) {
