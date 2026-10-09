@@ -1,4 +1,4 @@
-# x-code
+# aulos
 
 [中文文档](README.md) | **English**
 
@@ -45,7 +45,7 @@ harness, and session persistence.
 - **Main-context slimming** (four pieces, for "too much stuff entering the
   context"):
   - `read_file` / `grep` line budgets: oversized output spills to
-    `~/.x-code/tool-outputs/`, the session keeps only the head plus a
+    `~/.aulos/tool-outputs/`, the session keeps only the head plus a
     spill marker that can be read back later
   - Same-file re-read dedup: unchanged files answer a one-line `unchanged`;
     writes advance a mutation epoch, external modifications and `force=true`
@@ -93,7 +93,7 @@ harness, and session persistence.
 - **Three-level permissions**: `plan` (read-only) → `workspace-write` (writable
   inside the working directory) → `danger-full-access` (everything); violations
   trigger approval (CLI y/N panel / web approval card). **Sensitive paths**
-  (`.git/`, `~/.x-code/`, `~/.ssh/`, shell config files) force human judgment in
+  (`.git/`, `~/.aulos/`, `~/.ssh/`, shell config files) force human judgment in
   *every* mode including full-access — guarding against irreversible damage
   like `rm -rf .git` and model self-escape
 - **Rate-limit retry**: exponential backoff for connection jitter plus a
@@ -102,7 +102,7 @@ harness, and session persistence.
   loop continues
 - **Long-turn latency governance**: automatic in-turn thinking downshift
   (request parameter only — user settings untouched), soft convergence nudges,
-  and one JSON line per model call (duration / usage) under `~/.x-code/logs/`
+  and one JSON line per model call (duration / usage) under `~/.aulos/logs/`
   ("which turn got slow, and why" — just read the log)
 - **Session persistence**: incremental JSONL (atomic writes), resume (`-c` /
   `--resume`), auto-naming, concurrent-session isolation
@@ -138,7 +138,7 @@ harness, and session persistence.
         │ memory      cross-session    call_log call log │
         │ config      layered config   storage sessions  │
         └────────────────────────────────────────────────┘
-                    Data directory: ~/.x-code/
+                    Data directory: ~/.aulos/
 ```
 
 | Module | Responsibility |
@@ -188,7 +188,7 @@ API_KEY=sk-xxx        # key used by the CLI
 
 The web app does not read `.env`: first launch shows an initialization page
 where you enter the API key, base URL, and model. Configuration is saved to
-`~/.x-code/settings.json` with support for multiple providers.
+`~/.aulos/settings.json` with support for multiple providers.
 
 ### Run the CLI
 
@@ -290,7 +290,7 @@ Configs deep-merge from low to high priority:
 
 | Location | Scope |
 |---|---|
-| `~/.x-code/settings.json` (and `.claude.json`) | user global |
+| `~/.aulos/settings.json` (and `.claude.json`) | user global |
 | `<project>/.claude/settings.json` (and `.claude.json`) | project |
 | `<project>/.claude/settings.local.json` | local personal |
 
@@ -332,7 +332,7 @@ Tools register their required tier ("read-only / local write / arbitrary
 command"); violations trigger approval — a yellow y/N panel on the CLI
 (Ctrl+C always refuses toward the safe side) and an approval card on the web.
 
-**Sensitive-path enforcement**: writing/deleting `.git/`, `~/.x-code/`,
+**Sensitive-path enforcement**: writing/deleting `.git/`, `~/.aulos/`,
 `~/.ssh/`, or shell config files forces human confirmation in *every* mode
 (including `danger-full-access`). Command allowlists cannot bypass it —
 preventing the model from editing its own permission config or causing
@@ -367,9 +367,9 @@ git push origin v4.2.0
 
 | Platform | Artifact | Auto-update |
 |---|---|---|
-| Windows | `x-code_<ver>_x64-setup.exe` | ✅ (NSIS + update signature) |
-| macOS (Apple Silicon) | `x-code_<ver>_aarch64.dmg` + `.app.tar.gz` | ✅ (minisign-signed) |
-| Linux | `x-code_<ver>_amd64.AppImage` | ✅ |
+| Windows | `aulos_<ver>_x64-setup.exe` | ✅ (NSIS + update signature) |
+| macOS (Apple Silicon) | `aulos_<ver>_aarch64.dmg` + `.app.tar.gz` | ✅ (minisign-signed) |
+| Linux | `aulos_<ver>_amd64.AppImage` | ✅ |
 
 - `latest.json` carries all three update entries; installed users receive new
   versions via auto-update
@@ -378,7 +378,7 @@ git push origin v4.2.0
   `_PASSWORD`); when missing, builds succeed without `.sig` and cannot be
   auto-update targets
 - macOS is not notarized: right-click → Open on first launch, or
-  `xattr -cr /Applications/x-code.app`
+  `xattr -cr /Applications/aulos.app`
 - Linux runtime deps (without GStreamer plugins the window/tools work but web
   audio is silent):
 
@@ -391,7 +391,7 @@ git push origin v4.2.0
 - Wayland sessions (default on Ubuntu 22.04/24.04): the Wayland protocol
   forbids client-side always-on-top/programmatic moves, so the desktop pet gets
   occluded and cannot be dragged. The app detects Wayland + XWayland and sets
-  `GDK_BACKEND=x11` automatically (decision recorded in `~/.x-code/boot.log`).
+  `GDK_BACKEND=x11` automatically (decision recorded in `~/.aulos/boot.log`).
   To force native Wayland: `export XCODE_GDK_BACKEND=wayland` before launching,
   at the cost of the pet possibly being occluded.
 - On VMs without 3D acceleration (e.g. VMware): the app sets

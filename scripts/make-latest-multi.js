@@ -27,7 +27,7 @@ function argOf(name, fallback) {
 const root = path.resolve(__dirname, "..");
 const dist = path.resolve(argOf("--dist", path.join(root, "dist")));
 const tag = argOf("--tag");
-const repo = argOf("--repo", "Steve-pixel-cpu/x-code");
+const repo = argOf("--repo", "Steve-pixel-cpu/aulos");
 
 // 版本取自 tag (去 v 前缀), 不读 tauri.conf.json——构建 job 里 set-version
 // 同步出的新版本号只存在于各 job 工作区, 不会回写仓库 (CI 实测教训)

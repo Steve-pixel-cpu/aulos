@@ -1,4 +1,4 @@
-# x-code
+# aulos
 
 **中文** | [English](README_EN.md)
 
@@ -31,7 +31,7 @@
   压缩激活时直接采用，零现场调用）→ Full Compact（超压缩阈值时 side-call 生成
   结构化摘要，规则摘要兜底，一次大调用）
 - **主上下文瘦身四件套**（治"进上下文的东西太多"）：
-  - `read_file` / `grep` 行预算：超限全文落盘 `~/.x-code/tool-outputs/`，会话只留
+  - `read_file` / `grep` 行预算：超限全文落盘 `~/.aulos/tool-outputs/`，会话只留
     首部 + 落盘标记，需要时可读回
   - 同文件重读去重：未变文件的整读回一行 `unchanged`；写入推进变异序号、外部修改、
     `force=true` 均回全文
@@ -65,12 +65,12 @@
 
 - **三级权限体系**：`plan`（只读）→ `workspace-write`（工作目录内可写）→
   `danger-full-access`（全放行）；越权触发审批（CLI y/N 面板 / Web 审批卡）。
-  敏感路径（`.git/`、`~/.x-code/`、`~/.ssh/`、shell 配置文件）**任何模式含全放行
+  敏感路径（`.git/`、`~/.aulos/`、`~/.ssh/`、shell 配置文件）**任何模式含全放行
   都强制人工裁决**——防"rm -rf .git"类不可逆破坏与模型自逃脱
 - **限流重试**：连接抖动指数退避 + 429 专用长退避曲线，重试进度实时上报界面
 - **max_tokens 截断自愈**：截断后注入恢复提示继续循环
 - **长回合延迟治理**：回合内思考自动降档（只改请求参数不改用户设置）、迭代软收束
-  提醒、每轮调用耗时/用量一行 JSON 落盘 `~/.x-code/logs/`（"哪轮慢、慢在哪"直接看日志）
+  提醒、每轮调用耗时/用量一行 JSON 落盘 `~/.aulos/logs/`（"哪轮慢、慢在哪"直接看日志）
 - **会话持久化**：JSONL 增量落盘（原子写）、断点恢复（`-c` / `--resume`）、自动命名、
   并发会话隔离
 
@@ -104,7 +104,7 @@
         │ memory      跨会话记忆         call_log 调用日志│
         │ config      分层配置           storage  会话库  │
         └────────────────────────────────────────────────┘
-                    数据目录: ~/.x-code/
+                    数据目录: ~/.aulos/
 ```
 
 | 模块 | 职责 |
@@ -151,7 +151,7 @@ API_KEY=sk-xxx        # CLI 用的 key
 ```
 
 Web 端不读 `.env`：首次启动进入初始化页，在界面里填写 API Key、接口地址与模型，
-配置保存到 `~/.x-code/settings.json`，支持添加多个供应商随时切换。
+配置保存到 `~/.aulos/settings.json`，支持添加多个供应商随时切换。
 
 ### 启动 CLI
 
@@ -241,7 +241,7 @@ uv run python evals/run_evals.py --list                 # 只列任务不跑
 
 | 位置 | 作用域 |
 |---|---|
-| `~/.x-code/settings.json`（及 `.claude.json`） | 用户全局 |
+| `~/.aulos/settings.json`（及 `.claude.json`） | 用户全局 |
 | `<项目>/.claude/settings.json`（及 `.claude.json`） | 项目级 |
 | `<项目>/.claude/settings.local.json` | 本地个人 |
 
@@ -282,7 +282,7 @@ uv run python evals/run_evals.py --list                 # 只列任务不跑
 工具按"只读 / 本地写 / 任意命令"三档登记所需权限，越权即触发审批：
 CLI 是黄色 y/N 面板（Ctrl+C 一律朝安全侧拒绝），Web 端是弹窗审批卡。
 
-**敏感路径强制裁决**：写/删 `.git/`、`~/.x-code/`、`~/.ssh/`、shell 配置文件等
+**敏感路径强制裁决**：写/删 `.git/`、`~/.aulos/`、`~/.ssh/`、shell 配置文件等
 敏感路径时，无论当前权限模式（含 `danger-full-access`）都强制人工确认——命令
 白名单不能短路，防止模型改掉自己的权限配置或不可逆破坏。
 
@@ -312,15 +312,15 @@ git push origin v4.2.0
 
 | 平台 | 产物 | 自动更新 |
 |---|---|---|
-| Windows | `x-code_<ver>_x64-setup.exe` | ✅（NSIS + 更新签名） |
-| macOS (Apple Silicon) | `x-code_<ver>_aarch64.dmg` + `.app.tar.gz` | ✅（更新包带 minisign 签名） |
-| Linux | `x-code_<ver>_amd64.AppImage` | ✅ |
+| Windows | `aulos_<ver>_x64-setup.exe` | ✅（NSIS + 更新签名） |
+| macOS (Apple Silicon) | `aulos_<ver>_aarch64.dmg` + `.app.tar.gz` | ✅（更新包带 minisign 签名） |
+| Linux | `aulos_<ver>_amd64.AppImage` | ✅ |
 
 - `latest.json` 含三平台更新条目, 已装用户通过自动更新收到新版本
 - 手动触发（Actions 页 Run workflow）：只构建并传 artifact, 不发 Release
 - 签名密钥走仓库 Secrets（`TAURI_SIGNING_PRIVATE_KEY` / `_PASSWORD`）；
   缺失时构建成功但无 `.sig`, 不能作为自动更新目标
-- macOS 未做 Apple 公证：首次打开需右键 → 打开, 或 `xattr -cr /Applications/x-code.app`
+- macOS 未做 Apple 公证：首次打开需右键 → 打开, 或 `xattr -cr /Applications/aulos.app`
 - Linux 运行时依赖（缺 GStreamer 插件时窗口/工具正常, 但网页音频无声）:
 
   ```bash
@@ -332,7 +332,7 @@ git push origin v4.2.0
   不可用——应用会在播放前探测管线, 不可用时自动停用 (只弹提示, 不会卡死)。
 - Wayland 会话 (Ubuntu 22.04/24.04 默认): Wayland 协议不允许客户端置顶/编程
   挪窗, 桌宠会被其他窗口遮挡且拖不动。应用检测到 Wayland + XWayland 时自动设
-  `GDK_BACKEND=x11` 走 XWayland 恢复该行为 (决策记录在 `~/.x-code/boot.log`)。
+  `GDK_BACKEND=x11` 走 XWayland 恢复该行为 (决策记录在 `~/.aulos/boot.log`)。
   想回原生 Wayland: 启动前 `export XCODE_GDK_BACKEND=wayland`, 代价是桌宠
   可能被遮挡、拖不动。
 - VMware 等无 3D 加速环境: 应用自动设置 `WEBKIT_DISABLE_DMABUF_RENDERER=1`

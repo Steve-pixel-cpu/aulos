@@ -61,6 +61,51 @@ wheels = [
 ]
 
 [[package]]
+name = "aulos"
+version = "4.2.7"
+source = { virtual = "." }
+dependencies = [
+    { name = "anthropic" },
+    { name = "fastapi" },
+    { name = "mcp" },
+    { name = "openai" },
+    { name = "pillow" },
+    { name = "playwright" },
+    { name = "pydantic" },
+    { name = "python-dotenv" },
+    { name = "pyyaml" },
+    { name = "trafilatura" },
+    { name = "tzdata" },
+    { name = "uvicorn", extra = ["standard"] },
+    { name = "websearch-py" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "anthropic", specifier = ">=1.5.0" },
+    { name = "fastapi", specifier = ">=0.115" },
+    { name = "mcp", specifier = ">=2" },
+    { name = "openai", specifier = ">=1.60.0" },
+    { name = "pillow", specifier = ">=12.3.0" },
+    { name = "playwright", specifier = ">=1.49" },
+    { name = "pydantic", specifier = ">=2.13.5" },
+    { name = "python-dotenv", specifier = ">=1.2.3" },
+    { name = "pyyaml", specifier = ">=6.0" },
+    { name = "trafilatura", specifier = ">=2.0" },
+    { name = "tzdata", specifier = ">=2026.4" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
+    { name = "websearch-py", specifier = ">=0.1.0" },
+]
+
+[package.metadata.requires-dev]
+dev = [{ name = "pytest", specifier = ">=9.1.1" }]
+
+[[package]]
 name = "babel"
 version = "2.18.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1554,48 +1599,3 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/ce/3c/8b9a225b523f06a9389be81f1b0ab07c49bec6014742e6aa359c1f920f1f/websockets-17.1-cp315-cp315t-win_arm64.whl", hash = "sha256:e552e0037230ac16e5f568de7012041344d1b18c9feed30ec2891b8eba55af81", size = 217372, upload-time = "2026-08-26T14:58:22.807Z" },
     { url = "https://files.pythonhosted.org/packages/41/63/23572870e01836a98346075b9e17a8bc24a6ddd9800a3204ceee58677f3c/websockets-17.1-py3-none-any.whl", hash = "sha256:f221081107b8c48184d99f7019604486376e7ef826037e70aad6b02540732c23", size = 211134, upload-time = "2026-08-26T17:25:31.397Z" },
 ]
-
-[[package]]
-name = "x-code"
-version = "4.2.7"
-source = { virtual = "." }
-dependencies = [
-    { name = "anthropic" },
-    { name = "fastapi" },
-    { name = "mcp" },
-    { name = "openai" },
-    { name = "pillow" },
-    { name = "playwright" },
-    { name = "pydantic" },
-    { name = "python-dotenv" },
-    { name = "pyyaml" },
-    { name = "trafilatura" },
-    { name = "tzdata" },
-    { name = "uvicorn", extra = ["standard"] },
-    { name = "websearch-py" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "pytest" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "anthropic", specifier = ">=1.5.0" },
-    { name = "fastapi", specifier = ">=0.115" },
-    { name = "mcp", specifier = ">=2" },
-    { name = "openai", specifier = ">=1.60.0" },
-    { name = "pillow", specifier = ">=12.3.0" },
-    { name = "playwright", specifier = ">=1.49" },
-    { name = "pydantic", specifier = ">=2.13.5" },
-    { name = "python-dotenv", specifier = ">=1.2.3" },
-    { name = "pyyaml", specifier = ">=6.0" },
-    { name = "trafilatura", specifier = ">=2.0" },
-    { name = "tzdata", specifier = ">=2026.4" },
-    { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
-    { name = "websearch-py", specifier = ">=0.1.0" },
-]
-
-[package.metadata.requires-dev]
-dev = [{ name = "pytest", specifier = ">=9.1.1" }]

@@ -58,7 +58,7 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDgxNUU0MjE2MEY2NDVBNDgKUldSSVdtUVBGa0plZ2NQNjJPQlNlWXlWMlFQdW02citKWU5OblR2cWcrZ1JOQ2V1cW8vLzFBQnoK",
       "endpoints": [
-        "https://github.com/Steve-pixel-cpu/x-code/releases/latest/download/latest.json"
+        "https://github.com/Steve-pixel-cpu/aulos/releases/latest/download/latest.json"
       ],
       "windows": {
         "installMode": "passive"

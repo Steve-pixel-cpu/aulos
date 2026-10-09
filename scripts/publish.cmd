@@ -78,7 +78,7 @@ goto :eof
 
 :manual
 echo [publish] gh CLI not found. Publish manually:
-echo   1. Open https://github.com/Steve-pixel-cpu/x-code/releases/new?tag=v%VER%
+echo   1. Open https://github.com/Steve-pixel-cpu/aulos/releases/new?tag=v%VER%
 echo   2. Upload all three files: dist\%EXE%  dist\%EXE%.sig  dist\latest.json
 echo   3. Title it "aulos v%VER%" and publish
 exit /b 1

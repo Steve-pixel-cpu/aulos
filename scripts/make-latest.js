@@ -60,7 +60,7 @@ if (!fs.existsSync(sigPath)) {
 
 // GitHub asset download URL (tag and asset names are a fixed convention:
 // v<version> / x-code_<version>_x64-setup.exe)
-const repo = "Steve-pixel-cpu/x-code";
+const repo = "Steve-pixel-cpu/aulos";
 const url = `https://github.com/${repo}/releases/download/v${version}/${exe}`;
 
 const manifest = {
