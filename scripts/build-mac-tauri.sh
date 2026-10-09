@@ -12,7 +12,7 @@
 #       (PyInstaller 无法跨平台构建, arch 跟随构建机: macos-14=arm64 / macos-13=x64)
 #
 # 与 Windows (build-exe.cmd tauri) 的两个刻意对齐点:
-#   - 冻结后端沿用 "x-code-server.exe" 文件名 —— tauri.conf.json 的
+#   - 冻结后端沿用 "aulos-server.exe" 文件名 —— tauri.conf.json 的
 #     resources 映射与 main.rs 的 sidecar 路径全部零改动; mac 上这只是
 #     一个普通文件名, 不影响执行。
 #   - 签名同样走 TAURI_SIGNING_PRIVATE_KEY / _PASSWORD 环境变量
@@ -57,13 +57,13 @@ mkdir -p build/server
 
 echo "[3/4] Staging backend + pets into src-tauri (Tauri resources)..."
 mkdir -p src-tauri/server
-cp build/server/x-code-server src-tauri/server/x-code-server.exe   # 文件名与 Windows 对齐, conf/main.rs 零改动
+cp build/server/x-code-server src-tauri/server/aulos-server.exe   # 文件名与 Windows 对齐, conf/main.rs 零改动
 rm -rf src-tauri/pets
 cp -R pets src-tauri/pets
 
 echo "[4/4] Building Tauri .app/.dmg (updater artifacts signed)..."
 # --bundles 覆盖 conf 的 ["nsis"]: 资源映射/图标在基础配置里已平台兼容
-# (后端沿用 x-code-server.exe 文件名; WebView2Loader.dll 在 git 中; icon 含 icns)
+# (后端沿用 aulos-server.exe 文件名; WebView2Loader.dll 在 git 中; icon 含 icns)
 if [ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
   echo "[sign] Using TAURI_SIGNING_PRIVATE_KEY from environment"
 else

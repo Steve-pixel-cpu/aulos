@@ -6,7 +6,7 @@
  * 消费的 latest.json (发 Release 时与产物一起上传, 更新端点
  * releases/latest/download/latest.json 恒指向最新)。
  *
- *   windows-x86_64 : x-code_<ver>_x64-setup.exe        (+ .exe.sig)
+ *   windows-x86_64 : aulos_<ver>_x64-setup.exe        (+ .exe.sig)
  *   darwin-aarch64 : x-code_<ver>_aarch64.app.tar.gz   (+ .sig)
  *   darwin-x86_64  : x-code_<ver>_x64.app.tar.gz       (+ .sig)
  *   linux-x86_64   : x-code_<ver>_amd64.deb            (+ .deb.sig)
@@ -53,7 +53,7 @@ function entry(updateFile, sigSuffix) {
 }
 
 const platforms = {};
-const win = entry(`x-code_${version}_x64-setup.exe`, ".sig");
+const win = entry(`aulos_${version}_x64-setup.exe`, ".sig");
 if (win) platforms["windows-x86_64"] = win;
 for (const [arch, key] of [["aarch64", "darwin-aarch64"], ["x64", "darwin-x86_64"]]) {
   const e = entry(`x-code_${version}_${arch}.app.tar.gz`, ".sig");
@@ -69,7 +69,7 @@ if (Object.keys(platforms).length === 0) {
 
 const manifest = {
   version,
-  notes: `x-code v${version}`,
+  notes: `aulos v${version}`,
   pub_date: new Date().toISOString().replace(/\.\d+Z$/, "Z"),
   platforms,
 };

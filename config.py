@@ -6,9 +6,29 @@ from typing import Literal, Optional, Any
 
 from pydantic import BaseModel, Field
 
-# 应用名与用户级目录的唯一来源: ~/.x-code（目录名跟 APP_NAME 走, 改名只动这一处）
-APP_NAME = "x-code"
+# 应用名与用户级目录的唯一来源: ~/.aulos（目录名跟 APP_NAME 走, 改名只动这一处）。
+# 前身 x-code: 首次启动时若存在 ~/.x-code 且 ~/.aulos 不存在, 自动整体迁移
+# （会话/设置/令牌/技能/宠物等全部数据, 见 _migrate_legacy_dir()）。
+APP_NAME = "aulos"
+LEGACY_APP_NAME = "x-code"
 USER_DIR = Path.home() / ("." + APP_NAME)
+
+
+def _migrate_legacy_dir() -> None:
+    """一次性迁移: ~/.x-code → ~/.aulos（仅当旧目录存在且新目录不存在）。
+    原子性: 同盘 rename, 瞬间完成; 迁移后旧目录不存在, 回滚 = 改回名字重跑。
+    失败(跨盘/占用)不致命: 退回旧目录继续跑, 下次启动再试。"""
+    legacy = Path.home() / ("." + LEGACY_APP_NAME)
+    if not legacy.is_dir() or USER_DIR.exists():
+        return
+    try:
+        legacy.rename(USER_DIR)
+        print(f"[aulos] 已迁移用户数据: {legacy} -> {USER_DIR}")
+    except OSError as e:
+        print(f"[aulos] 用户数据迁移失败({e}), 继续使用旧目录 {legacy}")
+
+
+_migrate_legacy_dir()
 SETTINGS_FILE = USER_DIR / "settings.json"
 # 记忆库（memory/store.py 读写; 与 settings.json 同目录同约定: 读-改-写, 不加锁）
 MEMORY_FILE = USER_DIR / "memory.json"

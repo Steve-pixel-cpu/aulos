@@ -28,7 +28,7 @@ if "%VER%"=="" (
   exit /b 1
 )
 
-set "EXE=x-code_%VER%_x64-setup.exe"
+set "EXE=aulos_%VER%_x64-setup.exe"
 set "LATEST=dist\latest.json"
 
 if not exist "%LATEST%" (
@@ -64,10 +64,10 @@ if errorlevel 1 (
 )
 
 set "NOTES=%~2"
-if "%NOTES%"=="" set "NOTES=x-code v%VER%"
+if "%NOTES%"=="" set "NOTES=aulos v%VER%"
 
 echo [publish] Creating GitHub release v%VER% and uploading assets ...
-gh release create v%VER% "dist\%EXE%" "dist\%EXE%.sig" "%LATEST%" --title "x-code v%VER%" --notes "%NOTES%"
+gh release create v%VER% "dist\%EXE%" "dist\%EXE%.sig" "%LATEST%" --title "aulos v%VER%" --notes "%NOTES%"
 if errorlevel 1 (
   echo [publish] gh failed - the release may already exist. Try:
   echo [publish]   gh release upload v%VER% dist\%EXE% dist\%EXE%.sig dist\latest.json --clobber
@@ -80,5 +80,5 @@ goto :eof
 echo [publish] gh CLI not found. Publish manually:
 echo   1. Open https://github.com/Steve-pixel-cpu/x-code/releases/new?tag=v%VER%
 echo   2. Upload all three files: dist\%EXE%  dist\%EXE%.sig  dist\latest.json
-echo   3. Title it "x-code v%VER%" and publish
+echo   3. Title it "aulos v%VER%" and publish
 exit /b 1

@@ -1,7 +1,7 @@
 [package]
-name = "x-code"
-version = "4.2.6"
-description = "x-code 桌面壳（Tauri 版）"
+name = "aulos"
+version = "4.2.7"
+description = "aulos 桌面壳（Tauri 版）"
 edition = "2021"
 
 [build-dependencies]

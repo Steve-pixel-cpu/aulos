@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="color-scheme" content="dark light">
-<title>x-code</title>
+<title>aulos</title>
 <link rel="icon" type="image/png" href="/api/icon">
 <script>/* 桌面壳经 ?token= 打开页面: 把令牌种成 cookie, 后续 API/静态资源请求自动携带 */ (function(){try{var t=new URLSearchParams(location.search).get("token");if(t)document.cookie="xcode_token="+encodeURIComponent(t)+"; path=/; max-age=31536000; SameSite=Strict";}catch(e){}})();</script>
 <script>/* 主题/壁纸在绘制前应用，避免闪白 (dark | light | system) */ (function(){var de=document.documentElement,p=localStorage.getItem("xc-theme")||"system";de.dataset.theme=p==="system"&&window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":(p==="dark"||p==="light")?p:"dark";var a=localStorage.getItem("xc-accent");if(a&&a!=="gray")de.dataset.accent=a;if(localStorage.getItem("xc-style")==="fluent")de.dataset.style="fluent";if(localStorage.getItem("xc-bg")==="1")de.dataset.bg="1";/* 代码高亮主题 / 聊天密度 / 禅模式: 同样抢在首帧前, 防刷新闪回默认 */var hl=localStorage.getItem("xc-hl");if(hl&&hl!=="auto")de.dataset.hl=hl;var dn=localStorage.getItem("xc-density");if(dn&&dn!=="comfortable")de.dataset.density=dn;var ms=localStorage.getItem("xc-msgstyle");if(ms&&ms!=="document")de.dataset.msgstyle=ms;if(localStorage.getItem("xc-zen")==="1")de.dataset.zen="1";/* 壁纸亮度: 与 app.js applyBgBrightness 同一套公式, 绘制前设好防闪回默认 */var b=parseFloat(localStorage.getItem("xc-bg-bright"));if(!isFinite(b)||b<0||b>100)b=50;de.style.setProperty("--bg-dim",(2-b/50).toFixed(4));de.style.setProperty("--bg-surf",(1-.26*Math.max(-1,Math.min(1,(b-50)/50))).toFixed(4));})();</script>
@@ -27,7 +27,7 @@
 <!-- ============ 自绘标题栏（仅桌面壳显示, 高度/主题跟随应用） ============ -->
 <div id="titlebar">
   <img class="tb-icon" src="/api/icon" alt="" draggable="false">
-  <span class="tb-name">x-code</span>
+  <span class="tb-name">aulos</span>
   <span class="tb-ver" id="tb-version" hidden></span>
   <div class="tb-spring"></div>
   <div class="tb-controls">
@@ -271,7 +271,7 @@
     <div id="onboarding-page">
       <div class="ob-card">
         <img class="ob-logo" src="/api/icon" alt="">
-        <h2>欢迎使用 x-code</h2>
+        <h2>欢迎使用 aulos</h2>
         <p class="ob-desc">首次使用需要先配置一个模型供应商, 填写后立即可用; 之后可随时在「设置 → 模型」里调整或追加。</p>
         <div class="ob-field">
           <label>API Key</label>
@@ -571,7 +571,7 @@
       </div>
       <div class="sp-section-body" data-section="skills" style="display:none">
         <div class="sp-section">Skills</div>
-        <div class="sp-section-desc">技能包是一份 SKILL.md（可捆绑脚本/模板），任务匹配时模型自动读取并遵循。项目级技能放在 &lt;项目&gt;/.claude/skills/&lt;名称&gt;/，随仓库走；这里安装的是用户级技能（~/.x-code/skills/），装完即时生效，无需重启</div>
+        <div class="sp-section-desc">技能包是一份 SKILL.md（可捆绑脚本/模板），任务匹配时模型自动读取并遵循。项目级技能放在 &lt;项目&gt;/.claude/skills/&lt;名称&gt;/，随仓库走；这里安装的是用户级技能（~/.aulos/skills/），装完即时生效，无需重启</div>
         <div class="skill-install-row">
           <input id="skill-repo-input" class="hex-input txt-input" spellcheck="false" placeholder="GitHub 仓库，如 anthropics/skills 或完整 URL" maxlength="300">
           <input id="skill-subpath-input" class="hex-input skill-subpath txt-input" spellcheck="false" placeholder="子目录（可选）" maxlength="200">
@@ -601,7 +601,7 @@
         <div class="set-row">
           <div class="set-info">
             <div class="set-name">settings.json</div>
-            <div class="set-desc">路径 ~/.x-code/settings.json</div>
+            <div class="set-desc">路径 ~/.aulos/settings.json</div>
           </div>
           <button type="button" class="icon-act" id="btn-open-config">打开文件</button>
         </div>

@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "x-code",
-  "version": "4.2.6",
-  "identifier": "com.xcode.desktop",
+  "productName": "aulos",
+  "version": "4.2.7",
+  "identifier": "com.aulos.desktop",
   "build": {
     "frontendDist": "../static"
   },
@@ -28,7 +28,7 @@
     ],
     "createUpdaterArtifacts": true,
     "resources": {
-      "server/x-code-server.exe": "resources/server/x-code-server.exe",
+      "server/aulos-server.exe": "resources/server/aulos-server.exe",
       "pets": "pets",
       "WebView2Loader.dll": "WebView2Loader.dll"
     },

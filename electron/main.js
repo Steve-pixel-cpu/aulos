@@ -1,6 +1,6 @@
-// x-code 桌面壳:
-//   - 缺省端口上已有 x-code 服务在跑 → 直接复用, 不拉进程、退出时不杀
-//     （开发态 8000 / ~/.x-code/port; 打包态 18080 / ~/.x-code/release-port,
+// aulos 桌面壳:
+//   - 缺省端口上已有 aulos 服务在跑 → 直接复用, 不拉进程、退出时不杀
+//     （开发态 8000 / ~/.aulos/port; 打包态 18080 / ~/.aulos/release-port,
 //      与开发/测试后端隔离, 两种形态可同时存活）
 //   - 否则拉起后端（.venv 里的 python server.py / 打包态冻结二进制）, 退出时整树杀掉
 //   - 窗口只加载本地服务; 外部链接一律转交系统浏览器, 防止窗口被带跑
@@ -15,9 +15,9 @@ const crypto = require("crypto");
 
 const ROOT = path.join(__dirname, "..");
 
-// 连接门禁令牌: 与后端共享 ~/.x-code/token, 桌面壳的所有请求自动携带,
+// 连接门禁令牌: 与后端共享 ~/.aulos/token, 桌面壳的所有请求自动携带,
 // 浏览器直接访问 127.0.0.1:8000 会因缺少令牌被后端 403 拒绝
-const TOKEN_FILE = path.join(os.homedir(), ".x-code", "token");
+const TOKEN_FILE = path.join(os.homedir(), ".aulos", "token");
 function ensureToken() {
   fs.mkdirSync(path.dirname(TOKEN_FILE), { recursive: true });
   try {
@@ -30,11 +30,11 @@ function ensureToken() {
 }
 const API_TOKEN = ensureToken();
 
-// 后端端口: 开发态缺省 8000（被占时后端避让 8010–8019, 端口文件 ~/.x-code/port）;
-// 打包态缺省 18080（避让 18090–18099, 端口文件 ~/.x-code/release-port, 以
+// 后端端口: 开发态缺省 8000（被占时后端避让 8010–8019, 端口文件 ~/.aulos/port）;
+// 打包态缺省 18080（避让 18090–18099, 端口文件 ~/.aulos/release-port, 以
 // --port/--port-file 显式传给后端）——不与开发/测试后端常占的 8000 撞车,
 // 两种形态可同时存活
-const PORT_FILE = path.join(os.homedir(), ".x-code",
+const PORT_FILE = path.join(os.homedir(), ".aulos",
   app.isPackaged ? "release-port" : "port");
 const DEFAULT_PORT = app.isPackaged ? 18080 : 8000;
 function readPort() {
@@ -51,7 +51,7 @@ let win = null;
 let serverProc = null;   // 本进程拉起的 Python 后端; null = 复用了外部已运行的服务
 let quitting = false;
 
-// 探测后端是否就绪（就绪 = /api/ping 返回 200 且 app 标识为 x-code; 携带门禁令牌）。
+// 探测后端是否就绪（就绪 = /api/ping 返回 200 且 app 标识为 aulos; 携带门禁令牌）。
 // 不能只看 200: 8000 可能被 C-Lodop 打印服务等程序抢占, 它们对任何路径都回自己的页面
 function pingServer(port, timeoutMs) {
   return new Promise((resolve) => {
@@ -63,7 +63,7 @@ function pingServer(port, timeoutMs) {
       res.on("data", (d) => { body += d; });
       res.on("end", () => {
         try {
-          resolve(res.statusCode === 200 && JSON.parse(body).app === "x-code");
+          resolve(res.statusCode === 200 && JSON.parse(body).app === "aulos");
         } catch (e) { resolve(false); }
       });
     });
@@ -75,11 +75,11 @@ function pingServer(port, timeoutMs) {
 function startServer() {
   if (app.isPackaged) {
     // 打包态: 后端是 PyInstaller 冻结的单文件二进制, 随安装包放在资源目录
-    // （Windows: x-code-server.exe / macOS·Linux: x-code-server）;
-    // cwd 指到用户目录 —— .env 由后端从 ~/.x-code 读取, 会话/配置也在那里
+    // （Windows: aulos-server.exe / macOS·Linux: aulos-server）;
+    // cwd 指到用户目录 —— .env 由后端从 ~/.aulos 读取, 会话/配置也在那里
     const exe = path.join(process.resourcesPath, "server",
-      process.platform === "win32" ? "x-code-server.exe" : "x-code-server");
-    const dataDir = path.join(app.getPath("home"), ".x-code");
+      process.platform === "win32" ? "aulos-server.exe" : "aulos-server");
+    const dataDir = path.join(app.getPath("home"), ".aulos");
     fs.mkdirSync(dataDir, { recursive: true });
     // --port/--port-file: 发布版固定用 18080 段（写 release-port 文件）,
     // 不与开发/测试后端常占的 8000 撞车, 两种形态可同时存活
@@ -98,7 +98,7 @@ function startServer() {
     proc.on("exit", (code) => {
       if (serverProc === proc) serverProc = null;
       if (!quitting && win && !win.isDestroyed()) {
-        dialog.showErrorBox("x-code 后端已退出", `后端进程退出（code=${code}）。`);
+        dialog.showErrorBox("aulos 后端已退出", `后端进程退出（code=${code}）。`);
       }
     });
     return proc;
@@ -120,7 +120,7 @@ function startServer() {
     if (serverProc === proc) serverProc = null;
     // 非退出阶段后端自己挂了: 弹窗告知, 不静默
     if (!quitting && win && !win.isDestroyed()) {
-      dialog.showErrorBox("x-code 后端已退出", `server.py 进程退出（code=${code}）。`);
+      dialog.showErrorBox("aulos 后端已退出", `server.py 进程退出（code=${code}）。`);
     }
   });
   return proc;
@@ -159,7 +159,7 @@ async function createWindow() {
     serverProc = startServer();
     if (!(await waitServer(30000))) {
       dialog.showErrorBox(
-        "x-code 启动失败",
+        "aulos 启动失败",
         `Python 后端在 30 秒内未能就绪。\n若 ${DEFAULT_PORT}–${DEFAULT_PORT + 19} 端口被其他程序占用, 请关闭后重试。`
       );
       app.quit();
@@ -174,7 +174,7 @@ async function createWindow() {
     minHeight: 600,
     backgroundColor: "#101014",   // 与前端深色主题一致, 避免启动闪白
     autoHideMenuBar: true,
-    title: "x-code",
+    title: "aulos",
     icon: path.join(ROOT, "static", "icon.png"),   // 窗口/任务栏图标（打包成 exe 需另配 .ico）
     show: false,
     webPreferences: {
@@ -222,7 +222,7 @@ if (!gotLock) {
   app.quit();
 } else {
   // Windows 通知必需: 不设 AppUserModelID 的话 Web Notification toast 显示异常
-  if (process.platform === "win32") app.setAppUserModelId("com.xcode.desktop");
+  if (process.platform === "win32") app.setAppUserModelId("com.aulos.desktop");
   // 系统原生"选择文件夹"对话框（渲染层经 preload 桥调用）
   ipcMain.handle("pick-folder", async () => {
     const opts = { title: "选择文件夹", properties: ["openDirectory"] };

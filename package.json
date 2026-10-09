@@ -1,7 +1,7 @@
 {
-  "name": "x-code",
-  "version": "4.2.6",
-  "description": "x-code 桌面端: Electron 壳 + FastAPI 后端",
+  "name": "aulos",
+  "version": "4.2.7",
+  "description": "aulos 桌面端: Electron 壳 + FastAPI 后端",
   "main": "electron/main.js",
   "private": true,
   "scripts": {
@@ -15,7 +15,7 @@
   },
   "build": {
     "appId": "com.xcode.desktop",
-    "productName": "x-code",
+    "productName": "aulos",
     "directories": {
       "output": "dist"
     },
@@ -28,7 +28,7 @@
         "from": "build/server",
         "to": "server",
         "filter": [
-          "x-code-server*"
+          "aulos-server*"
         ]
       },
       {

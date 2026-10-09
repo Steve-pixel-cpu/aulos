@@ -10,7 +10,7 @@
 #   (音频开箱即用, 无 AppImage 的库遮蔽问题)。
 # 依赖: uv, Node.js, Rust 工具链, dpkg-deb —— 必须在 Debian 系 Linux 上运行
 #       (PyInstaller 无法跨平台构建)。
-# 与 build-mac-tauri.sh 同款对齐策略: 冻结后端沿用 "x-code-server.exe"
+# 与 build-mac-tauri.sh 同款对齐策略: 冻结后端沿用 "aulos-server.exe"
 # 文件名 (Linux 上只是名字), tauri.conf.json / main.rs 零改动。
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -49,7 +49,7 @@ mkdir -p build/server
 
 echo "[3/4] Staging backend + pets into src-tauri (Tauri resources)..."
 mkdir -p src-tauri/server
-cp build/server/x-code-server src-tauri/server/x-code-server.exe   # 文件名与 Windows 对齐
+cp build/server/x-code-server src-tauri/server/aulos-server.exe   # 文件名与 Windows 对齐
 rm -rf src-tauri/pets
 cp -R pets src-tauri/pets
 

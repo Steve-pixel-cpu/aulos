@@ -23,7 +23,7 @@
  *   notes: release notes, defaults to "x-code <ver>"
  *
  * Prereq: build-exe.cmd ran the packaging under a signing key (otherwise
- * there is no .sig file). The key lives in .tauri/x-code.key and must never
+ * there is no .sig file). The key lives in .tauri/aulos.key and must never
  * be committed. Upload dist/latest.json together with the installer to the
  * release; the app's updater endpoint (releases/latest/download/latest.json)
  * always resolves to the newest release.
@@ -37,10 +37,10 @@ const conf = JSON.parse(
   fs.readFileSync(path.join(root, "src-tauri", "tauri.conf.json"), "utf8")
 );
 const version = conf.version;
-const notes = process.argv[2] || `x-code v${version}`;
+const notes = process.argv[2] || `aulos v${version}`;
 
-// NSIS installer: dist/x-code_<ver>_x64-setup.exe + its .sig sidecar
-const exe = `x-code_${version}_x64-setup.exe`;
+// NSIS installer: dist/aulos_<ver>_x64-setup.exe + its .sig sidecar
+const exe = `aulos_${version}_x64-setup.exe`;
 const exePath = path.join(dist, exe);
 const sigPath = exePath + ".sig";
 
@@ -51,8 +51,8 @@ if (!fs.existsSync(exePath)) {
 if (!fs.existsSync(sigPath)) {
   console.error(
     `[make-latest] ${exe}.sig not found - the build ran without a signing key.\n` +
-      `  The key should be .tauri/x-code.key (never commit it); build-exe.cmd injects\n` +
-      `  it plus the password from .tauri/x-code.key.password automatically. Without\n` +
+      `  The key should be .tauri/aulos.key (never commit it); build-exe.cmd injects\n` +
+      `  it plus the password from .tauri/aulos.key.password automatically. Without\n` +
       `  a signature tauri generates no .sig and this version cannot be an update target.`
   );
   process.exit(1);

@@ -240,7 +240,7 @@ api_client = ClaudeApiClient(
 # 由 _apply_provider_config 统一构建/重建（见 _rebuild_utility_client）。
 _utility_client: Optional[object] = None
 
-app = FastAPI(title="x-code web")
+app = FastAPI(title="aulos web")
 
 
 @app.middleware("http")
@@ -253,7 +253,7 @@ async def _token_gate(request: Request, call_next):
         if provided != API_TOKEN:
             return JSONResponse(
                 status_code=403,
-                content={"detail": "请通过 x-code 桌面应用打开"},
+                content={"detail": "请通过 aulos 桌面应用打开"},
             )
     return await call_next(request)
 STATIC_DIR = Path(__file__).parent / "static"
@@ -560,7 +560,7 @@ def _reconcile_orphan_agents() -> None:
     跑测试不会动真实的 agents 目录。"""
     n = get_orchestrator().reconcile_orphans()
     if n:
-        print(f"[x-code] 启动对账: {n} 个上次进程遗留的 running agent 已标记为 failed")
+        print(f"[aulos] 启动对账: {n} 个上次进程遗留的 running agent 已标记为 failed")
 
 
 app.router.add_event_handler("startup", _reconcile_orphan_agents)
@@ -1499,7 +1499,7 @@ def _app_version() -> str:
         if not ver:
             with suppress(Exception):
                 from importlib.metadata import version as _pkgver
-                ver = _pkgver("x-code")
+                ver = _pkgver("aulos")
         _APP_VERSION = ver
     return _APP_VERSION
 
@@ -2253,9 +2253,9 @@ def api_pet_chat(payload: Optional[dict] = Body(None)):
 
 @app.get("/api/ping")
 async def api_ping():
-    """探测端点: 桌面壳用它确认"这是 x-code 后端"。
+    """探测端点: 桌面壳用它确认"这是 aulos 后端"。
     8000 端口可能被 C-Lodop 打印服务等程序抢占, 不能只看 200 就当作就绪。"""
-    return {"app": "x-code"}
+    return {"app": "aulos"}
 
 
 # --- Skills 管理: 清单查看 + 社区仓库安装 + 卸载（设置页"Skills"分区） ---
