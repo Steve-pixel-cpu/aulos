@@ -225,13 +225,14 @@
     display: flex; align-items: center; gap: 6px;
     margin: 14px 14px 4px; flex: none;
   }
-  .seg { flex: 1; display: flex; background: var(--surface-2); border-radius: var(--r-sm); padding: 2px; }
+  .seg { flex: 1; display: flex; border-radius: var(--r-sm); padding: 2px; }
   .seg button {
     flex: 1; height: 26px; border: none; background: none; border-radius: 6px;
     font-size: calc(12.5px * var(--fs-ui)); color: var(--text-3); transition: all .12s;
   }
   .seg button.on {
-    background: var(--surface-3); color: var(--text); font-weight: 600;
+    background: color-mix(in srgb, var(--accent) 16%, var(--surface-3));
+    color: var(--accent); font-weight: 600;
   }
   .seg-acts { display: flex; gap: 2px; }
   .icon-btn {
@@ -2365,7 +2366,7 @@ body.col-resizing, body.col-resizing * { cursor: col-resize !important; }
   animation: rise .18s cubic-bezier(.16, 1, .3, 1);
 }
 #music-panel[hidden] { display: none; }
-/* 下划线选项卡: 无底色, 激活 = 深色文字 + 底部短横线(伪元素做动画) */
+/* 下划线选项卡: 无底色, 激活 = 强调色文字 + 底部短横线(伪元素做动画) */
 .mp-tabs {
   display: flex; align-items: center; gap: 2px; flex: none;
   padding: 8px 12px 0;
@@ -2378,7 +2379,7 @@ body.col-resizing, body.col-resizing * { cursor: col-resize !important; }
   color: var(--text-3); transition: color .12s;
 }
 .mp-tabs > button:hover { color: var(--text-2); }
-.mp-tabs > button.on { color: var(--text); font-weight: 600; }
+.mp-tabs > button.on { color: var(--accent); font-weight: 600; }
 .mp-tabs > button:not(#music-close)::after {
   content: ""; position: absolute; left: 10px; right: 10px; bottom: 0;
   height: 2px; border-radius: 2px 2px 0 0; background: var(--accent);
@@ -2448,7 +2449,8 @@ body.col-resizing, body.col-resizing * { cursor: col-resize !important; }
 }
 .mp-src-slider {
   position: absolute; top: 2px; bottom: 2px; left: 2px; width: 50%;
-  border-radius: 6px; background: var(--surface-3);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 16%, var(--surface-3));
   box-shadow: 0 1px 2px rgba(0, 0, 0, .18);
   transition: transform .18s cubic-bezier(.16, 1, .3, 1);
 }
@@ -2465,7 +2467,8 @@ body.col-resizing, body.col-resizing * { cursor: col-resize !important; }
 .mp-src-btns button svg { flex: none; opacity: .75; }
 .mp-src-btns button.on svg { opacity: 1; }
 .mp-src-btns button:hover { color: var(--text-2); }
-.mp-src-btns button.on { color: var(--text); font-weight: 600; }
+.mp-src-btns button.on { color: var(--accent); font-weight: 600; }
+.mp-src-btns button.on svg { color: var(--accent); opacity: 1; }
 .mp-search-results { flex: 1; overflow-y: auto; min-height: 0; }
 #music-search-input {
   width: 100%; height: 32px; border: 1px solid var(--border-strong);
@@ -2863,16 +2866,23 @@ body.col-resizing, body.col-resizing * { cursor: col-resize !important; }
   :root[data-style="fluent"] .dd-opt { border-radius: 5px; padding: 7px 10px; }
   :root[data-style="fluent"] .dd-opt:hover { background: var(--active); }
   :root[data-style="fluent"] .dd-pop { border-radius: 8px; padding: 5px; }
-  /* 分段控件 (分组/项目): Fluent 分段 = 通底槽 + 选中项浮起白块 */
-  :root[data-style="fluent"] .seg {
-    background: rgba(127, 127, 127, .12);
-    border: 1px solid var(--border);
+  /* 分段控件 (分组/项目 + 电台网易云/B站): 通底不再垫槽, 选中项 =
+   * accent 淡色块浮起, 与默认风格同一语言 */
+  :root[data-style="fluent"] .seg,
+  :root[data-style="fluent"] .mp-src-btns {
+    background: none;
+    border: none;
   }
-  :root[data-style="fluent"] .seg button { border-radius: 5px; }
+  :root[data-style="fluent"] .seg button,
+  :root[data-style="fluent"] .mp-src-btns button { border-radius: 6px; }
   :root[data-style="fluent"] .seg button.on {
-    background: var(--surface-3);
+    background: color-mix(in srgb, var(--accent) 16%, var(--surface-3));
     box-shadow: 0 1px 3px rgba(0, 0, 0, .16);
-    color: var(--text);
+    color: var(--accent);
+  }
+  :root[data-style="fluent"] .mp-src-slider {
+    background: color-mix(in srgb, var(--accent) 20%, var(--surface-3));
+    box-shadow: 0 1px 3px rgba(0, 0, 0, .16);
   }
   /* 键盘焦点: Fluent 式 2px 外圈 */
   :root[data-style="fluent"] button:focus-visible,
@@ -3162,15 +3172,15 @@ body.col-resizing, body.col-resizing * { cursor: col-resize !important; }
    * Fluent(半透明 acrylic), 可读性不受影响。
    * ============================================================ */
   :root[data-mica="1"] body { background: transparent; }
-  /* 面板: 让位云母, 只留极淡的主题色调保持文字可读(云母本身已含壁纸
-   * 亮度平衡, 这里 ~55% 着色即可; 深浅主题各配一版) */
+  /* 裸云母: 聊天区不有着色, 壁纸采样直接做底(云母材质已含亮度平衡,
+   * 文字对比由系统保证); 侧栏留极淡着色区分区域 + 承托侧栏文字 */
   :root[data-mica="1"] #pane,
   :root[data-mica="1"] #doc-header {
-    background: color-mix(in srgb, var(--bg) 55%, transparent);
+    background: transparent;
   }
   :root[data-mica="1"] #sidebar,
   :root[data-mica="1"] #titlebar {
-    background: color-mix(in srgb, var(--bg-side) 62%, transparent);
+    background: color-mix(in srgb, var(--bg-side) 30%, transparent);
   }
   /* 云母下 backdrop-filter 全部退休: 模糊窗口内像素没有意义。
    * 覆盖 Fluent 叠加层里带 blur 的五处(@supports 块), 置 none + 提权 */
@@ -3192,18 +3202,36 @@ body.col-resizing, body.col-resizing * { cursor: col-resize !important; }
     -webkit-backdrop-filter: none !important;
     backdrop-filter: none !important;
   }
-  /* 内容卡: 云母上坐半透 Layer(Win11 LayerFillColor 语言, 白/黑 60-78%)。
-   * 云母本身已被系统模糊压平, 半透只带一点壁纸色调, 不抢正文对比度;
-   * 纯实底反而太重——大块白卡怼在柔和云母上, 层次全无 */
-  :root[data-mica="1"] .bubble { background: color-mix(in srgb, var(--surface) 60%, transparent); }
+  /* 内容: 裸云母语言——正文/思考/todo 不再垫卡底, 直接坐云母上
+   * (壁纸已模糊压平, 文字对比由系统材质保证, 卡框是多余分界)。
+   * 保留底的: 输入框(区域感)、代码块/diff(功能可读性)、弹层(遮内容) */
+  :root[data-mica="1"] .bubble { background: transparent; }
   :root[data-mica="1"] .msg-card,
   :root[data-mica="1"] .thinking-caps,
   :root[data-mica="1"] .plan-card,
-  :root[data-mica="1"] .todo-card { background: color-mix(in srgb, var(--surface) 72%, transparent); }
-  :root[data-mica="1"] #input-card { background: color-mix(in srgb, var(--surface) 80%, transparent); }
+  :root[data-mica="1"] .todo-card,
+  :root[data-mica="1"] .todo-list { background: transparent; }
+  :root[data-mica="1"] #input-card { background: color-mix(in srgb, var(--surface) 78%, transparent); }
   /* 弹层: 实底不变(遮不住底下的聊天内容就不叫弹层) */
   :root[data-mica="1"] .dd-pop,
   :root[data-mica="1"] .modal-box,
   :root[data-mica="1"] .plan-pop,
   :root[data-mica="1"] .approve-card,
   :root[data-mica="1"] #mm-pop { background: var(--pop-bg-solid, var(--surface)); }
+  /* 摸鱼电台: dock 挂侧栏淡着色坐云母(与 #sidebar 同层, 不再是一块实灰),
+   * 弹层面板同弹层规则——退休 backdrop-filter + 实底 */
+  :root[data-mica="1"] #music-dock {
+    background: color-mix(in srgb, var(--bg-side) 30%, transparent);
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+  :root[data-mica="1"] #music-panel {
+    background: var(--pop-bg-solid, var(--surface));
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+  /* 设置页: 整页不透明 --bg 会把云母全遮住 → 退透明坐云母,
+   * 设置卡(纯容器)同"裸云母"语言转透明, 只留边框分层 */
+  :root[data-mica="1"] #settings-page,
+  :root[data-mica="1"] #onboarding-page { background: transparent; }
+  :root[data-mica="1"] .set-row { background: transparent; }

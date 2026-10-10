@@ -266,6 +266,77 @@ def test_call_log_swallows_errors(tmp_path, monkeypatch):
         usage=TokenUsage(input_tokens=1, output_tokens=1))
 
 
+def test_call_log_records_prefix_fingerprint(tmp_path, monkeypatch):
+    # messages 视图传入时记录 prefix_fp: cache_read=0 的归因证据
+    # （指纹不变 = 供应商缓存被逐出; 指纹变了 = 我们改了请求视图）
+    monkeypatch.setattr(call_log, "LOG_DIR", tmp_path)
+    from models import Message
+    from runtime import TokenUsage
+
+    messages = [Message.user_text("first question"),
+                Message(role="assistant",
+                        content=[__import__("models").TextContentBlock(
+                            type="text", text="answer")]),
+                Message.user_text("tool result tail")]
+    call_log.log_model_call(
+        session="s-fp", iteration=2, thinking_level="low", duration_s=1.0,
+        usage=TokenUsage(input_tokens=100, output_tokens=10),
+        messages=messages)
+
+    record = json.loads(
+        (tmp_path / sorted(p.name for p in tmp_path.iterdir())[0]
+         ).read_text(encoding="utf-8").splitlines()[0])
+    fp = record["prefix_fp"]
+    assert isinstance(fp, str) and len(fp) == 12
+    # 稳定性: 同一前缀两次指纹一致
+    call_log.log_model_call(
+        session="s-fp", iteration=3, thinking_level="low", duration_s=1.0,
+        usage=TokenUsage(input_tokens=100, output_tokens=10),
+        messages=messages)
+    record2 = json.loads(
+        (tmp_path / sorted(p.name for p in tmp_path.iterdir())[0]
+         ).read_text(encoding="utf-8").splitlines()[1])
+    assert record2["prefix_fp"] == fp
+
+
+def test_call_log_fingerprint_changes_when_prefix_changes(tmp_path, monkeypatch):
+    # 前缀被改写（如压缩换视图/修补历史）→ 指纹必须变, 否则归因失效
+    monkeypatch.setattr(call_log, "LOG_DIR", tmp_path)
+    from models import Message
+    from runtime import TokenUsage
+
+    def _log(messages):
+        call_log.log_model_call(
+            session=None, iteration=1, thinking_level="low", duration_s=0.1,
+            usage=TokenUsage(input_tokens=1, output_tokens=1),
+            messages=messages)
+
+    _log([Message.user_text("same tail"),
+          Message.user_text("same tail2")])
+    _log([Message.user_text("same tail CHANGED"),
+          Message.user_text("same tail2")])
+    lines = (tmp_path / sorted(p.name for p in tmp_path.iterdir())[0]
+             ).read_text(encoding="utf-8").splitlines()
+    fps = [json.loads(l)["prefix_fp"] for l in lines]
+    assert fps[0] != fps[1]
+
+
+def test_runtime_writes_prefix_fingerprint_per_iteration(tmp_path, monkeypatch):
+    # runtime 接线: 请求视图透传 → 每行日志都带 prefix_fp
+    log_dir = tmp_path / "logs"
+    monkeypatch.setattr(call_log, "LOG_DIR", log_dir)
+
+    client = ScriptedClient([make_events("done")])
+    runtime = make_runtime(client)
+
+    runtime.run_turn("hi")
+
+    record = json.loads(
+        (log_dir / sorted(p.name for p in log_dir.iterdir())[0]
+         ).read_text(encoding="utf-8").splitlines()[0])
+    assert record.get("prefix_fp") is not None
+
+
 def test_runtime_writes_call_log_per_iteration(tmp_path, monkeypatch):
     log_dir = tmp_path / "logs"
     monkeypatch.setattr(call_log, "LOG_DIR", log_dir)

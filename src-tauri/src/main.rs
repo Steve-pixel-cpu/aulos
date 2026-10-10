@@ -905,7 +905,7 @@ async fn open_pet_window(
         "pet",
         WebviewUrl::External(url.parse().map_err(|e| format!("桌宠地址非法: {e}"))?),
     )
-    .title("aulos 桌宠")
+    .title("Aulos 桌宠")
     .decorations(false)
     .always_on_top(true)
     .skip_taskbar(true)
@@ -1410,7 +1410,7 @@ fn create_main_window(app: &AppHandle) -> Result<(), String> {
     let version = &app.package_info().version;
     let bridge_js = format!("window.__AULOS_VERSION__ = '{version}';\n{BRIDGE_JS}");
     let builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("loading.html".into()))
-        .title("aulos")
+        .title("Aulos")
         .decorations(false)   // 自绘标题栏: 高度可控, 主题跟随应用深浅色
         .inner_size(1440.0, 900.0)
         .min_inner_size(960.0, 600.0)

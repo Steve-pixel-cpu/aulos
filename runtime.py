@@ -1491,11 +1491,13 @@ class ConversationRuntime:
                 self.usage().record(usage=token_usage)
                 # 每次调用的耗时与用量日志（best-effort, 失败静默）:
                 # "这轮对话为什么这么久"以后直接看 ~/.aulos/logs/
+                # messages 传请求视图: 日志带前缀指纹, cache_read=0 时
+                # 可归因是"我们改了视图"还是"供应商缓存被逐出"
                 call_log.log_model_call(
                     session=self._log_tag, iteration=iterations,
                     thinking_level=effective_level,
                     duration_s=time.perf_counter() - _call_started,
-                    usage=token_usage)
+                    usage=token_usage, messages=self._model_view())
             curr_session.messages.append(message)
 
             if flow_interrupted:

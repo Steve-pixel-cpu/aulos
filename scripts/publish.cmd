@@ -28,7 +28,7 @@ if "%VER%"=="" (
   exit /b 1
 )
 
-set "EXE=aulos_%VER%_x64-setup.exe"
+set "EXE=Aulos_%VER%_x64-setup.exe"
 set "LATEST=dist\latest.json"
 
 if not exist "%LATEST%" (

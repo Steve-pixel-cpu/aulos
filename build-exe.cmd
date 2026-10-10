@@ -17,7 +17,7 @@ REM                 (auto-update: sign with .tauri\aulos.key -> .sig artifact;
 REM                  then make-latest.js writes dist\latest.json for the updater)
 REM Electron branch: npm install (if needed) -> electron-builder --win
 REM                  (extraResources picks up build\server automatically)
-REM Output: dist\aulos_<ver>_x64-setup.exe (+ .sig + latest.json for auto-update)
+REM Output: dist\Aulos_<ver>_x64-setup.exe (+ .sig + latest.json for auto-update)
 REM         dist\aulos Setup <ver>.exe + dist\aulos <ver>.exe portable (electron)
 REM Publish a release: scripts\publish.cmd <ver> [notes]
 REM Requirements: uv, Node.js (tauri-cli / electron-builder via npm);
@@ -150,11 +150,11 @@ if errorlevel 1 exit /b 1
 
 echo.
 echo Copying installer into dist\...
-copy /y "src-tauri\target\release\bundle\nsis\aulos_*_x64-setup.exe" dist\ >nul
+copy /y "src-tauri\target\release\bundle\nsis\Aulos_*_x64-setup.exe" dist\ >nul
 if errorlevel 1 exit /b 1
 REM auto-update artifacts: .sig signature + latest.json manifest (upload both
 REM together with the installer to the release)
-copy /y "src-tauri\target\release\bundle\nsis\aulos_*_x64-setup.exe.sig" dist\ >nul 2>&1
+copy /y "src-tauri\target\release\bundle\nsis\Aulos_*_x64-setup.exe.sig" dist\ >nul 2>&1
 node scripts\make-latest.js
 if errorlevel 1 echo [warn] latest.json was NOT generated (see reason above); this version cannot be an auto-update target
 if /i not "%TARGET%"=="both" goto :done

@@ -318,7 +318,7 @@ DEFAULT_CMD_TIMEOUT = 30
 MAX_CMD_TIMEOUT = 600
 _KILL_JOIN_GRACE = 2.0     # 杀树后收尸读线程的宽限
 _EXIT_JOIN_GRACE = 5.0     # 正常退出后等剩余输出排干的宽限
-_WAIT_SLICE = 0.2          # 等待循环的轮询步长
+_WAIT_SLICE = 0.05         # 等待循环的轮询步长（小步快查取消/超时, CPU 占用可忽略）
 
 
 def _cancelled() -> bool:
@@ -341,9 +341,11 @@ def _kill_tree(proc: subprocess.Popen) -> None:
     if proc.poll() is None:
         try:
             if platform.system() == "Windows":
+                # 3s 足够本机 taskkill; 超时走 proc.kill() 兜底——
+                # 上限 10s 会把「立即发送」的打断反馈拖到秒级×10
                 subprocess.run(
                     ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
-                    capture_output=True, timeout=10,
+                    capture_output=True, timeout=3,
                 )
             else:
                 os.killpg(proc.pid, signal.SIGKILL)   # start_new_session 下 pgid=pid

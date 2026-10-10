@@ -292,7 +292,8 @@ def test_ws_queues_second_turn_while_busy(client, isolated_store, monkeypatch):
 
 
 def test_ws_queue_promote_jumps_queue_while_busy(client, isolated_store):
-    """「立即」: busy 会话上 queue_promote 把指定待发送消息提到最前并叫停当前轮, 无回执。"""
+    """「立即」: busy 会话上 queue_promote 提到队首并叫停当前轮;
+    受理即广播 turn_interrupting（前端显示「正在中断」）, 之后消息照常处理。"""
     web_session = server.get_or_create_web_session("s-promote")
     web_session.busy = True
     web_session.pending = [{"qid": "q-1", "text": "第一条", "attachments": []},
@@ -300,7 +301,9 @@ def test_ws_queue_promote_jumps_queue_while_busy(client, isolated_store):
     try:
         with ws_connect(client, "s-promote") as ws:
             ws.send_json({"type": "queue_promote", "qid": "q-2"})
-            ws.send_json({"type": "nope"})   # 探测: queue_promote 分支应静默
+            ws.send_json({"type": "nope"})   # 探测: queue_promote 分支不回执错误
+            notice = json.loads(ws.receive_text())
+            assert notice["type"] == "turn_interrupting"
             reply = json.loads(ws.receive_text())
             assert reply["type"] == "error"
             assert "未知消息类型" in reply["message"]
@@ -519,7 +522,9 @@ def test_turn_emitter_无id事件回退FIFO():
 def _stub_session(**kw):
     from types import SimpleNamespace
     s = SimpleNamespace(busy=True, pending=[], prompter=None,
-                        stop_requested=False, broadcast=lambda p: None)
+                        stop_requested=False, broadcast=lambda p: None,
+                        broadcasts=[])
+    s.broadcast = (lambda p: s.broadcasts.append(p)) if True else s.broadcast
     for k, v in kw.items():
         setattr(s, k, v)
     return s
@@ -533,6 +538,9 @@ def test_promote_pending_提到队首并叫停当前轮():
     assert server.promote_pending(s, "b") is True
     assert [it["qid"] for it in s.pending] == ["b", "a", "c"]
     assert s.stop_requested is True
+    # 受理反馈与 request_stop 对齐: 前端靠 turn_interrupting 显示「正在中断」,
+    # 不广播则收束静默期(秒级)里用户以为没点上而连点
+    assert {"type": "turn_interrupting"} in s.broadcasts
 
 
 def test_promote_pending_不在队列时静默忽略():
@@ -540,6 +548,7 @@ def test_promote_pending_不在队列时静默忽略():
 
     assert server.promote_pending(s, "X") is False
     assert s.stop_requested is False
+    assert s.broadcasts == []            # 未受理: 不广播
 
 
 def test_request_stop_清空排队区():

@@ -5,7 +5,7 @@
 #   传版本号会先同步 package.json / tauri.conf.json / Cargo.toml /
 #   pyproject.toml (scripts/set-version.js + npm version); 不传维持当前版本。
 # 产物 (dist/):
-#   aulos_<ver>_amd64.deb          Debian 包 (+ .deb.sig 更新签名)
+#   Aulos_<ver>_amd64.deb          Debian 包 (+ .deb.sig 更新签名)
 #   安装即用系统 WebKitGTK/GStreamer, apt 按 Depends 自动拉齐运行时依赖
 #   (音频开箱即用, 无 AppImage 的库遮蔽问题)。
 # 依赖: uv, Node.js, Rust 工具链, dpkg-deb —— 必须在 Debian 系 Linux 上运行

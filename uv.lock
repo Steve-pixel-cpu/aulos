@@ -62,7 +62,7 @@ wheels = [
 
 [[package]]
 name = "aulos"
-version = "4.2.7"
+version = "5.0.0"
 source = { virtual = "." }
 dependencies = [
     { name = "anthropic" },

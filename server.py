@@ -1368,6 +1368,9 @@ def promote_pending(web_session: WebSession, qid: str) -> bool:
         return False
     web_session.pending.insert(0, web_session.pending.pop(idx))
     web_session.stop_requested = True
+    # 受理反馈与 request_stop 对齐: 工具收束(杀树/泵排干)有秒级延迟,
+    # 不广播 turn_interrupting 前端就静默无反馈, 用户以为没点上而连点
+    web_session.broadcast({"type": "turn_interrupting"})
     if web_session.prompter is not None:
         web_session.prompter.cancel()
     return True

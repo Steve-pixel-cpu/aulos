@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "aulos",
+  "productName": "Aulos",
   "version": "5.0.0",
   "identifier": "com.aulos.desktop",
   "build": {

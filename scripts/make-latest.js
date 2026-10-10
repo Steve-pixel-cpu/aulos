@@ -14,7 +14,7 @@
  *     "platforms": {
  *       "windows-x86_64": {
  *         "signature": "<contents of the .sig file (required, NOT a path)>",
- *         "url": "https://github.com/.../releases/download/v3.4.0/aulos_3.4.0_x64-setup.exe"
+ *         "url": "https://github.com/.../releases/download/v3.4.0/Aulos_3.4.0_x64-setup.exe"
  *       }
  *     }
  *   }
@@ -37,10 +37,10 @@ const conf = JSON.parse(
   fs.readFileSync(path.join(root, "src-tauri", "tauri.conf.json"), "utf8")
 );
 const version = conf.version;
-const notes = process.argv[2] || `aulos v${version}`;
+const notes = process.argv[2] || `Aulos v${version}`;
 
-// NSIS installer: dist/aulos_<ver>_x64-setup.exe + its .sig sidecar
-const exe = `aulos_${version}_x64-setup.exe`;
+// NSIS installer: dist/Aulos_<ver>_x64-setup.exe + its .sig sidecar
+const exe = `Aulos_${version}_x64-setup.exe`;
 const exePath = path.join(dist, exe);
 const sigPath = exePath + ".sig";
 
@@ -59,7 +59,7 @@ if (!fs.existsSync(sigPath)) {
 }
 
 // GitHub asset download URL (tag and asset names are a fixed convention:
-// v<version> / aulos_<version>_x64-setup.exe)
+// v<version> / Aulos_<version>_x64-setup.exe)
 const repo = "Steve-pixel-cpu/aulos";
 const url = `https://github.com/${repo}/releases/download/v${version}/${exe}`;
 
