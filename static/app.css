@@ -2365,19 +2365,28 @@ body.col-resizing, body.col-resizing * { cursor: col-resize !important; }
   animation: rise .18s cubic-bezier(.16, 1, .3, 1);
 }
 #music-panel[hidden] { display: none; }
+/* 下划线选项卡: 无底色, 激活 = 深色文字 + 底部短横线(伪元素做动画) */
 .mp-tabs {
   display: flex; align-items: center; gap: 2px; flex: none;
-  padding: 8px 8px 0;
+  padding: 8px 12px 0;
+  border-bottom: 1px solid var(--border);
 }
 .mp-tabs > button {
-  border: none; background: none; cursor: pointer;
-  padding: 6px 12px; border-radius: 8px 8px 0 0;
+  position: relative; border: none; background: none; cursor: pointer;
+  padding: 6px 10px 9px;
   font-family: inherit; font-size: calc(12.5px * var(--fs-ui));
-  color: var(--text-3); transition: all .12s;
+  color: var(--text-3); transition: color .12s;
 }
-.mp-tabs > button:hover { color: var(--text); background: var(--hover); }
-.mp-tabs > button.on { color: var(--accent); font-weight: 600; background: var(--hover); }
-#music-close { margin-left: auto; }
+.mp-tabs > button:hover { color: var(--text-2); }
+.mp-tabs > button.on { color: var(--text); font-weight: 600; }
+.mp-tabs > button:not(#music-close)::after {
+  content: ""; position: absolute; left: 10px; right: 10px; bottom: 0;
+  height: 2px; border-radius: 2px 2px 0 0; background: var(--accent);
+  opacity: 0; transform: scaleX(.4); transition: opacity .15s, transform .18s cubic-bezier(.16, 1, .3, 1);
+}
+.mp-tabs > button.on:not(#music-close)::after { opacity: 1; transform: scaleX(1); }
+#music-close { margin-left: auto; padding: 6px 4px 9px; border-radius: 6px; }
+#music-close:hover { color: var(--text); background: var(--hover); }
 .mp-tab-body { flex: 1; overflow-y: auto; min-height: 0; }
 .mp-empty {
   display: flex; align-items: center; justify-content: center;
@@ -2430,18 +2439,18 @@ body.col-resizing, body.col-resizing * { cursor: col-resize !important; }
 .mp-s-eq i:nth-child(3) { height: 8px; animation-delay: .5s; }
 @keyframes mb-eq { 0%, 100% { transform: scaleY(.5); } 50% { transform: scaleY(1); } }
 .mp-search-row { padding: 10px 14px 6px; flex: none; }
+/* 来源切换: 对齐侧栏 .seg 分段控件 —— 凹底 + surface-3 凸起滑块, 不用 accent 大色块 */
 .mp-src-btns {
   position: relative; display: inline-flex; align-items: stretch;
-  flex: none; height: 30px;
-  border: 1px solid var(--border-strong); border-radius: 9px;
+  flex: none; height: 28px;
+  border-radius: var(--r-sm);
   background: var(--surface-2); padding: 2px;
 }
 .mp-src-slider {
   position: absolute; top: 2px; bottom: 2px; left: 2px; width: 50%;
-  border-radius: 7px; background: var(--accent-soft, color-mix(in srgb, var(--accent) 14%, transparent));
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent),
-              0 1px 3px color-mix(in srgb, var(--accent) 12%, transparent);
-  transition: transform .18s ease;
+  border-radius: 6px; background: var(--surface-3);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .18);
+  transition: transform .18s cubic-bezier(.16, 1, .3, 1);
 }
 #music-src-btns[data-src="bili"] .mp-src-slider {
   transform: translateX(100%);
@@ -2456,7 +2465,7 @@ body.col-resizing, body.col-resizing * { cursor: col-resize !important; }
 .mp-src-btns button svg { flex: none; opacity: .75; }
 .mp-src-btns button.on svg { opacity: 1; }
 .mp-src-btns button:hover { color: var(--text-2); }
-.mp-src-btns button.on { color: var(--accent); font-weight: 600; }
+.mp-src-btns button.on { color: var(--text); font-weight: 600; }
 .mp-search-results { flex: 1; overflow-y: auto; min-height: 0; }
 #music-search-input {
   width: 100%; height: 32px; border: 1px solid var(--border-strong);
