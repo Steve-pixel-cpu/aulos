@@ -92,26 +92,45 @@ def render(size):
         arc(img, 256 * k, 256 * k, r, 128, 232, WAVE, wd, a)
         arc(img, 256 * k, 256 * k, r, -52, 52, WAVE, wd, a)
 
-    # ---- 双管 ----
-    # 左管 x216 y128 w60 h256 r26
-    vgrad_rect(img, 216 * k, 128 * k, 276 * k, 384 * k, int(26 * k), PIPE_L, horizontal=True)
-    # 左哨口 x222 y112 w48 h34 r14
-    vgrad_rect(img, 222 * k, 112 * k, 270 * k, 146 * k, int(14 * k), [MOUTH, MOUTH])
-    # 左指孔
-    for cy in (216, 266, 316):
-        cxy = 246 * k; r = 7.5 * k
-        d.ellipse([cxy - r, cy * k - r, cxy + r, cy * k + r], fill=HOLE + (255,))
-    # 右管 x284 y176 w60 h208 r26
-    vgrad_rect(img, 284 * k, 176 * k, 344 * k, 384 * k, int(26 * k), PIPE_R, horizontal=True)
-    # 右哨口 x290 y160
-    vgrad_rect(img, 290 * k, 160 * k, 338 * k, 194 * k, int(14 * k), [MOUTH, MOUTH])
-    for cy in (258, 308):
-        cxy = 314 * k; r = 7.5 * k
-        d.ellipse([cxy - r, cy * k - r, cxy + r, cy * k + r], fill=HOLE_R + (255,))
+    # ---- A monogram: 双管交叉构成字母 A ----
+    # 两根圆头粗管从顶点 (256,110) 张开到底部 (166,404)/(346,404),
+    # 中段一条深色横杠封口; 管身沿走向做三段渐变(亮→中→深)。
+    APEX = (256, 110)
+    FOOT_L = (166, 404)
+    FOOT_R = (346, 404)
+    W_PIPE = 52          # 管宽
+    segs = [(0.0, 0.45, PIPE_L[0], PIPE_L[1]),   # 上段: 亮金→中金
+            (0.45, 1.0, PIPE_L[1], PIPE_L[2])]   # 下段: 中金→深金
 
-    # ---- 底部谱线 x196-316 y424 ----
-    d.rounded_rectangle([196 * k, 424 * k - 5 * k, 316 * k, 424 * k + 5 * k],
-                        radius=5 * k, fill=LINE + (128,))
+    def draw_pipe(foot, colors_l2r):
+        """沿 apex→foot 画一根渐变圆头管。colors_l2r: (管左侧色, 管右侧色)"""
+        ax, ay = APEX; fx, fy = foot
+        dx, dy = fx - ax, fy - ay
+        L = math.hypot(dx, dy)
+        ux, uy = dx / L, dy / L           # 走向单位向量
+        nx, ny = -uy, ux                  # 法向(管宽方向)
+        steps = 64
+        overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
+        od = ImageDraw.Draw(overlay)
+        for i in range(steps):
+            t0 = i / steps; t1 = (i + 1) / steps
+            # 沿程渐变: 顶部亮、底部深
+            c = lerp(colors_l2r[0], colors_l2r[1], t0) + (255,)
+            # 每小段是一个粗圆点, 连续铺成管
+            for tt in (t0, t1):
+                px = ax + dx * tt; py = ay + dy * tt
+                hw = (W_PIPE / 2) * k
+                od.ellipse([px * k - hw, py * k - hw, px * k + hw, py * k + hw], fill=c)
+        img.alpha_composite(overlay)
+
+    draw_pipe(FOOT_L, (PIPE_L[0], PIPE_L[1]))   # 左撇: 亮→中
+    draw_pipe(FOOT_R, (PIPE_L[1], PIPE_L[2]))   # 右捺: 中→深
+
+    # 横杠: y=318 处, 宽度覆盖两管内缘, 深褐圆角条
+    bar_y = 318 * k
+    bar_hw = 34 * k                     # 半高
+    d.rounded_rectangle([190 * k, bar_y - bar_hw, 322 * k, bar_y + bar_hw],
+                        radius=bar_hw, fill=MOUTH + (255,))
     return img
 
 def main():
