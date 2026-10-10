@@ -673,13 +673,16 @@
      同域共享全局作用域, 无模块系统。加载序 = 依赖序:
      ui-dialogs(toast/confirm/prompt/escapeHtml/copyText, 被所有人用)
      → tooltip(悬浮提示/跑马灯, 自挂监听零依赖) → notify(完成通知)
-     → app(核心: state/WS/气泡/发送/设置/init) → music/pet。
-     网状耦合的核心留在 app.js; 后续拆分见 README「代码组织与拆分路线」。
-     ?v= 手动 bump 与 no-cache 中间件双保险 -->
+     → app(核心: state/WS/气泡/发送/设置/init)
+     → settings-extras(设置页三节, 刻意放在 app.js 之后:
+       顶层绑定依赖 app.js 的 $, 渲染函数经 openSettings 运行时调用)
+     → music/pet。
+     后续拆分见 README「代码组织与拆分路线」; ?v= 手动 bump 双保险 -->
 <script src="/static/ui-dialogs.js?v=20261010a" defer></script>
 <script src="/static/tooltip.js?v=20261010a" defer></script>
 <script src="/static/notify.js?v=20261010a" defer></script>
-<script src="/static/app.js?v=20261010e" defer></script>
+<script src="/static/app.js?v=20261010f" defer></script>
+<script src="/static/settings-extras.js?v=20261010a" defer></script>
 <script src="/static/music.js?v=20260926b" defer></script>
 <script src="/static/pet.js?v=20260926a" defer></script>
 </body>
