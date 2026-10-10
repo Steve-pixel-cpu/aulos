@@ -787,17 +787,19 @@ def _truncated_title(messages: list[Message]) -> Optional[str]:
     return first_text[:AUTO_TITLE_LEN] or None
 
 
-def backfill_title(session_id: str) -> str:
+def backfill_title(session_id: str, meta: Optional[dict] = None) -> str:
     """兜底回填: 已落盘但从未命名的会话 → 截断首条用户消息命名（一次性的）。
 
     覆盖所有漏网路径：打断/异常分支只落盘不命名、排队跳过、历史遗留。
     返回最终展示标题；无消息或首条无文本则维持 UNTITLED。
+    meta 可传 store.get_session_meta 的结果（列表接口每会话只读一次盘,
+    首条消息文本已在其中）, 缺省现场取。
     """
-    existing = store.get_title(session_id)
-    if existing is not None:
-        return existing
-    messages, _ = store.load_session(session_id)
-    title = _truncated_title(messages)
+    if meta is None:
+        meta = store.get_session_meta(session_id)
+    if meta["title"] is not None:
+        return meta["title"]
+    title = (meta["first_user_text"] or "")[:AUTO_TITLE_LEN] or None
     if not title:
         return UNTITLED
     store.set_title(session_id, title)
@@ -1388,23 +1390,22 @@ async def api_post_bg(request: dict):
 async def api_list_sessions():
     active = _provider_cfg.get("active") or {}
 
-    def _mode_name_for(sid: str) -> str:
+    def _mode_name_for(sid: str, meta: dict) -> str:
         """列表回显的会话权限模式: 存活会话取运行值, 否则取持久值,
         再否则全局默认——前端下拉框据此跟随各会话, 不再停留在上一个会话的值。"""
         live = _sessions.get(sid)
         if live is not None:
             return MODE_TO_NAME[live.permission_mode]
-        persisted_name, _plan = store.get_permission_mode(sid)
-        persisted = NAME_TO_MODE.get(persisted_name or "")
+        persisted = NAME_TO_MODE.get(meta["mode"] or "")
         return MODE_TO_NAME[persisted or app_state.permission_mode]
 
-    def _session_plan(sid: str) -> bool:
+    def _session_plan(sid: str, meta: dict) -> bool:
         """列表回显的会话计划开关: 存活取运行值, 否则持久值/全局默认。"""
         live = _sessions.get(sid)
         if live is not None:
             return live.plan_active
-        name, plan = store.get_permission_mode(sid)
-        return plan if NAME_TO_MODE.get(name or "") is not None \
+        return bool(meta["plan"]) \
+            if NAME_TO_MODE.get(meta["mode"] or "") is not None \
             else app_state.plan_active
 
     def _session_thinking(sid: str) -> str:
@@ -1414,42 +1415,45 @@ async def api_list_sessions():
             return live.thinking_level
         return api_client.thinking_level
 
-    def _session_model(sid: str) -> tuple[Optional[str], Optional[str]]:
+    def _session_model(sid: str, meta: dict) -> tuple[Optional[str], Optional[str]]:
         """列表回显的会话模型 (provider_id, model_id): 存活取运行值,
         否则持久值; (None, None) = 跟随全局 active。"""
         live = _sessions.get(sid)
         if live is not None:
             return (live.model_provider, live.model_id)
-        return store.get_model(sid)
+        return (meta["provider_id"], meta["model_id"])
 
     on_disk = set(store.list_sessions())
     # 已落盘的会话由 store 覆盖，pending 里不再需要；未落盘的保持 pending
     _pending_sessions.difference_update(on_disk)
-    items = [
-        {
+    items = []
+    for sid in on_disk:
+        # 单遍读盘: 命名/消息数/工作目录/持久模式/模型一次取齐, 不再逐
+        # 字段整文件解析（会话库一大, 旧写法每次列表读几十 MB）
+        meta = store.get_session_meta(sid)
+        items.append({
             "id": sid,
             # 兜底回填: 打断/异常/排队跳过等路径漏掉的命名, 在列表读取时
             # 一次性补齐（截断首条用户消息; 无文本则维持 UNTITLED）
-            "title": backfill_title(sid),
-            "message_count": store.count_messages(sid),
+            "title": backfill_title(sid, meta),
+            "message_count": meta["count"],
             # 项目归属: 会话的工作目录(WorkdirRecord, 取最新一条); 未设置时 None
-            "workdir": store.get_workdir(sid),
-            "permission_mode": _mode_name_for(sid),
-            "plan_active": _session_plan(sid),
+            "workdir": meta["workdir"],
+            "permission_mode": _mode_name_for(sid, meta),
+            "plan_active": _session_plan(sid, meta),
             "thinking_level": _session_thinking(sid),
-            "model_provider": _session_model(sid)[0],
-            "model_id": _session_model(sid)[1],
-        }
-        for sid in on_disk
-    ]
+            "model_provider": _session_model(sid, meta)[0],
+            "model_id": _session_model(sid, meta)[1],
+        })
     for sid in _pending_sessions:
+        meta = store.get_session_meta(sid)   # 未落盘: 全默认值, 仅一次 stat
         items.append({"id": sid, "title": UNTITLED, "message_count": 0,
                       "workdir": None,
-                      "permission_mode": _mode_name_for(sid),
-                      "plan_active": _session_plan(sid),
+                      "permission_mode": _mode_name_for(sid, meta),
+                      "plan_active": _session_plan(sid, meta),
                       "thinking_level": _session_thinking(sid),
-                      "model_provider": _session_model(sid)[0],
-                      "model_id": _session_model(sid)[1]})
+                      "model_provider": _session_model(sid, meta)[0],
+                      "model_id": _session_model(sid, meta)[1]})
     items.sort(key=lambda item: item["id"], reverse=True)  # 时间戳字典序即时间序，最新在前
     return {"sessions": items}
 

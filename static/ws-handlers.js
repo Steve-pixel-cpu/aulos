@@ -1480,14 +1480,28 @@ async function sendCurrent() {
   const input = $("input");
   const text = input.value.trim();
   const attachments = attachDraftOf().slice();   // 发送快照, 与草稿解耦
+  if (!text && !attachments.length) return;   // 只发图不打字也允许
+  // 归属先定死: 草稿态在第一个 await 之前同步收编, 之后一律用局部 sid,
+  // 绝不在 await 之后重读 state.sessionId——否则发送途中切会话, 消息会从
+  // 别的会话的 WS 发出去(串会话)或因转正块被跳过而静默丢弃(2026-10-10 事故)
+  const wasDraft = !!state.draft;
+  let sid = state.sessionId;
+  let firstWorkdir = "";
+  let draftMode = null, draftPlan = null;
+  if (wasDraft) {
+    firstWorkdir = state.draftDir || "";
+    draftMode = state.draftMode;
+    draftPlan = state.draftPlan;
+    state.draft = false;         // 同步收编: POST 期间切走/再开新草稿都不会与本流程交错(防双开)
+    state.draftDir = null;       // 已转正: 预选项目用完即清
+    state.draftMode = null;
+    state.draftPlan = null;
+  }
   const run = curRun();
   const busy = !!(run && run.busy);
-  if (!text && !attachments.length) return;   // 只发图不打字也允许
-  if (!state.draft && (!run || !run.ws || run.ws.readyState !== 1)) return;
-  // 草稿态: 此刻才向服务端要 id 建会话条目；失败则留在草稿态
-  let firstWorkdir = "";
-  if (state.draft) {
-    firstWorkdir = state.draftDir || "";
+  if (!wasDraft && (!run || !run.ws || run.ws.readyState !== 1)) return;
+  // 草稿态: 此刻才向服务端要 id 建会话条目；失败则恢复草稿态留在原地
+  if (wasDraft) {
     try {
       const r = await fetch("/api/sessions", {
         method: "POST",
@@ -1495,89 +1509,113 @@ async function sendCurrent() {
         body: JSON.stringify({ workdir: firstWorkdir }),   // 创建即绑定项目, 列表立刻归组
       });
       if (!r.ok) throw new Error("HTTP " + r.status);
-      state.sessionId = (await r.json()).id;
+      sid = (await r.json()).id;
     } catch (e) {
+      state.draft = true;          // 输入框内容没动过, 用户可直接重试
+      state.draftDir = firstWorkdir || null;
+      state.draftMode = draftMode;
+      state.draftPlan = draftPlan;
       toast("创建会话失败: " + e.message);
       return;
     }
   }
-  msgCol().querySelector(".empty-state")?.remove();
-  $("pane").classList.remove("empty-view");   // 有内容了: 输入卡落回底部
+  // 唯一的 await 已过, 以下全同步。adopted = POST 期间无人打断（没点别的
+  // 会话、没再开新草稿）→ 视图跟随新会话; 否则本条转入后台, 不抢前台
+  const adopted = wasDraft && !state.draft && state.sessionId === null;
+  if (adopted) state.sessionId = sid;
+  const foreground = state.sessionId === sid;
+  if (foreground) {
+    colOf(sid).querySelector(".empty-state")?.remove();
+    $("pane").classList.remove("empty-view");   // 有内容了: 输入卡落回底部
+    nearBottom = true;
+    scrollToBottom(true);   // 发送是用户主动行为: 无论滚到哪里, 立刻回到底部看最新消息
+  }
+  if (adopted) {
+    $("ws-dock").innerHTML = "";                // 草稿态的工作区条/建议 chips 一并撤下
+    $("sug-dock").innerHTML = "";
+  }
   skillMenuDestroy();   // 发送即收起斜杠补全（排队/插队路径同样覆盖）
-  $("ws-dock").innerHTML = "";                // 草稿态的工作区条/建议 chips 一并撤下
-  $("sug-dock").innerHTML = "";
-  nearBottom = true;
-  scrollToBottom(true);   // 发送是用户主动行为: 无论滚到哪里, 立刻回到底部看最新消息
   const qid = genQid();   // 本地生成: 排队卡片与服务端排队区按同一 qid 配对
   // 计划审批挂起时追加 = 否决计划并立刻接力: 不进待发送卡（否则要手动点
   // "立即"才发得上）, 乐观加气泡 + 就地定格旧计划, 服务端打断当前轮后
   // 以这条消息为下一棒开跑（turn_started 回执按 qid 去重, 不重复加气泡）
-  if (busy && isAwaitingPlan(runOf(state.sessionId))) {
-    const pr = runOf(state.sessionId);
-    addUserBubble(text, attachments, msgCol(), null, qid);
+  if (busy && isAwaitingPlan(runOf(sid))) {
+    const pr = runOf(sid);
+    addUserBubble(text, attachments, colOf(sid), null, qid);
     input.value = "";
     setAttachDraft([]);          // 已发送: 清空本会话的附件草稿
     autoGrow(input);
     saveCurrentInput();          // 已发送: 清空本会话的输入草稿
     updateSendBtn();             // 输入已清空: 圆钮切回"停止"形态, 随时可中断
-    expirePlanCard(pr, state.sessionId, "已过期 · 继续对话后重新规划");
-    sendWs({ type: "user", text, attachments, qid });
+    expirePlanCard(pr, sid, "已过期 · 继续对话后重新规划");
+    sendWs({ type: "user", text, attachments, qid }, sid);
     return;
   }
   // 本轮在跑: 消息进入输入框上方的待发送卡片, 轮到它时才出现在消息列
   if (busy) {
-    runOf(state.sessionId).queue.push({ qid, text, attachments });
+    runOf(sid).queue.push({ qid, text, attachments });
     input.value = "";
     setAttachDraft([]);          // 已发送: 清空本会话的附件草稿
     autoGrow(input);
     saveCurrentInput();          // 已发送: 清空本会话的输入草稿
-    updateSendBtn();             // 输入已清空: 圆钮切回"停止"形态, 随时可中断
+    updateSendBtn();             // 输入已清空: 圆钮切回"停止"形态
     renderQueueCards();
-    sendWs({ type: "user", text, attachments, qid });
+    sendWs({ type: "user", text, attachments, qid }, sid);
     return;
   }
-  addUserBubble(text, attachments);
-  input.value = "";
-  setAttachDraft([]);          // 已发送: 清空本会话的附件草稿
-  autoGrow(input);
-  saveCurrentInput();          // 已发送: 清空本会话的输入草稿
-  updateSendBtn();             // 输入已清空: 忙碌态下圆钮切回"停止"形态
-  const myRun = runOf(state.sessionId);
-  if (!busy) {
-    myRun.busy = true;
-    myRun.awaiting = false;
-    myRun.lastThinkRow = null;   // 新一轮开始: 打断标记只属于当前轮的思考行
-    beginOptimisticThinking(myRun, state.sessionId, msgCol());   // 乐观胶囊: 发送瞬间即有反馈
+  addUserBubble(text, attachments, colOf(sid), null, qid);
+  // 草稿存档清掉: 旧实现在草稿态尚存活时经 setAttachDraft/saveCurrentInput
+  // 顺手清档; 现在草稿态入口即收编, 这两份存档必须显式清——否则已发出的
+  // 文本/附件会在下一个新草稿里幽灵恢复
+  state.draftInput = "";
+  state.draftAttach = [];
+  if (foreground) {
+    input.value = "";
+    setAttachDraft([]);          // 已发送: 清空本会话的附件草稿
+    autoGrow(input);
+    saveCurrentInput();          // 已发送: 清空本会话的输入草稿
+    updateSendBtn();             // 输入已清空: 忙碌态下圆钮切回"停止"形态
+  }
+  const myRun = runOf(sid);
+  myRun.busy = true;
+  myRun.awaiting = false;
+  myRun.lastThinkRow = null;   // 新一轮开始: 打断标记只属于当前轮的思考行
+  beginOptimisticThinking(myRun, sid, colOf(sid));   // 乐观胶囊: 发送瞬间即有反馈
+  if (foreground) {
     syncThinkingIndicator();
     setBusyUi(true);
-    renderSessionList();   // 立即显示运行状态（转圈图标）
   }
-  if (state.draft) {
-    state.draft = false;
-    state.draftDir = null;   // 已转正: 预选项目用完即清
+  renderSessionList();   // 立即显示运行状态（转圈图标）
+  if (wasDraft) {
     myRun.loaded = true;   // 草稿列里的气泡就是全部内容, 无需再拉历史
-    renderQueueCards();   // 草稿转正: 现在挂在具体会话上（新会话队列必为空, 清掉草稿态可能的残留）
-    // 草稿列转正为该会话的消息列（气泡不挪窝）
-    colOf("__draft__").id = "msg-col-" + state.sessionId;
-    // 列表此刻才出现新条目并选中；WS 建立期间消息会排队，onopen 后冲刷
-    await loadSessions();
-    renderSessionList();
-    markActiveSession();
-    refreshDocTitle();
-    connectWs(state.sessionId);
+    if (foreground) {
+      renderQueueCards();   // 草稿转正: 现在挂在具体会话上（新会话队列必为空, 清掉草稿态可能的残留）
+      // 草稿列转正为该会话的消息列（气泡不挪窝）; 仅前台可改列名,
+      // 后台路径动了会偷走用户切去视图/新草稿的可见列
+      colOf("__draft__").id = "msg-col-" + sid;
+    }
+    connectWs(sid);
+    // WS 建立期间消息进 pendingSends, onopen 后按序冲刷。列表刷新退到
+    // 发送之后后台跑: 旧实现在 connectWs 前 await loadSessions(), 那扇
+    // await 窗口正是串会话事故的第二案发地; 现在发送不再等列表
+    loadSessions().then(() => {
+      renderSessionList();   // 新条目此刻才入库; 后台发出的也要在侧栏可见
+      if (state.sessionId === sid) {
+        markActiveSession();
+        refreshDocTitle();
+      }
+    });
   }
   // 草稿态预选的权限模式/计划开关: 先于首条消息冲进 pendingSends/WS,
   // onopen 按序发送保证服务端在建会话首条消息前就切好模式
-  if (state.draftMode || state.draftPlan != null) {
-    const base = state.draftMode || "prompt";
-    const plan = !!state.draftPlan;
+  if (draftMode || draftPlan != null) {
+    const base = draftMode || "prompt";
+    const plan = !!draftPlan;
     myRun.permissionMode = mkModeValue(base, plan);
     myRun.planActive = plan;
-    sendWs({ type: "set_permission_mode", mode: base, plan });
-    state.draftMode = null;
-    state.draftPlan = null;
+    sendWs({ type: "set_permission_mode", mode: base, plan }, sid);
   }
-  sendWs({ type: "user", text, attachments, workdir: firstWorkdir, qid });
+  sendWs({ type: "user", text, attachments, workdir: firstWorkdir, qid }, sid);
 }
 
 function sendWs(obj, sid) {

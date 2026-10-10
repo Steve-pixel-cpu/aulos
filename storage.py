@@ -90,6 +90,9 @@ class SessionStore:
         # 文件追加(新消息)必改 mtime/size, 缓存自然失效; 进程重启清零,
         # 无持久化——派生数据不落盘, 永不与 JSONL 失同步。
         self._search_text_cache: dict[Path, tuple[int, int, str]] = {}
+        # 会话列表元数据缓存: session_id -> ((mtime_ns, size), meta dict)。
+        # 同一套失效哲学, 供 get_session_meta 单遍读盘用。
+        self._meta_cache: dict[str, tuple[tuple[int, int], dict]] = {}
 
     def  _append_entry(self, path: Path, entry):
         """追加一条 JSONL 记录。entry 是已 dump 的 dict 或 pydantic 模型。
@@ -169,6 +172,7 @@ class SessionStore:
         if not file_path.exists():
             raise KeyError(session_id)
         file_path.unlink()
+        self._meta_cache.pop(session_id, None)   # 派生元数据随文件一起消失
 
     # --- 会话命名 (prompt_dev/session_title.md) ---
     # 存储方案: 标题作为独立记录类型与消息条目共存于同一 JSONL 文件。
@@ -303,6 +307,72 @@ class SessionStore:
         if latest is None:
             return (None, None)
         return (latest.provider_id, latest.model_id)
+
+    def get_session_meta(self, session_id: str) -> dict:
+        """会话列表元数据: 单遍读盘一次提取 title/消息数/workdir/权限
+        模式/模型。GET /api/sessions 的专用通道——旧实现每会话连调 5 个
+        getter, 每个都整文件读盘解析, 会话库一大, 每次列表就是几十 MB 的
+        读盘大户。
+
+        字段语义与对应 getter 逐一对齐: title = 最新 TitleRecord（无则
+        None, 兜底命名留给调用方, 所需的 first_user_text 一并返回）;
+        count = count_messages（活跃链长度）; mode/plan = get_permission_mode
+        （含 plan/read-only 旧数据归一）; provider_id/model_id = get_model;
+        workdir = get_workdir; first_user_text = 首条用户消息的拼接文本
+        （首条非用户消息/无文本则 None）。
+
+        返回缓存副本, 调用方可放心改。缓存校验与 _search_text_cache 同一
+        套哲学: (mtime_ns, size) 对不上即重算——追加写入必改两者, 自然
+        失效; 进程重启清零, 派生数据不落盘, 永不与 JSONL 失同步。"""
+        empty = {"title": None, "count": 0, "workdir": None, "mode": None,
+                 "plan": False, "provider_id": None, "model_id": None,
+                 "first_user_text": None}
+        file_path = self._session_path(session_id)
+        try:
+            st = file_path.stat()
+        except OSError:
+            return empty   # 未落盘（pending 会话）/已被删除: 全默认值
+        key = (st.st_mtime_ns, st.st_size)
+        cached = self._meta_cache.get(session_id)
+        if cached and cached[0] == key:
+            return dict(cached[1])
+        title: Optional[str] = None
+        workdir: Optional[str] = None
+        mode: Optional[str] = None
+        plan = False
+        provider_id: Optional[str] = None
+        model_id: Optional[str] = None
+        msg_entries: list[StorageEntry] = []
+        for entry in self._read_entries(file_path):
+            if isinstance(entry, StorageEntry):
+                msg_entries.append(entry)
+            elif isinstance(entry, TitleRecord):
+                title = entry.title
+            elif isinstance(entry, WorkdirRecord):
+                workdir = entry.workdir
+            elif isinstance(entry, PermissionModeRecord):
+                mode, plan = entry.mode, bool(entry.plan)
+            elif isinstance(entry, ModelRecord):
+                provider_id, model_id = entry.provider_id, entry.model_id
+        if mode in ("plan", "read-only"):   # 旧数据归一: 同 get_permission_mode
+            mode, plan = "prompt", True
+        count = 0
+        first_user_text: Optional[str] = None
+        if msg_entries:
+            chain = self._rebuild_chain(msg_entries)
+            count = len(chain)
+            first = chain[0].message
+            if first.get("role") == "user":
+                text = " ".join(
+                    b.get("text", "") for b in first.get("content", [])
+                    if isinstance(b, dict) and b.get("type") == "text").strip()
+                first_user_text = text or None
+        meta = {"title": title, "count": count, "workdir": workdir,
+                "mode": mode, "plan": plan,
+                "provider_id": provider_id, "model_id": model_id,
+                "first_user_text": first_user_text}
+        self._meta_cache[session_id] = (key, meta)
+        return dict(meta)
 
     def _session_path(self, session_id: str) -> Path:
         return self._storage_dir / f"{session_id}.jsonl"
