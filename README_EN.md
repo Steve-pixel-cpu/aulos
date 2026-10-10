@@ -450,13 +450,22 @@ The two historical monolith files are being split incrementally by domain
   `server_pets.py` (routes register on import). Every existing `import server`
   call site and test keeps working via re-exports. Next candidates: WS
   routing, settings/provider runtime state, Skills/memory management.
-- **`static/app.js` (frontend, classic global-scope script)**: splits by
-  "migrate low-coupling domains first" — `notify.js` (completion
-  notifications/chime) is done; `music.js`/`pet.js` are earlier precedents.
-  Domains share the global scope via deferred sequential loading — no module
-  system. The densely-coupled core (state/WS/bubble factory/send pipeline)
-  stays in app.js; no ES-module conversion until frontend tests exist (the
-  export surface is too large; regression risk outweighs benefit).
+- **`static/app.js` (frontend, classic global-scope script)**: the split is
+  complete — 6946 → **2205 lines** (-68%) across 9 domain files loaded in
+  dependency order via defer (no module system, shared global scope):
+  `ui-dialogs` → `tooltip` → `notify` → app (core: state/WS connect/send/
+  session switch/boot) → `settings-extras` → `desktop` → `bubbles` →
+  `msg-extras` → `ws-handlers` (dispatch + all on* handlers) → `sidebar`
+  → `settings-page` → `music`/`pet`.
+  Contract: earlier files only define functions; later files may bind at
+  top level; domains called BY the core (bubbles/sidebar/ws-handlers)
+  resolve at call time, so order is naturally safe.
+  Regression net: `npm run test:web` (19 jsdom assertions over the real
+  sources + real index.html skeleton) and `tests/web/e2e.py` (Playwright
+  x3: streaming reply / queue-promote broadcast / reconnect).
+  The remainder of app.js is the densely-coupled core — further splitting
+  needs an event-bus refactor, deferred until the test net thickens.
+  No ES-module conversion for now: every file is under 2300 lines.
 
 ## Testing
 

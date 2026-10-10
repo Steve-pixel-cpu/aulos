@@ -382,11 +382,21 @@ cmd 批处理用 `findstr` 提取。改名只动 conf 一处，各发布脚本�
   `server_pets.py`（import 即挂路由）。`import server` 的全部既有调用点与
   测试零改动——server.py re-export 共享名。后续候选：WS 路由、设置/供应商
   运行态、Skills/记忆管理各自成模块。
-- **`static/app.js`（前端，全局作用域经典脚本）**：按「低耦合域先外迁」
-  模式拆分，已完成 `notify.js`（完成通知/提示音）；`music.js`/`pet.js` 是
-  更早的外迁先例。同域共享全局作用域、defer 按序加载，无模块系统。
-  网状耦合的核心（state/WS/气泡工厂/发送链路）留在 app.js——在补齐
-  前端测试前不做 ES 模块化改造（导出面太大，回归风险大于收益）。
+- **`static/app.js`（前端，全局作用域经典脚本）**：已按「低耦合域先外迁」
+  模式完成拆分——6946 → **2205 行**（-68%），9 个域文件按依赖序 defer
+  加载（无模块系统，共享全局作用域）：`ui-dialogs`(弹窗/纯工具) →
+  `tooltip` → `notify` → app(核心: 状态/WS连接/发送/会话切换/启动) →
+  `settings-extras`(设置三节) → `desktop`(标题栏/右键/更新/拖宽) →
+  `bubbles`(气泡工厂) → `msg-extras`(滚动/minimap/斜杠/划词) →
+  `ws-handlers`(WS 分派+全部处理器) → `sidebar`(会话列表) →
+  `settings-page`(设置弹窗九节) → `music`/`pet`。
+  加载序契约: 前段只定义函数, 后段顶层绑定可依赖前段; 被核心调用的
+  域（bubbles/sidebar/ws-handlers）运行时解引用, 顺序天然安全。
+  回归网: `npm run test:web`（jsdom 19 断言, eval 真实源码+真实
+  index.html 骨架）+ `tests/web/e2e.py`（Playwright 主干×3: 流式
+  回执/插队广播/断线重连）。app.js 剩余部分即「网状耦合核心」,
+  再拆需事件总线重构——待测试更厚时再评估。ES 模块化暂不做:
+  拆分后单文件已均 <2300 行, 收益不再显著。
 
 ## 测试
 
