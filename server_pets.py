@@ -20,8 +20,9 @@ from fastapi.responses import FileResponse, JSONResponse
 from api_client import make_api_client, normalize_base_url as _normalize_base_url, \
     normalize_protocol
 from config import USER_DIR
-from main import TOOLS
-from server_common import api_client, app
+# TOOLS 经 server_common 转出（它已 from main import TOOLS 并保留在命名空间）:
+# 拆分约定是功能域只依赖 server_common, 不反向 import 内核 main
+from server_common import TOOLS, api_client, app
 
 # Codex 图集契约: 固定 1536 宽、8 列; v1 高 1872(9 行), v2 高 2288(11 行,
 # 末两行是环视——本次也接受, 前端只播 0-8 行)。单格 192×208。

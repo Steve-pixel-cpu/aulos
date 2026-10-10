@@ -19,8 +19,11 @@ from runtime import ConversationRuntime
 from tools import ToolRegistry, bash_tool, read_tool, write_tool, powershell_tool
 
 TOOL_WHITELIST: dict[str, set[str]] = {
-    "explore": {"read_file"},
-    "plan": {"read_file"},
+    # explore/plan: 调查三件套（read_file + grep + glob）——派出去的
+    # 调查员得能自己搜代码, 否则"派不如自己查", 委派永远不会发生。
+    # 保持纯只读: plan 模式放行 explore 委派（permissions 层）以此为前提。
+    "explore": {"read_file", "grep", "glob"},
+    "plan": {"read_file", "grep", "glob"},
     "verification": {"bash", "read_file",
                      "browser_navigate", "browser_snapshot",
                      "browser_console"},

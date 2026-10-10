@@ -44,7 +44,7 @@ class ConfigEntry(BaseModel):
     """一个配置文件的位置和来源"""
     source: ConfigSource
     path: Path
-    model_config = {"Frozen": True, "arbitrary_types_allowed": True}
+    model_config = {"frozen": True, "arbitrary_types_allowed": True}
 
 
 class ConfigError(Exception):

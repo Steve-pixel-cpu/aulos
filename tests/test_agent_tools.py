@@ -99,7 +99,7 @@ def test_agent_tools_absent_from_worker_whitelists():
 
 def test_tool_specs_for_filters_by_whitelist():
     specs = _tool_specs_for(TOOL_WHITELIST["explore"])
-    assert [s["name"] for s in specs] == ["read_file"]
+    assert [s["name"] for s in specs] == ["glob", "grep", "read_file"]
 
 
 def test_tool_specs_for_general_has_no_agent_tools():

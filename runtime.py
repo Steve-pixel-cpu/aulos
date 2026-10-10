@@ -164,8 +164,11 @@ CONCLUSION_CHECKPOINT_TEXT = (
     "If the evidence in hand already answers it, stop and write the "
     "final answer now. If one decisive call would settle the remaining "
     "uncertainty, run it yourself and close — do not hand the user "
-    "homework. Auxiliary certainty (side-quests) can wait or be "
-    "skipped: the user asked one thing."
+    "homework. If what remains is broad investigation (3+ files or 5+ "
+    "searches), delegate one subagent sweep via agent_tool instead of "
+    "grinding inline; its conclusions come back to you. Auxiliary "
+    "certainty (side-quests) can wait or be skipped: the user asked "
+    "one thing."
 )
 
 # --- MicroCompact: 旧工具结果清除（借鉴 Claude Code microCompact 设计）---

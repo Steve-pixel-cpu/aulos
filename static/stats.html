@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>调用遥测 · Aulos</title>
+<!-- 独立页面（不嵌 index）: 原生 JS + fetch, 同源自动带 cookie（aulos_token）,
+     门禁与主应用同一套（server.py 的 _token_gate 认 cookie 即放行）。
+     入口: http://127.0.0.1:8000/stats.html -->
+<style>
+  :root {
+    --bg: #101014; --surface: #17171d; --surface-2: #1d1d24; --surface-3: #26262f;
+    --border: #26262e; --border-strong: #34343e;
+    --text: #ececf1; --text-2: #a0a1ab; --text-3: #6c6d78;
+    --ok: #4ade80; --warn: #fbbf24; --accent: #b9bec7;
+    --r-md: 12px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.6 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+    padding: 32px 24px 64px;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: var(--text-3); font-size: 12px; margin-bottom: 24px; }
+  section { margin-bottom: 32px; }
+  h2 { font-size: 15px; margin: 0 0 12px; color: var(--text-2); font-weight: 600; }
+  .bar { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+  input[type="date"], input[type="number"], select {
+    background: var(--surface-2); color: var(--text);
+    border: 1px solid var(--border-strong); border-radius: 8px;
+    padding: 6px 10px; font: inherit; font-size: 13px; color-scheme: dark;
+  }
+  button {
+    background: var(--surface-3); color: var(--text);
+    border: 1px solid var(--border-strong); border-radius: 8px;
+    padding: 6px 14px; font: inherit; font-size: 13px; cursor: pointer;
+  }
+  button:hover { filter: brightness(1.15); }
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--r-md); overflow: hidden;
+  }
+  .scroll { max-height: 480px; overflow: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 8px 12px; text-align: right; white-space: nowrap; }
+  th { color: var(--text-3); font-weight: 500; background: var(--surface-2);
+       position: sticky; top: 0; border-bottom: 1px solid var(--border); }
+  td:first-child, th:first-child, td:nth-child(2), th:nth-child(2) { text-align: left; }
+  tbody tr { border-bottom: 1px solid var(--border); }
+  tbody tr:hover { background: var(--surface-2); }
+  td.dim, th.dim { color: var(--text-2); }
+  .rate-ok { color: var(--ok); }
+  .empty { color: var(--text-3); padding: 20px 12px; text-align: center; }
+  .err { color: var(--warn); padding: 20px 12px; }
+  code { background: var(--surface-2); border-radius: 4px; padding: 1px 6px;
+         font-size: 12px; color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>调用遥测</h1>
+  <div class="sub">模型调用耗时与 token 用量（数据源 ~/.aulos/logs/runtime-*.log，只读）</div>
+
+  <!-- 区块一: 天数概览 -->
+  <section>
+    <h2>逐天概览 <span class="bar" style="display:inline-flex;margin:0">
+      <input type="number" id="days-n" value="14" min="1" max="365" style="width:72px">天
+      <button id="btn-days">刷新</button></span></h2>
+    <div class="card"><div class="scroll">
+      <table id="tbl-days">
+        <thead><tr>
+          <th>日期</th><th>调用数</th><th>会话数</th><th>总耗时(s)</th>
+          <th>平均(s)</th><th class="dim">input</th><th class="dim">cache_read</th>
+          <th class="dim">cache_create</th><th class="dim">output</th><th>缓存命中</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div></div>
+  </section>
+
+  <!-- 区块二: 会话排行 -->
+  <section>
+    <h2>会话排行 <span class="bar" style="display:inline-flex;margin:0">
+      <input type="number" id="sess-n" value="50" min="1" max="500" style="width:72px">条
+      <button id="btn-sess">刷新</button></span></h2>
+    <div class="card"><div class="scroll">
+      <table id="tbl-sess">
+        <thead><tr>
+          <th>会话</th><th>调用数</th><th>总耗时(s)</th><th>平均(s)</th>
+          <th>最大(s)</th><th class="dim">tokens(in+cache)</th>
+          <th class="dim">output</th><th>首次调用</th><th>最后调用</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div></div>
+  </section>
+
+  <!-- 区块三: 指定日调用流水 -->
+  <section>
+    <h2>调用流水 <span class="bar" style="display:inline-flex;margin:0">
+      <input type="date" id="calls-date">
+      <label class="sub" style="margin:0">条数上限
+        <input type="number" id="calls-limit" value="200" min="1" max="2000" style="width:80px"></label>
+      <button id="btn-calls">加载</button></span></h2>
+    <div class="card"><div class="scroll">
+      <table id="tbl-calls">
+        <thead><tr>
+          <th>时间</th><th>会话</th><th>迭代</th><th>思考</th><th>耗时(s)</th>
+          <th class="dim">context</th><th class="dim">input</th><th class="dim">cache_read</th>
+          <th class="dim">cache_create</th><th class="dim">output</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div></div>
+    <div class="sub" id="calls-meta" style="margin-top:8px"></div>
+  </section>
+</div>
+
+<script>
+"use strict";
+const $ = s => document.querySelector(s);
+const fmt = n => (typeof n === "number") ? n.toLocaleString("zh-CN") : "–";
+const pct = v => (v === null || v === undefined) ? "–" :
+  (v * 100).toFixed(1) + "%";
+
+function fill(tbodyId, rows, cells, emptyText) {
+  const tb = $(tbodyId);
+  if (!rows || !rows.length) {
+    tb.innerHTML = `<tr><td colspan="9" class="empty"></td></tr>`;
+    tb.firstElementChild.firstElementChild.textContent = emptyText;
+    return;
+  }
+  tb.innerHTML = rows.map(r => "<tr>" + cells(r).map(c =>
+    `<td${c.cls ? ` class="${c.cls}"` : ""}>${c.v}</td>`).join("") + "</tr>").join("");
+}
+
+async function jget(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+}
+
+// ---- 区块一: 逐天概览 ----
+async function loadDays() {
+  const n = $("#days-n").value || 14;
+  try {
+    const b = await jget(`/api/stats/days?n=${n}`);
+    fill("#tbl-days tbody", b.days, d => [
+      { v: d.date },
+      { v: fmt(d.calls) },
+      { v: fmt(d.sessions) },
+      { v: fmt(+d.total_duration_s.toFixed(1)) },
+      { v: d.avg_duration_s.toFixed(2) },
+      { v: fmt(d.input_tokens), cls: "dim" },
+      { v: fmt(d.cache_read_tokens), cls: "dim" },
+      { v: fmt(d.cache_creation_tokens), cls: "dim" },
+      { v: fmt(d.output_tokens), cls: "dim" },
+      { v: pct(d.cache_hit_rate), cls: d.cache_hit_rate >= 0.5 ? "rate-ok" : "" },
+    ], "暂无调用日志");
+  } catch (e) { renderErr("#tbl-days tbody", e); }
+}
+
+// ---- 区块二: 会话排行 ----
+async function loadSessions() {
+  const n = $("#sess-n").value || 50;
+  try {
+    const b = await jget(`/api/stats/sessions?n=${n}`);
+    fill("#tbl-sess tbody", b.sessions, s => [
+      { v: (s.session || "(无会话)").slice(0, 12), cls: "" },
+      { v: fmt(s.calls) },
+      { v: fmt(+s.total_duration_s.toFixed(1)) },
+      { v: s.avg_duration_s.toFixed(2) },
+      { v: s.max_duration_s.toFixed(2) },
+      { v: fmt(s.input_tokens + s.cache_read_tokens + s.cache_creation_tokens), cls: "dim" },
+      { v: fmt(s.output_tokens), cls: "dim" },
+      { v: (s.first_ts || "").replace("T", " ").slice(5, 19), cls: "dim" },
+      { v: (s.last_ts || "").replace("T", " ").slice(5, 19), cls: "dim" },
+    ], "暂无会话记录");
+  } catch (e) { renderErr("#tbl-sess tbody", e); }
+}
+
+// ---- 区块三: 指定日流水 ----
+async function loadCalls() {
+  const d = $("#calls-date").value;
+  if (!d) { $("#calls-meta").textContent = "请先选择日期"; return; }
+  const date = d.replaceAll("-", "");
+  const limit = $("#calls-limit").value || 200;
+  try {
+    const b = await jget(`/api/stats/calls?date=${date}&limit=${limit}`);
+    fill("#tbl-calls tbody", b.calls, c => [
+      { v: (c.ts || "").replace("T", " ").slice(5, 23), cls: "dim" },
+      { v: (c.session || "(无)").slice(0, 10) },
+      { v: c.iter ?? "–" },
+      { v: c.thinking ?? "–", cls: "dim" },
+      { v: c.duration_s.toFixed(2) },
+      { v: fmt(c.context_tokens), cls: "dim" },
+      { v: fmt(c.input_tokens), cls: "dim" },
+      { v: fmt(c.cache_read), cls: "dim" },
+      { v: fmt(c.cache_creation), cls: "dim" },
+      { v: fmt(c.output_tokens), cls: "dim" },
+    ], "该日暂无调用");
+    $("#calls-meta").textContent =
+      `共 ${b.total} 条` + (b.truncated ? `，仅显示前 ${b.calls.length} 条` : "") +
+      (b.broken_lines ? `，跳过坏行 ${b.broken_lines} 条` : "");
+  } catch (e) { renderErr("#tbl-calls tbody", e); }
+}
+
+function renderErr(tbody, e) {
+  const tb = $(tbody);
+  tb.innerHTML = `<tr><td colspan="9" class="err"></td></tr>`;
+  tb.firstElementChild.firstElementChild.textContent = "加载失败: " + e.message;
+}
+
+$("#btn-days").addEventListener("click", loadDays);
+$("#btn-sess").addEventListener("click", loadSessions);
+$("#btn-calls").addEventListener("click", loadCalls);
+$("#days-n").addEventListener("keydown", e => e.key === "Enter" && loadDays());
+$("#sess-n").addEventListener("keydown", e => e.key === "Enter" && loadSessions());
+$("#calls-date").addEventListener("keydown", e => e.key === "Enter" && loadCalls());
+
+// 默认选中今天
+$("#calls-date").value = new Date().toLocaleDateString("sv-SE");
+loadDays();
+loadSessions();
+</script>
+</body>
+</html>

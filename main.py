@@ -1327,6 +1327,16 @@ class StartupError(RuntimeError):
     """启动装配失败（缺 API_KEY / 非法覆盖参数）。消息可直接展示给用户。"""
 
 
+def env_base_url() -> Optional[str]:
+    """读 .env/环境里的 ANTHROPIC_BASE_URL（evals nightly 等无头场景的
+    端点覆盖; Web 端不走这里——它有 providers 设置）。空值回 None,
+    经 normalize_base_url 规范化（anthropic 剥字面 /v1 尾段）。"""
+    raw = (os.getenv("ANTHROPIC_BASE_URL") or "").strip()
+    if not raw:
+        return None
+    return normalize_base_url(raw, protocol="anthropic") or None
+
+
 def _assemble(session_store: SessionStore, session_id: str, *,
               model_override: Optional[str] = None,
               permission_mode_override: Optional[str] = None,
@@ -1426,6 +1436,7 @@ def _assemble(session_store: SessionStore, session_id: str, *,
         cli_protocol,
         api_key=str(api_key),
         model=model_override or runtime_config.model() or DEFAULT_MODEL,
+        base_url=env_base_url(),
         tools=TOOLS,
         thinking_level=runtime_config.thinking_level(),
         emit_output=emit_output,

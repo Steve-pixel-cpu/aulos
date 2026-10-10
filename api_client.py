@@ -1,5 +1,6 @@
 import contextlib
 import json
+import os
 import re
 import subprocess
 import sys
@@ -14,15 +15,29 @@ from pydantic import BaseModel
 
 # 流式读超时拆分: connect 上限压到 15s——stalled 建连快速失败落入重试
 # 循环的 should_stop 轮询点, 打断立即生效（此前 connect/read 共用 300s,
-# 等首包最坏干等 5 分钟且不可打断）。read 仍 300s: 两条流式事件之间的
-# 最大间隔, 防一条 stalled 连接把 run_turn 永久挂死。
+# 等首包最坏干等 5 分钟且不可打断）。read 即 idle watchdog: 两条流式事件
+# 之间的最大间隔, 防一条 stalled 连接把 run_turn 永久挂死。90s 参照
+# Claude Code 的流式 idle watchdog; env CLAUDE_STREAM_IDLE_TIMEOUT_S 可调
+# （个别慢供应商在深度思考时可以长期不吐事件, 调大即可）。
 API_CONNECT_TIMEOUT_S = 15.0
-API_READ_TIMEOUT_S = 300.0
+API_IDLE_WATCHDOG_S = 90.0
+
+
+def _api_idle_timeout_s() -> float:
+    raw = os.environ.get("CLAUDE_STREAM_IDLE_TIMEOUT_S", "").strip()
+    if raw:
+        try:
+            v = float(raw)
+            if v > 0:
+                return v
+        except ValueError:
+            pass
+    return API_IDLE_WATCHDOG_S
 
 
 def _api_stream_timeout() -> httpx.Timeout:
     return httpx.Timeout(connect=API_CONNECT_TIMEOUT_S,
-                         read=API_READ_TIMEOUT_S,
+                         read=_api_idle_timeout_s(),
                          write=30.0, pool=API_CONNECT_TIMEOUT_S)
 
 

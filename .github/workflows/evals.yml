@@ -1,0 +1,119 @@
+# Evals (nightly) — Agent 评测夜间回归 + 框架自测
+#
+# 触发:
+#   - schedule: cron "0 18 * * *" (UTC 18:00 = 北京时间凌晨 2:00), 每日
+#   - workflow_dispatch: 手动
+#
+# jobs:
+#   evals-nightly  全量真任务评测 (--save-baseline), 需要真实 API 配置,
+#                  每个任务是一次完整 Agent 会话 (烧 token)。报告作为
+#                  artifact 上传 (保留 30 天); 有任务失败退出码 1 → job 红。
+#   evals-smoke    桩 Agent 跑 count-functions, 验证 harness 本身可用,
+#                  不烧 token (README「Agent 评测」: --agent-cmd 可换桩 Agent)。
+#
+# Secrets (evals-nightly 必需, 缺失时显式失败并提示):
+#   AULOS_EVALS_API_KEY     → .env 的 API_KEY        (main.py 启动必读)
+#   AULOS_EVALS_BASE_URL    → .env 的 ANTHROPIC_BASE_URL (可选, 官方端点可不设)
+#   AULOS_EVALS_MODEL       → 模型覆盖 (--model 透传被测 Agent)
+#
+# evals 约定: 结果存 evals/results/<时间戳>.json, 报告写 evals/report.md,
+# 基线在 evals/baseline.json; 退出码全过 0 / 有失败 1。
+
+name: Evals (nightly)
+
+on:
+  schedule:
+    - cron: "0 18 * * *"     # UTC 18:00 = 北京 02:00
+  workflow_dispatch:
+
+jobs:
+  evals-nightly:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      PYTHONUTF8: "1"        # 中文输出 (报告/进度行) 在 runner 管道默认编码下会炸
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Sync Python env
+        run: uv sync
+
+      - name: Check required secrets
+        env:
+          AULOS_EVALS_API_KEY: ${{ secrets.AULOS_EVALS_API_KEY }}
+        shell: bash
+        run: |
+          if [ -z "$AULOS_EVALS_API_KEY" ]; then
+            echo "::error::Secret AULOS_EVALS_API_KEY 未配置。请在仓库"
+            echo "::error::Settings → Secrets and variables → Actions 添加:"
+            echo "::error::  AULOS_EVALS_API_KEY / AULOS_EVALS_BASE_URL / AULOS_EVALS_MODEL"
+            exit 1
+          fi
+
+      - name: Run evals (full, save baseline)
+        env:
+          AULOS_EVALS_API_KEY: ${{ secrets.AULOS_EVALS_API_KEY }}
+          AULOS_EVALS_BASE_URL: ${{ secrets.AULOS_EVALS_BASE_URL }}
+          AULOS_EVALS_MODEL: ${{ secrets.AULOS_EVALS_MODEL }}
+        # 写进仓库根 .env: main.py 装配走 load_dotenv() 读 API_KEY;
+        # 判分 client (evals/harness.make_judge_client) 同样读 API_KEY。
+        shell: bash
+        run: |
+          {
+            echo "API_KEY=${AULOS_EVALS_API_KEY}"
+            [ -n "$AULOS_EVALS_BASE_URL" ] && echo "ANTHROPIC_BASE_URL=${AULOS_EVALS_BASE_URL}"
+          } > .env
+          MODEL_ARGS=()
+          [ -n "$AULOS_EVALS_MODEL" ] && MODEL_ARGS=(--model "$AULOS_EVALS_MODEL")
+          # 有基线则自动对比; 有失败退出码 1 → job 红
+          uv run python evals/run_evals.py --save-baseline "${MODEL_ARGS[@]}" 2>&1 | tee evals-nightly-output.txt
+          test ${PIPESTATUS[0]} -eq 0
+
+      - name: Upload evals report
+        if: always()          # 失败也要把报告传上来才好排查退步
+        uses: actions/upload-artifact@v4
+        with:
+          name: evals-nightly-report
+          retention-days: 30
+          if-no-files-found: error
+          path: |
+            evals/report.md
+            evals/results/*.json
+            evals-nightly-output.txt
+
+  evals-smoke:
+    # 框架自测: 桩 Agent 跑 count-functions, 不烧 token。
+    # 仅 workflow_dispatch 手动触发 (nightly 定时不必跑)。
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Sync Python env
+        run: uv sync
+
+      - name: Evals smoke (stub agent, count-functions, no tokens)
+        shell: bash
+        run: |
+          # 桩 Agent 约定 (tests/evals_stub_agent.py): 拼接在任务文本前,
+          # 在 cwd 写 ok.txt 并输出成功 JSON → checks 判过, 全程不出网
+          uv run python evals/run_evals.py \
+            --agent-cmd "uv run python tests/evals_stub_agent.py" \
+            --only count-functions

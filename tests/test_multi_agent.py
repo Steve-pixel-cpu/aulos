@@ -80,7 +80,7 @@ def test_whitelist_not_polluted_by_job_mutation(tmp_path):
     job = rec.jobs[0]
     assert job.allowed_tools is not TOOL_WHITELIST["explore"]  # 递出去的必须是副本
     job.allowed_tools.add("write_file")
-    assert TOOL_WHITELIST["explore"] == {"read_file"}  # 全局白名单不受影响
+    assert TOOL_WHITELIST["explore"] == {"read_file", "grep", "glob"}  # 全局白名单不受影响
 
 
 # ------------------------------------------------------------
@@ -127,7 +127,7 @@ def test_spawn_passes_tools_and_prompt_copy_to_job(tmp_path):
 
     job = rec.jobs[0]
     assert job.prompt == "读代码找出原因"
-    assert job.allowed_tools == {"read_file"}
+    assert job.allowed_tools == {"read_file", "grep", "glob"}
     assert job.manifest.agent_id == manifest.agent_id
     assert job.manifest is not manifest  # job 里的 manifest 必须是副本，不是同一个对象
 
@@ -136,7 +136,7 @@ def test_spawn_normalizes_type(tmp_path):
     orch, rec = make_orchestrator(tmp_path / "agents")
     manifest = orch.spawn_agent("d", "p", subagent_type="  Explore ")
     assert manifest.subagent_type == "explore"
-    assert rec.jobs[0].allowed_tools == {"read_file"}
+    assert rec.jobs[0].allowed_tools == {"read_file", "grep", "glob"}
 
 
 # ------------------------------------------------------------

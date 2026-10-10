@@ -226,13 +226,14 @@ def make_judge_client(model: str | None = None):
     if not api_key:
         raise RuntimeError("API_KEY 未设置 (仓库根 .env), 无法 LLM 判分")
     from api_client import make_api_client, normalize_protocol
-    from main import DEFAULT_MODEL
+    from main import DEFAULT_MODEL, env_base_url
     try:
         protocol = normalize_protocol(os.getenv("AULOS_PROTOCOL"))
     except ValueError:
         protocol = "anthropic"
     return make_api_client(protocol, api_key=api_key,
-                           model=model or DEFAULT_MODEL, emit_output=False)
+                           model=model or DEFAULT_MODEL,
+                           base_url=env_base_url(), emit_output=False)
 
 
 # ============================================================================

@@ -36,9 +36,12 @@
   - 同文件重读去重：未变文件的整读回一行 `unchanged`；写入推进变异序号、外部修改、
     `force=true` 均回全文
   - 贴图降采样：单边超限或体积超限的截图等比压缩，原图落盘，会话只带缩后版
-  - subagent 委派引导：宽泛调研类任务在系统提示层引导派生 subagent，避免主上下文堆积
+  - subagent 委派引导：宽泛调研类任务在系统提示层引导派生 subagent，避免主上下文堆积；
+    explore/plan worker 配齐只读三件套（read_file/grep/glob），且计划/只读模式下
+    派只读 worker 直接放行（可写型 worker 仍拒绝）——"先调研再计划"不再被权限层掐死
 - **重复只读护栏**：同一只读调用（read_file/grep/glob，路径规范化记账）第 2 次警告、
-  第 3 次拒绝——治理模型反自旋；另有回合级结论检查点提醒对靶
+  第 3 次拒绝——治理模型反自旋；另有回合级结论检查点提醒对靶（超阈值时附
+  "宽调研派 worker / 收敛作答"分流指引）
 - **Prompt cache 友好**：系统提示词设动态边界，稳定前缀（OS 信息/CLAUDE.md/技能清单）
   与动态尾段分离，命中缓存
 
@@ -95,7 +98,10 @@
                   │     ├─ server_common  装配基座    │
                   │     ├─ server_music   电台 API    │
                   │     ├─ server_bilibili B站代理    │
-                  │     └─ server_pets    桌宠 API    │
+                  │     ├─ server_pets    桌宠 API    │
+                  │     ├─ server_stats   调用遥测    │
+                  │     ├─ server_settings 设置/供应商/Skills/记忆/MCP │
+                  │     └─ server_policy  权限策略 REST │
                   └──────────────┬───────────────────┘
                                  │
         ┌────────────────────────┴───────────────────────┐
@@ -118,6 +124,8 @@
 | `server_common.py` | Web 共享基座：store/api_client/app 单例、事件路由（dispatch）、浏览器镜像、令牌门禁令牌 |
 | `server_music.py` / `server_bilibili.py` | 摸鱼电台 REST：本地曲库与网易云代理 / B 站音频流本地代理 |
 | `server_pets.py` | 桌宠 REST：图集契约校验、精灵图服务、周期点评 side-call |
+| `server_stats.py` | 调用遥测 REST：天概览 / 会话排行 / 单日流水（`/stats.html` 面板） |
+| `server_settings.py` / `server_policy.py` | 设置/供应商/Skills/记忆/MCP 管理 REST / 权限策略 REST |
 | `runtime.py` | Agent 主循环：事件流、并行工具执行、打断、预算、护栏与检查点 |
 | `api_client.py` | Anthropic / OpenAI 流式客户端、思考档位、退避重试 |
 | `tools.py` | 内置工具实现与注册表（后台任务、行预算落盘、取消检查点） |
@@ -241,6 +249,17 @@ uv run python evals/run_evals.py --list                 # 只列任务不跑
 - 加任务：`evals/tasks/<名字>/` 下放 `task.txt`（任务文本）+ `project/`（夹具项目，
   每次复制到全新临时工作区）+ 可选 `checks.py`（确定性断言）与 `judge.txt`（LLM 判分标准）
 - 跑真任务要花钱（每任务一次完整 Agent 会话），`--only` 挑任务、先小后大
+- CI：`.github/workflows/evals.yml` 提供 nightly 全量（`schedule` 每日 UTC 18:00 +
+  手动 dispatch，Secrets：`AULOS_EVALS_API_KEY` / `AULOS_EVALS_BASE_URL` /
+  `AULOS_EVALS_MODEL`，报告 artifact 留 30 天）与 `evals-smoke`（桩 Agent 自测，
+  不烧 token）；端点覆盖经 `.env` 的 `ANTHROPIC_BASE_URL`（CLI 与判分 client 都读）
+
+## 调用遥测
+
+`call_log.py` 把每次模型调用落盘 `~/.aulos/logs/runtime-YYYYMMDD.log`，`server_stats.py`
+在其上提供三个只读端点（`/api/stats/days` 天概览 / `/api/stats/sessions` 会话排行 /
+`/api/stats/calls` 单日流水），浏览器开 `/stats.html` 看面板：哪轮慢、token 花在哪、
+缓存命中率多少。
 
 ## 配置说明
 
@@ -378,10 +397,13 @@ cmd 批处理用 `findstr` 提取。改名只动 conf 一处，各发布脚本�
 两个历史巨石文件正在按域渐进拆分（机械搬移 + 门面保兼容，不做大爆炸重写）：
 
 - **`server.py`（后端门面）**：装配单例与事件路由已上移 `server_common.py`，
-  电台/B站/桌宠三个低耦合 REST 域拆为 `server_music.py` / `server_bilibili.py` /
-  `server_pets.py`（import 即挂路由）。`import server` 的全部既有调用点与
-  测试零改动——server.py re-export 共享名。后续候选：WS 路由、设置/供应商
-  运行态、Skills/记忆管理各自成模块。
+  电台/B站/桌宠/遥测四个低耦合 REST 域拆为 `server_music.py` / `server_bilibili.py` /
+  `server_pets.py` / `server_stats.py`（import 即挂路由）；设置/供应商/Skills/
+  记忆/MCP 管理拆为 `server_settings.py`，权限策略（allowlist/denylist/敏感路径/
+  附加目录/批复）拆为 `server_policy.py`。`import server` 的全部既有调用点与
+  测试零改动——server.py re-export 共享名；共享可变态一律 `server.X` call-time
+  解析（monkeypatch 语义不变）。server_pets→main 反向依赖已斩断（经 server_common
+  转出）。后续候选：WS 路由、turn 循环各自成模块。
 - **`static/app.js`（前端，全局作用域经典脚本）**：已按「低耦合域先外迁」
   模式完成拆分——6946 → **2205 行**（-68%），9 个域文件按依赖序 defer
   加载（无模块系统，共享全局作用域）：`ui-dialogs`(弹窗/纯工具) →

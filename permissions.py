@@ -108,6 +108,24 @@ class PermissionPrompter(Protocol):
 
 MUTATING_SHELL_TOOLS = frozenset({"bash", "powershell"})
 
+# 只读型 subagent（与 multi_agent.TOOL_WHITELIST 的只读键保持一致,
+# tests/test_delegation_nudge.py 两侧钉住）。plan/只读模式下派这些
+# worker 视作调研手段放行; 其余类型（general 等可写）照常走档位判定。
+_READONLY_SUBAGENT_TYPES = frozenset({"explore", "plan"})
+
+
+def _subagent_type_is_readonly(tool_input: str) -> bool:
+    """agent_tool 入参里的 subagent_type 是否属于只读白名单。
+    解析失败/缺省按 general（可写）处理——fail-closed, 不留绕过面。"""
+    try:
+        params = json.loads(tool_input)
+    except Exception:
+        return False
+    if not isinstance(params, dict):
+        return False
+    subagent_type = str(params.get("subagent_type") or "general")
+    return subagent_type in _READONLY_SUBAGENT_TYPES
+
 # bash 白名单: 文件系统/系统信息 + 文本检索处理（管道常客）。
 READONLY_SHELL_COMMANDS = frozenset({
     "ls", "pwd", "cat", "head", "tail", "wc", "file", "stat", "du", "df",
@@ -773,6 +791,18 @@ class PermissionPolicy:
         # 形同虚设(所有工具默认 required=DANGER_FULL_ACCESS < 4, 全被放行)。
         if current == PermissionMode.ALLOW:
             return PermissionResult(decision= PermissionDecision.ALLOW, reason= "")
+        # 只读委派: 生效档位只读（计划覆盖/未来只读基础档）时, 派
+        # explore/plan 型 worker 直接放行——这两类白名单是纯只读三件套
+        # （read_file/grep/glob, 与 multi_agent.TOOL_WHITELIST 保持一致,
+        # tests/test_delegation_nudge 两侧钉住）, 委派本身就是调研手段,
+        # 掐死它等于逼模型自己串行 grep, "先调研再计划"永远跑不起来。
+        # general 等可写型 worker 不在集合内, 照常走下方拒绝——委派
+        # 可写 worker 等于借道写文件, 不留这个绕过面。
+        if (current == READ_ONLY_MODE and tool_name == "agent_tool"
+                and _subagent_type_is_readonly(input)):
+            return PermissionResult(
+                decision=PermissionDecision.ALLOW,
+                reason="read-only subagent delegation is permitted in read-only mode")
         # 用户命令白名单(P1 并集口径): 全局持久规则 + 本会话临时规则
         # 一起参与逐段判定——一段"确定性只读"或"命中任一规则"即覆盖,
         # 全段覆盖才放行(git status && uv run pytest 不再因 status 段

@@ -24,7 +24,7 @@ class HttpApiError(ApiError):
     status_code: int
 
     # 可重试的 HTTP 状态码
-    RETRYABLE_STATUS_CODES = {408, 409, 429, 500, 502, 503, 504}
+    RETRYABLE_STATUS_CODES = {408, 409, 429, 500, 502, 503, 504, 529}
 
     def __init__(self, status_code: int, message: str = ""):
         self.status_code = status_code
@@ -47,7 +47,12 @@ class RetriesExhausted(ApiError):
         self.attempts = attempts
         self.last_error = last_error
         self.is_retryable = last_error.is_retryable
-        super().__init__(f"failed after {attempts} attempts: {last_error}")
+        message = f"failed after {attempts} attempts: {last_error}"
+        # 限流族(429/529)耗尽: 附换模型指引——退避已尽力, 出路是换模型/
+        # 供应商; 也防止模型把 429 当自己的请求格式问题反复重造请求。
+        if is_rate_limit_error(last_error):
+            message += _MODEL_SWITCH_HINT
+        super().__init__(message)
 
 class RetryAborted(ApiError):
     """外部要求放弃重试（用户打断）: 不可重试, 由调用方翻译成自己的
@@ -56,9 +61,19 @@ class RetryAborted(ApiError):
 
 _MAX_SAFE_EXPONENT = 31  # 2^31 = 2147483648，超过任何合理 backoff
 
+# 限流族(429/529)耗尽后的指引: 这是供应商侧容量问题, 本地退避已尽力,
+# 唯一出路是换模型/供应商（多供应商切换是 Web 端设置页的既有能力）。
+_MODEL_SWITCH_HINT = (
+    " — provider-side capacity issue (rate limit / overloaded). "
+    "The backoff curve is exhausted; switching to another model or "
+    "provider is the practical fix."
+)
+
 def is_rate_limit_error(e: Exception) -> bool:
-    """429 = 账户级限流, 走专用长退避; 其余可重试错误维持连接抖动曲线。"""
-    return isinstance(e, HttpApiError) and e.status_code == 429
+    """容量/限流族分诊: 429（账户级限流）与 529（服务端 overloaded, Anthropic
+    专属）同走专用长退避——两者的故障窗口都是秒~分钟级, 连接抖动短曲线
+    （全程 <1s）会在同一窗口里反复撞墙; 其余可重试错误维持连接抖动曲线。"""
+    return isinstance(e, HttpApiError) and e.status_code in (429, 529)
 
 def backoff_for_attempt(attempt: int,
                         initial_ms: float = DEFAULT_INITIAL_BACKOFF_MS,

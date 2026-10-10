@@ -1,6 +1,6 @@
 {
   "name": "aulos",
-  "version": "5.0.2",
+  "version": "5.1.0",
   "description": "[DEPRECATED] Electron 壳已弃用, 桌面端由 Tauri 壳承担 (src-tauri/)。保留仅供参照, 不再随版本发布",
   "main": "electron/main.js",
   "private": true,
