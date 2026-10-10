@@ -15,7 +15,7 @@
   },
   "build": {
     "appId": "com.aulos.desktop",
-    "productName": "aulos",
+    "productName": "Aulos",
     "directories": {
       "output": "dist"
     },

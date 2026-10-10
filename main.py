@@ -781,7 +781,7 @@ BANNER_ART = r"""
   /  \ |_____| |__| |_| | |_| | |___|
  /_/\_\       \____\___/|____/|_____|
 """
-def print_banner(name: str = "aulos", width: int = 40) -> None:
+def print_banner(name: str = "Aulos", width: int = 40) -> None:
     """Print an ASCII-art startup banner with the app name and help hint."""
     print(BANNER_ART)
     print(name)
@@ -1093,7 +1093,7 @@ def run_repl(runtime: ConversationRuntime,
     ctrl_c_pending = False  # 连续两次 Ctrl+C 才退出, 第一次只提示
     while True:
         try:
-            text = input("aulos> ").strip()
+            text = input("Aulos> ").strip()
             ctrl_c_pending = False
         except KeyboardInterrupt:
             if ctrl_c_pending:

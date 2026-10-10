@@ -240,7 +240,7 @@ api_client = ClaudeApiClient(
 # 由 _apply_provider_config 统一构建/重建（见 _rebuild_utility_client）。
 _utility_client: Optional[object] = None
 
-app = FastAPI(title="aulos web")
+app = FastAPI(title="Aulos web")
 
 
 @app.middleware("http")

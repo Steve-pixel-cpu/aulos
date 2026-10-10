@@ -234,6 +234,16 @@ fn port_file() -> PathBuf {
 }
 
 fn read_port() -> u16 {
+    // 开发旁路: AULOS_PORT 显式指定时优先——dev 壳与正式版后端隔离
+    // (与 server.py 读的同名变量同义), 不旁路会复用 release-port 的
+    // 正式版后端, 连带的静态资源也是打包时的旧版
+    if let Ok(s) = std::env::var("AULOS_PORT") {
+        if let Ok(p) = s.trim().parse::<u16>() {
+            if p > 0 {
+                return p;
+            }
+        }
+    }
     read_trim(&port_file())
         .and_then(|s| s.parse::<u16>().ok())
         .filter(|p| *p > 0)
@@ -400,7 +410,9 @@ fn start_server() -> Result<Child, String> {
             exe_path,
             vec![
                 "--port".to_string(),
-                default_port().to_string(),
+                // AULOS_PORT 旁路时透传给后端, 保证壳探活/导航与后端监听一致
+                // (否则壳连 AULOS_PORT、后端监听 default_port, 永远错位)
+                read_port().to_string(),
                 "--port-file".to_string(),
                 port_file().to_string_lossy().to_string(),
                 "--parent-pid".to_string(),
@@ -691,6 +703,66 @@ async fn pick_folder(app: AppHandle) -> Result<Option<String>, String> {
 }
 
 // ---------- 自绘标题栏的窗口控制（decorations: false 后自己实现） ----------
+
+/// Win11 系统级云母 (Mica) 材质: DWMWA_SYSTEMBACKDROP_TYPE = DWMSBT_MAINWINDOW。
+/// 与 apply_win11_rounding 同一套 DWM API。要求: 窗口本体透明 + WebView 背景透明
+/// (apply_desktop_webview_settings 已把 WebView2 底色调成透明)。仅 Win11 22H2+;
+/// 老系统调用失败 → 静默留痕 boot.log, 前端保持纯 CSS Fluent 观感。
+#[cfg(windows)]
+fn apply_win11_mica(win: &tauri::WebviewWindow, on: bool, dark: bool) -> bool {
+    use windows::Win32::Graphics::Dwm::{
+        DwmSetWindowAttribute, DWMWA_SYSTEMBACKDROP_TYPE, DWMWA_USE_IMMERSIVE_DARK_MODE,
+        DWMSBT_MAINWINDOW, DWMSBT_NONE,
+    };
+    let Ok(hwnd) = win.hwnd() else { return false };
+    let backdrop = if on { DWMSBT_MAINWINDOW } else { DWMSBT_NONE }.0 as u32;   // 2=Mica / 0=无
+    let hr1 = unsafe {
+        DwmSetWindowAttribute(
+            windows::Win32::Foundation::HWND(hwnd.0),
+            DWMWA_SYSTEMBACKDROP_TYPE,
+            &backdrop as *const u32 as *const _,
+            std::mem::size_of::<u32>() as u32,
+        )
+    };
+    if let Err(e) = hr1 {
+        boot_log("shell", &format!("DWM 云母设置失败(非 Win11 22H2? 由 CSS 兜底): {e}"));
+        return false;
+    }
+    // 深浅跟随: 云母的明暗由应用主题决定（暗色应用配暗云母）
+    let dark = dark as u32;
+    let hr2 = unsafe {
+        DwmSetWindowAttribute(
+            windows::Win32::Foundation::HWND(hwnd.0),
+            DWMWA_USE_IMMERSIVE_DARK_MODE,
+            &dark as *const u32 as *const _,
+            std::mem::size_of::<u32>() as u32,
+        )
+    };
+    if let Err(e) = hr2 {
+        boot_log("shell", &format!("DWM 云母深浅跟随失败: {e}"));
+    }
+    true
+}
+
+#[cfg(not(windows))]
+fn apply_win11_mica(_win: &tauri::WebviewWindow, _on: bool, _dark: bool) -> bool { false }
+
+/// 前端通知云母状态: on=true 打开 DWM 云母(DWMSBT_MAINWINDOW), false 关闭
+/// (DWMSBT_NONE)。窗口透明由 builder 期设定(Tauri 2 运行期无 set_transparent,
+/// 主窗在 Windows 上常透明; loading/普通风格下页面自带不透明底, 观感不变),
+/// 这里只切系统 backdrop——幂等, 深浅主题切换时重申明暗。
+/// 返回 true = DWM 已确认开启; 前端凭此才挂 data-mica(非 Win 壳/老系统
+/// 返回 false, 前端保持纯 CSS Fluent, 不残留半透明)。
+#[tauri::command]
+fn set_mica(app: AppHandle, on: bool, dark: bool) -> bool {
+    let Some(win) = app.get_webview_window("main") else { return false };
+    #[cfg(windows)]
+    return apply_win11_mica(&win, on, dark);
+    #[cfg(not(windows))]
+    let _ = (on, dark);
+    #[cfg(not(windows))]
+    false
+}
 
 /// Win11 原生窗口圆角: DWMWA_WINDOW_CORNER_PREFERENCE = DWMWCP_ROUND。
 /// 由 DWM 绘制, 抗锯齿、带系统 1px 边框光晕, 与系统应用一致; 窗口
@@ -1147,6 +1219,15 @@ const BRIDGE_JS: &str = r#"
 // ---------- 启动流程 ----------
 
 fn main() {
+    // dev 旁路配套: 独立 WebView2 用户数据目录。dev 调试壳与正式安装版
+    // 共用默认目录会被 WebView2 的进程锁挡住(窗口开不出来), 且环境变量
+    // 必须在首个 WebView2 创建前设置——放在 main() 最前面。仅 dev 生效。
+    if std::env::var("AULOS_NO_SINGLE_INSTANCE").as_deref() == Ok("1") {
+        std::env::set_var(
+            "WEBVIEW2_USER_DATA_FOLDER",
+            std::env::temp_dir().join("aulos-dev-webview"),
+        );
+    }
     // 必须先于一切 gtk 初始化 (GTK 读 GDK_BACKEND 的时机在 gdk 初始化)
     #[cfg(target_os = "linux")]
     apply_linux_gdk_backend();
@@ -1160,18 +1241,24 @@ fn main() {
 
     let token = ensure_token();
 
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_notification::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            // 单实例: 二次启动只把已有窗口带到前台
+        .plugin(tauri_plugin_updater::Builder::new().build());
+    // 单实例: 二次启动只把已有窗口带到前台。
+    // 开发旁路: AULOS_NO_SINGLE_INSTANCE=1 时跳过——dev 调试壳与正式安装版
+    // 共用应用标识, 不旁路则 dev 实例会把启动权让给正式版后直接退出。
+    // 仅影响本进程是否参与锁竞争, 正式版不受任何影响。
+    if std::env::var("AULOS_NO_SINGLE_INSTANCE").as_deref() != Ok("1") {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             if let Some(win) = app.get_webview_window("main") {
                 let _ = win.unminimize();
                 let _ = win.set_focus();
             }
-        }))
+        }));
+    }
+    builder
         .manage(())
         .invoke_handler(tauri::generate_handler![
             pick_folder,
@@ -1191,7 +1278,8 @@ fn main() {
             focus_pet,
             move_pet_window,
             resize_pet_window,
-            pet_hit_test
+            pet_hit_test,
+            set_mica
         ])
         .setup(|app| {
             // 资源目录一次性注入: 之后 sidecar_exe/端口判定全走它
@@ -1328,6 +1416,12 @@ fn create_main_window(app: &AppHandle) -> Result<(), String> {
         .min_inner_size(960.0, 600.0)
         .visible(false) // 页面就绪后再显示, 避免白屏闪烁
         .initialization_script(&bridge_js);
+    // Windows 上主窗常透明: 系统云母(Fluent·系统云母风格)要求窗口本体透明,
+    // DWM 才能把壁纸采样垫到底下。运行期无法切换透明(Tauri 2 无该 API),
+    // 故一律透明——loading 页与普通风格页面自带不透明底, 观感不受影响;
+    // macOS 无此项 API(Linux 上 transparent 走 GTK, 桌宠窗已有先例), 不动。
+    #[cfg(windows)]
+    let builder = builder.transparent(true);
     builder
         .on_navigation(move |url| {
             let s = url.as_str();

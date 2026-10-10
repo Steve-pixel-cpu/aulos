@@ -25,6 +25,7 @@
     "allow-resize-pet-window",
     "allow-focus-pet",
     "allow-pet-hit-test",
+    "allow-set-mica",
     "clipboard-manager:allow-read-text"
   ]
 }

@@ -10,15 +10,15 @@ const DESKTOP = window.aulosDesktop
  * ============================================================ */
 if (!DESKTOP) {
   document.documentElement.innerHTML =
-    '<head><meta charset="UTF-8"><title>aulos</title></head>' +
+    '<head><meta charset="UTF-8"><title>Aulos</title></head>' +
     '<body style="margin:0;background:#101014">' +
     '<div style="height:100vh;display:flex;flex-direction:column;gap:10px;' +
     'align-items:center;justify-content:center;font-family:system-ui,' +
     '"Microsoft YaHei",sans-serif;color:#a0a1ab;font-size:15px">' +
     '<img src="/api/icon" alt="" style="width:56px;height:56px;' +
     'border-radius:14px;object-fit:cover">' +
-    "<div>请通过 aulos 桌面应用打开</div></div></body>";
-  throw new Error("aulos: 网页入口已关闭, 请使用桌面应用");
+    "<div>请通过 Aulos 桌面应用打开</div></div></body>";
+  throw new Error("Aulos: 网页入口已关闭, 请使用桌面应用");
 }
 if (DESKTOP) document.documentElement.classList.add("aulos-desktop");
 /* ============================================================
@@ -5340,29 +5340,72 @@ const themeDd = makeDropdown($("sel-theme"), {
     applyFx();
     applyAccentVars();   // 自定义色的派生令牌跟随深浅主题
     syncAccentInput();
+    syncMica();          // 云母明暗跟随深浅主题
   },
 });
 
-/* ---------- 界面风格: 默认 / Fluent Design 叠加层 ---------- */
+/* ---------- 界面风格: 默认 / Fluent · 系统云母 ---------- */
 const STYLE_KEY = "xc-style";
-function stylePref() { return localStorage.getItem(STYLE_KEY) || "default"; }
+function stylePref() {
+  const v = localStorage.getItem(STYLE_KEY);
+  // 老值迁移: 纯 Fluent Design 选项已删, 存过 "fluent" 的自动升级为云母
+  if (v === "fluent") return "fluent-mica";
+  return v === "fluent-mica" ? v : "default";
+}
 function applyStyle() {
   const de = document.documentElement;
-  if (stylePref() === "fluent") de.dataset.style = "fluent";
+  // 云母模式复用 fluent 基座(字体/令牌/圆角), 其上再叠 data-mica 让出系统云母
+  if (stylePref() === "fluent-mica") de.dataset.style = "fluent";
   else delete de.dataset.style;
+}
+/* 云母模式: Tauri 壳 (DWM 命令) 或 Electron 壳 (aulosSetMica 桥) 都可开真
+ * 系统云母 (DWM 壁纸采样垫底)。前端只挂 data-mica 标记 + 通知壳; CSS 把
+ * 大面积区域转透明让出底层, 内容卡片转实底——Win11 原生应用"实卡坐云母"
+ * 的语言。确认制: 壳回传"确实开了"才挂标记——浏览器 / 老系统 / 无壳环境
+ * 拿不到确认 → 纯 CSS Fluent 观感, 不残留半透明发白。
+ * syncMica 幂等, 深浅主题切换时重申（壳侧明暗要跟随）。 */
+function tauriInvoke(cmd, payload) {
+  const inv = window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke;
+  if (!inv) return Promise.reject(new Error("no tauri"));
+  return inv(cmd, payload);
+}
+function syncMica() {
+  const de = document.documentElement;
+  const want = stylePref() === "fluent-mica";
+  const dark = resolvedTheme() === "dark";
+  if (!want) {
+    delete de.dataset.mica;
+    tauriInvoke("set_mica", { on: false, dark }).catch(() => {});
+    if (window.aulosSetMica) window.aulosSetMica(false).catch(() => {});
+    return;
+  }
+  // 确认制: 壳真开成功才挂 data-mica——浏览器/老系统拿不到确认,
+  // 前端保持纯 CSS Fluent(半透明 acrylic), 不会出现"半透明但无云母"的发白态
+  // 两壳互斥(不可能同时存在), 按在场的桥走
+  const confirmP = window.__TAURI_INTERNALS__
+    ? tauriInvoke("set_mica", { on: true, dark }).catch(() => false)
+    : window.aulosSetMica
+      ? window.aulosSetMica(true).catch(() => false)
+      : Promise.resolve(false);
+  confirmP.then((ok) => {
+    if (ok) de.dataset.mica = "1";
+    else delete de.dataset.mica;
+  });
 }
 const STYLE_ITEMS = [
   { value: "default", label: "默认" },
-  { value: "fluent", label: "Fluent Design" },
+  { value: "fluent-mica", label: "Fluent · 系统云母" },
 ];
 const styleDd = makeDropdown($("sel-style"), {
   items: STYLE_ITEMS, value: stylePref(),
   onChange: v => {
     localStorage.setItem(STYLE_KEY, v);
     applyStyle();
+    syncMica();
   },
 });
 applyStyle();
+syncMica();
 
 /* ---------- 代码高亮主题: 默认跟随深浅主题, 或指定一套预设配色 ---------- */
 const HL_KEY = "xc-hl";
@@ -5497,7 +5540,7 @@ $("btn-notify-test").onclick = () => {
   playChime();
   // 桌面壳: 直接发一条原生 toast, 让用户当场验证系统通知链路通不通
   if (DESKTOP) {
-    nativeNotify("aulos 桌面通知测试", "收到这条说明原生通知链路正常");
+    nativeNotify("Aulos 桌面通知测试", "收到这条说明原生通知链路正常");
     toast("已播放提示音并发送系统通知");
     return;
   }

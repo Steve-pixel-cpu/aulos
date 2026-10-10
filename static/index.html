@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="color-scheme" content="dark light">
-<title>aulos</title>
+<title>Aulos</title>
 <link rel="icon" type="image/png" href="/api/icon">
 <script>/* 桌面壳经 ?token= 打开页面: 把令牌种成 cookie, 后续 API/静态资源请求自动携带 */ (function(){try{var t=new URLSearchParams(location.search).get("token");if(t)document.cookie="aulos_token="+encodeURIComponent(t)+"; path=/; max-age=31536000; SameSite=Strict";}catch(e){}})();</script>
 <script>/* 主题/壁纸在绘制前应用，避免闪白 (dark | light | system) */ (function(){var de=document.documentElement,p=localStorage.getItem("xc-theme")||"system";de.dataset.theme=p==="system"&&window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":(p==="dark"||p==="light")?p:"dark";var a=localStorage.getItem("xc-accent");if(a&&a!=="gray")de.dataset.accent=a;if(localStorage.getItem("xc-style")==="fluent")de.dataset.style="fluent";if(localStorage.getItem("xc-bg")==="1")de.dataset.bg="1";/* 代码高亮主题 / 聊天密度 / 禅模式: 同样抢在首帧前, 防刷新闪回默认 */var hl=localStorage.getItem("xc-hl");if(hl&&hl!=="auto")de.dataset.hl=hl;var dn=localStorage.getItem("xc-density");if(dn&&dn!=="comfortable")de.dataset.density=dn;var ms=localStorage.getItem("xc-msgstyle");if(ms&&ms!=="document")de.dataset.msgstyle=ms;if(localStorage.getItem("xc-zen")==="1")de.dataset.zen="1";/* 壁纸亮度: 与 app.js applyBgBrightness 同一套公式, 绘制前设好防闪回默认 */var b=parseFloat(localStorage.getItem("xc-bg-bright"));if(!isFinite(b)||b<0||b>100)b=50;de.style.setProperty("--bg-dim",(2-b/50).toFixed(4));de.style.setProperty("--bg-surf",(1-.26*Math.max(-1,Math.min(1,(b-50)/50))).toFixed(4));})();</script>
@@ -14,7 +14,7 @@
 <script src="/static/vendor/highlight.min.js"></script>
 <link rel="stylesheet" href="/static/vendor/katex.min.css">
 <script src="/static/vendor/katex.min.js"></script>
-<link rel="stylesheet" href="/static/app.css?v=20261009e"><link rel="stylesheet" href="/static/pet.css?v=20260925c">
+<link rel="stylesheet" href="/static/app.css?v=20261010d"><link rel="stylesheet" href="/static/pet.css?v=20260925c">
 </head>
 <body>
 
@@ -27,7 +27,7 @@
 <!-- ============ 自绘标题栏（仅桌面壳显示, 高度/主题跟随应用） ============ -->
 <div id="titlebar">
   <img class="tb-icon" src="/api/icon" alt="" draggable="false">
-  <span class="tb-name">aulos</span>
+  <span class="tb-name">Aulos</span>
   <span class="tb-ver" id="tb-version" hidden></span>
   <div class="tb-spring"></div>
   <div class="tb-controls">
@@ -271,7 +271,7 @@
     <div id="onboarding-page">
       <div class="ob-card">
         <img class="ob-logo" src="/api/icon" alt="">
-        <h2>欢迎使用 aulos</h2>
+        <h2>欢迎使用 Aulos</h2>
         <p class="ob-desc">首次使用需要先配置一个模型供应商, 填写后立即可用; 之后可随时在「设置 → 模型」里调整或追加。</p>
         <div class="ob-field">
           <label>API Key</label>
@@ -319,7 +319,7 @@
       <div class="set-row">
         <div class="set-info">
           <div class="set-name">界面风格</div>
-          <div class="set-desc">默认，或 Fluent Design（Win11 风格：亚克力材质、大圆角、海拔阴影）</div>
+          <div class="set-desc">默认 / Fluent · 系统云母（Win11 22H2+ 透出系统云母材质；不支持的环境自动回退默认观感）</div>
         </div>
         <button type="button" class="dd set-dd" id="sel-style">
           <span class="dd-label">默认</span>
@@ -669,7 +669,7 @@
   </div>
 </div>
 
-<script src="/static/app.js?v=20261009f" defer></script>
+<script src="/static/app.js?v=20261010c" defer></script>
 <script src="/static/music.js?v=20260926b" defer></script>
 <script src="/static/pet.js?v=20260926a" defer></script>
 </body>

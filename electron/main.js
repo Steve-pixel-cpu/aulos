@@ -98,7 +98,7 @@ function startServer() {
     proc.on("exit", (code) => {
       if (serverProc === proc) serverProc = null;
       if (!quitting && win && !win.isDestroyed()) {
-        dialog.showErrorBox("aulos 后端已退出", `后端进程退出（code=${code}）。`);
+        dialog.showErrorBox("Aulos 后端已退出", `后端进程退出（code=${code}）。`);
       }
     });
     return proc;
@@ -120,7 +120,7 @@ function startServer() {
     if (serverProc === proc) serverProc = null;
     // 非退出阶段后端自己挂了: 弹窗告知, 不静默
     if (!quitting && win && !win.isDestroyed()) {
-      dialog.showErrorBox("aulos 后端已退出", `server.py 进程退出（code=${code}）。`);
+      dialog.showErrorBox("Aulos 后端已退出", `server.py 进程退出（code=${code}）。`);
     }
   });
   return proc;
@@ -159,7 +159,7 @@ async function createWindow() {
     serverProc = startServer();
     if (!(await waitServer(30000))) {
       dialog.showErrorBox(
-        "aulos 启动失败",
+        "Aulos 启动失败",
         `Python 后端在 30 秒内未能就绪。\n若 ${DEFAULT_PORT}–${DEFAULT_PORT + 19} 端口被其他程序占用, 请关闭后重试。`
       );
       app.quit();
@@ -172,9 +172,13 @@ async function createWindow() {
     height: 900,
     minWidth: 960,
     minHeight: 600,
-    backgroundColor: "#101014",   // 与前端深色主题一致, 避免启动闪白
+    // 云母要求窗口底透明(spike 实证: 构造期透明底 + backgroundMaterial 生效;
+    // 运行期 setBackgroundColor 的 alpha 在非 transparent 窗上不可靠)。
+    // 窗口 show:false 到页面就绪, 不会闪白。老系统 backgroundMaterial 被忽略。
+    backgroundColor: "#00000000",
+    backgroundMaterial: process.platform === "win32" ? "mica" : undefined,
     autoHideMenuBar: true,
-    title: "aulos",
+    title: "Aulos",
     icon: path.join(ROOT, "static", "icon.png"),   // 窗口/任务栏图标（打包成 exe 需另配 .ico）
     show: false,
     webPreferences: {
@@ -234,6 +238,20 @@ if (!gotLock) {
   ipcMain.handle("read-clipboard-text", () => clipboard.readText());
   // 应用版本号: 标题栏徽标用（打包后从 package.json 读取）
   ipcMain.handle("get-app-version", () => app.getVersion());
+  // 系统云母开关: on=true 开 DWM 云母, false 关(回实底)。深浅明暗跟随系统
+  // nativeTheme(前端主题≠系统主题, 由壳自己判断)。返回实际是否生效——
+  // 老系统/云母 API 不存在时 false, 前端确认制: false 不挂 data-mica。
+  ipcMain.handle("set-mica", (_ev, on) => {
+    if (process.platform !== "win32" || !win) return false;
+    try {
+      // 老系统上 setBackgroundMaterial 会抛错 → catch 返回 false,
+      // 前端不挂 data-mica(纯 CSS Fluent 兜底)
+      win.setBackgroundMaterial(on ? "mica" : "none");
+      return true;
+    } catch {
+      return false;
+    }
+  });
   app.on("second-instance", () => {
     if (win) {
       if (win.isMinimized()) win.restore();

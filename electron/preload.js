@@ -15,3 +15,8 @@ contextBridge.exposeInMainWorld("aulosReadClipboard", async () => {
 contextBridge.exposeInMainWorld("aulosAppVersion", async () => {
   return await ipcRenderer.invoke("get-app-version");
 });
+// 系统云母开关: 真值 = 壳确认 DWM 云母已生效(确认制, 前端凭真值才挂
+// data-mica)。仅 Win11 22H2+ 的 Electron 壳返回真值。
+contextBridge.exposeInMainWorld("aulosSetMica", async (on) => {
+  return await ipcRenderer.invoke("set-mica", on);
+});

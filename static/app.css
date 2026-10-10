@@ -2737,6 +2737,7 @@ body.col-resizing, body.col-resizing * { cursor: col-resize !important; }
     --shadow-lg: 0 2px 6px rgba(0, 0, 0, .16), 0 10px 28px rgba(0, 0, 0, .20);
     --shadow-pop: 0 2px 6px rgba(0, 0, 0, .18), 0 16px 44px rgba(0, 0, 0, .28);
     --pop-bg: rgb(44 44 44 / .72);
+    --pop-bg-solid: #2c2c2c;   /* 云母模式下弹层实底(半透明 pop 会透出聊天流) */
     --r-sm: 6px; --r-md: 10px; --r-lg: 14px; --r-xl: 18px;
   }
   :root[data-theme="light"][data-style="fluent"] {
@@ -2754,6 +2755,7 @@ body.col-resizing, body.col-resizing * { cursor: col-resize !important; }
     --shadow-lg: 0 2px 6px rgba(0, 0, 0, .06), 0 10px 28px rgba(0, 0, 0, .09);
     --shadow-pop: 0 2px 6px rgba(0, 0, 0, .08), 0 16px 44px rgba(0, 0, 0, .14);
     --pop-bg: rgb(252 252 252 / .78);
+    --pop-bg-solid: #fcfcfc;
   }
   /* 字体: Segoe UI Variable 提到首位 (Windows 11 自带; 无则回退原栈) */
   :root[data-style="fluent"] body {
@@ -3139,3 +3141,60 @@ body.col-resizing, body.col-resizing * { cursor: col-resize !important; }
     font-family: var(--font-mono); font-size: calc(10.5px * var(--fs-ui));
     color: var(--text-3); opacity: .85;
   }
+
+  /* ============================================================
+   * Fluent × 系统云母: <html data-style="fluent" data-mica="1"> 开启
+   * 仅 Tauri 壳 (Win11 22H2+): Rust 侧 DWMWA_SYSTEMBACKDROP_TYPE 把
+   * DWM 壁纸采样垫到窗口底下, 这里让大面积区域透明给云母让位。
+   * 与 Fluent 叠加层的差异: backdrop-filter 模糊的是窗口内像素, 对
+   * 云母底无意义(还会把透上来的壁纸又糊一层) → 全部退休;
+   * 内容卡片转实底, 即 Win11 原生应用"实卡坐云母"的层次。
+   * 无壳/不支持时 data-mica 不挂 or DWM 调用失败 → 观感退化为纯
+   * Fluent(半透明 acrylic), 可读性不受影响。
+   * ============================================================ */
+  :root[data-mica="1"] body { background: transparent; }
+  /* 面板: 让位云母, 只留极淡的主题色调保持文字可读(云母本身已含壁纸
+   * 亮度平衡, 这里 ~55% 着色即可; 深浅主题各配一版) */
+  :root[data-mica="1"] #pane,
+  :root[data-mica="1"] #doc-header {
+    background: color-mix(in srgb, var(--bg) 55%, transparent);
+  }
+  :root[data-mica="1"] #sidebar,
+  :root[data-mica="1"] #titlebar {
+    background: color-mix(in srgb, var(--bg-side) 62%, transparent);
+  }
+  /* 云母下 backdrop-filter 全部退休: 模糊窗口内像素没有意义。
+   * 覆盖 Fluent 叠加层里带 blur 的五处(@supports 块), 置 none + 提权 */
+  :root[data-mica="1"] #sidebar,
+  :root[data-mica="1"] #titlebar,
+  :root[data-mica="1"] #pane,
+  :root[data-mica="1"] #doc-header,
+  :root[data-mica="1"] .msg-card,
+  :root[data-mica="1"] .thinking-caps,
+  :root[data-mica="1"] .plan-card,
+  :root[data-mica="1"] .todo-card,
+  :root[data-mica="1"] .bubble,
+  :root[data-mica="1"] #input-card,
+  :root[data-mica="1"] .dd-pop,
+  :root[data-mica="1"] .modal-box,
+  :root[data-mica="1"] .plan-pop,
+  :root[data-mica="1"] .approve-card,
+  :root[data-mica="1"] #mm-pop {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+  /* 内容卡: 云母上坐半透 Layer(Win11 LayerFillColor 语言, 白/黑 60-78%)。
+   * 云母本身已被系统模糊压平, 半透只带一点壁纸色调, 不抢正文对比度;
+   * 纯实底反而太重——大块白卡怼在柔和云母上, 层次全无 */
+  :root[data-mica="1"] .bubble { background: color-mix(in srgb, var(--surface) 60%, transparent); }
+  :root[data-mica="1"] .msg-card,
+  :root[data-mica="1"] .thinking-caps,
+  :root[data-mica="1"] .plan-card,
+  :root[data-mica="1"] .todo-card { background: color-mix(in srgb, var(--surface) 72%, transparent); }
+  :root[data-mica="1"] #input-card { background: color-mix(in srgb, var(--surface) 80%, transparent); }
+  /* 弹层: 实底不变(遮不住底下的聊天内容就不叫弹层) */
+  :root[data-mica="1"] .dd-pop,
+  :root[data-mica="1"] .modal-box,
+  :root[data-mica="1"] .plan-pop,
+  :root[data-mica="1"] .approve-card,
+  :root[data-mica="1"] #mm-pop { background: var(--pop-bg-solid, var(--surface)); }
