@@ -28,7 +28,17 @@ if "%VER%"=="" (
   exit /b 1
 )
 
-set "EXE=Aulos_%VER%_x64-setup.exe"
+REM 产物名单点化: 前缀 = tauri.conf.json 的 productName（与 make-latest.js 一致）
+set "PNAME="
+for /f "tokens=2 delims=:" %%A in ('findstr /c:"productName" src-tauri\tauri.conf.json') do set "PNAME=%%A"
+set "PNAME=%PNAME:,=%"
+set "PNAME=%PNAME:"=%"
+set "PNAME=%PNAME: =%"
+if not defined PNAME (
+  echo [publish] cannot read productName from src-tauri\tauri.conf.json
+  exit /b 1
+)
+set "EXE=%PNAME%_%VER%_x64-setup.exe"
 set "LATEST=dist\latest.json"
 
 if not exist "%LATEST%" (

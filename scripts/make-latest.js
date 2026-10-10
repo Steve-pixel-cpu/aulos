@@ -20,11 +20,12 @@
  *   }
  *
  * Usage: node scripts/make-latest.js [notes]
- *   notes: release notes, defaults to "aulos <ver>"
+ *   notes: release notes, defaults to "<productName> <ver>" (from tauri.conf.json)
  *
  * Prereq: build-exe.cmd ran the packaging under a signing key (otherwise
  * there is no .sig file). The key lives in .tauri/aulos.key and must never
- * be committed. Upload dist/latest.json together with the installer to the
+ * be committed. Installer artifact names derive from productName in
+ * src-tauri/tauri.conf.json (single source of truth). Upload dist/latest.json together with the installer to the
  * release; the app's updater endpoint (releases/latest/download/latest.json)
  * always resolves to the newest release.
  */
@@ -37,10 +38,12 @@ const conf = JSON.parse(
   fs.readFileSync(path.join(root, "src-tauri", "tauri.conf.json"), "utf8")
 );
 const version = conf.version;
-const notes = process.argv[2] || `Aulos v${version}`;
+// 产物名单点化: NSIS 产物名 = tauri.conf.json 的 productName 拼出来,
+// 改名只动 conf, 此脚本（及其余发布脚本）零改动。
+const notes = process.argv[2] || `${conf.productName} v${version}`;
 
-// NSIS installer: dist/Aulos_<ver>_x64-setup.exe + its .sig sidecar
-const exe = `Aulos_${version}_x64-setup.exe`;
+// NSIS installer: dist/<productName>_<ver>_x64-setup.exe + its .sig sidecar
+const exe = `${conf.productName}_${version}_x64-setup.exe`;
 const exePath = path.join(dist, exe);
 const sigPath = exePath + ".sig";
 

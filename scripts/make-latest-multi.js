@@ -37,6 +37,13 @@ if (!tag) {
 }
 const version = tag.replace(/^v/, "");
 
+// 产物名单点化: 前缀取自 tauri.conf.json 的 productName（Tauri 打包器
+// 以它命名所有平台产物）。本脚本对产物名的唯一假设只剩这个前缀;
+// 改名只动 conf, 各发布脚本零改动。
+const productName = JSON.parse(
+  fs.readFileSync(path.join(root, "src-tauri", "tauri.conf.json"), "utf8")
+).productName;
+
 // 平台条目: 更新包 + 其 .sig (签名内容本身, 不是路径 —— updater 硬性要求)
 function entry(updateFile, sigSuffix) {
   const p = path.join(dist, updateFile);
@@ -53,13 +60,13 @@ function entry(updateFile, sigSuffix) {
 }
 
 const platforms = {};
-const win = entry(`Aulos_${version}_x64-setup.exe`, ".sig");
+const win = entry(`${productName}_${version}_x64-setup.exe`, ".sig");
 if (win) platforms["windows-x86_64"] = win;
 for (const [arch, key] of [["aarch64", "darwin-aarch64"], ["x64", "darwin-x86_64"]]) {
-  const e = entry(`Aulos_${version}_${arch}.app.tar.gz`, ".sig");
+  const e = entry(`${productName}_${version}_${arch}.app.tar.gz`, ".sig");
   if (e) platforms[key] = e;
 }
-const linux = entry(`Aulos_${version}_amd64.deb`, ".sig");
+const linux = entry(`${productName}_${version}_amd64.deb`, ".sig");
 if (linux) platforms["linux-x86_64"] = linux;
 
 if (Object.keys(platforms).length === 0) {

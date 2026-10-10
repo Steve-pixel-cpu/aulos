@@ -150,11 +150,22 @@ if errorlevel 1 exit /b 1
 
 echo.
 echo Copying installer into dist\...
-copy /y "src-tauri\target\release\bundle\nsis\Aulos_*_x64-setup.exe" dist\ >nul
+REM 产物名单点化: 前缀 = tauri.conf.json 的 productName（JSON 单行,
+REM for /f 提取并剥掉引号逗号空格; 与 make-latest.js 的派生逻辑一致）。
+set "PNAME="
+for /f "tokens=2 delims=:" %%A in ('findstr /c:"productName" src-tauri\tauri.conf.json') do set "PNAME=%%A"
+set "PNAME=%PNAME:,=%"
+set "PNAME=%PNAME:"=%"
+set "PNAME=%PNAME: =%"
+if not defined PNAME (
+  echo [error] cannot read productName from src-tauri\tauri.conf.json
+  exit /b 1
+)
+copy /y "src-tauri\target\release\bundle\nsis\%PNAME%_*_x64-setup.exe" dist\ >nul
 if errorlevel 1 exit /b 1
 REM auto-update artifacts: .sig signature + latest.json manifest (upload both
 REM together with the installer to the release)
-copy /y "src-tauri\target\release\bundle\nsis\Aulos_*_x64-setup.exe.sig" dist\ >nul 2>&1
+copy /y "src-tauri\target\release\bundle\nsis\%PNAME%_*_x64-setup.exe.sig" dist\ >nul 2>&1
 node scripts\make-latest.js
 if errorlevel 1 echo [warn] latest.json was NOT generated (see reason above); this version cannot be an auto-update target
 if /i not "%TARGET%"=="both" goto :done
