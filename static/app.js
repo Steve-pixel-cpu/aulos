@@ -418,11 +418,6 @@ applyFx();
  * markdown 渲染: marked.js 优先，加载失败降级为转义纯文本;
  * 代码块外加语言标签/复制按钮，hljs 可用时做语法高亮
  * ============================================================ */
-function escapeHtml(s) {
-  return s.replace(/[&<>"']/g, c => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
-  })[c]);
-}
 function renderMd(text) {
   if (window.marked && window.marked.parse) {
     try {
@@ -507,142 +502,6 @@ function decorateTables(root) {
     wrap.className = "table-wrap";
     tb.replaceWith(wrap);
     wrap.appendChild(tb);
-  });
-}
-
-async function copyText(text) {
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch (e) {
-    const ta = document.createElement("textarea");
-    ta.value = text;
-    ta.style.position = "fixed"; ta.style.opacity = "0";
-    document.body.appendChild(ta);
-    ta.select();
-    let ok = false;
-    try { ok = document.execCommand("copy"); } catch (e2) { /* ignore */ }
-    ta.remove();
-    return ok;
-  }
-}
-
-/* 复制按钮事件委托（流式重渲染会让节点反复重建，不能逐个绑） */
-document.addEventListener("click", ev => {
-  const btn = ev.target.closest(".code-copy");
-  if (!btn) return;
-  const wrap = btn.closest(".code-wrap");
-  const pre = wrap && wrap.querySelector("pre");
-  if (!pre) return;
-  copyText(pre.innerText).then(ok => {
-    if (!ok) { toast("复制失败"); return; }
-    btn.classList.add("copied");
-    btn.innerHTML = CHECK_SVG + "<span>已复制</span>";
-    setTimeout(() => {
-      btn.classList.remove("copied");
-      btn.innerHTML = COPY_SVG + "<span>复制</span>";
-    }, 1400);
-  });
-});
-
-/* ============================================================
- * 轻提示
- * ============================================================ */
-let toastTimer = null;
-function toast(text, ms = 1600) {
-  const t = $("toast");
-  t.textContent = text;
-  t.classList.add("show");
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.classList.remove("show"), ms);
-}
-window.aulosToast = toast;   // 摸鱼电台(music.js)共用同一枚轻提示
-
-/* ============================================================
- * 确认弹窗 — 替代原生 confirm(): WebView2 的 confirm 顶着
- * "127.0.0.1:8000 显示" 的源地址头, 丑且不可定制。
- * 用法: if (await confirmDialog("删除会话「x」？", { title: "删除会话", okText: "删除", danger: true })) ...
- * ============================================================ */
-function confirmDialog(msg, { title = "确认操作", okText = "确定", danger = false } = {}) {
-  return new Promise(resolve => {
-    const ov = document.createElement("div");
-    ov.id = "confirm-overlay";
-    ov.style.display = "flex";
-    ov.innerHTML =
-      '<div id="confirm-modal" role="alertdialog" aria-modal="true">' +
-        '<div id="confirm-title">' +
-          (danger ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>' : "") +
-          '<span>' + escapeHtml(title) + '</span>' +
-        '</div>' +
-        '<div id="confirm-msg">' + escapeHtml(msg) + '</div>' +
-        '<div id="confirm-actions">' +
-          '<button type="button" data-act="cancel">取消</button>' +
-          '<button type="button" data-act="ok"' + (danger ? ' class="danger"' : '') + '>' + escapeHtml(okText) + '</button>' +
-        '</div>' +
-      '</div>';
-    document.body.appendChild(ov);
-    let done = false;
-    const finish = v => {
-      if (done) return;
-      done = true;
-      document.removeEventListener("keydown", onEsc);
-      ov.remove();
-      resolve(v);
-    };
-    const onEsc = e => { if (e.key === "Escape") finish(false); };
-    document.addEventListener("keydown", onEsc);
-    ov.querySelector("[data-act='ok']").onclick = () => finish(true);
-    ov.querySelector("[data-act='cancel']").onclick = () => finish(false);
-    ov.addEventListener("mousedown", e => { if (e.target === ov) finish(false); });
-    ov.querySelector("[data-act='ok']").focus();
-  });
-}
-window.confirmDialog = confirmDialog;   // 摸鱼电台(music.js)复用
-
-/* ============================================================
- * 输入弹窗 — 替代原生 prompt(): Tauri/WebView2 不支持 prompt
- * （返回 null, 调用方当成"取消"静默退出, 功能看着就是"点了没反应"）。
- * 用法: const name = await promptDialog("歌单名称", { title: "存为歌单", value: "默认值" });
- * ============================================================ */
-function promptDialog(msg, { title = "输入", value = "", placeholder = "", okText = "确定" } = {}) {
-  return new Promise(resolve => {
-    const ov = document.createElement("div");
-    ov.id = "confirm-overlay";
-    ov.style.display = "flex";
-    ov.innerHTML =
-      '<div id="confirm-modal" role="dialog" aria-modal="true">' +
-        '<div id="confirm-title"><span>' + escapeHtml(title) + '</span></div>' +
-        '<div id="confirm-msg">' + escapeHtml(msg) + '</div>' +
-        '<input id="confirm-input" type="text" spellcheck="false" autocomplete="off">' +
-        '<div id="confirm-actions">' +
-          '<button type="button" data-act="cancel">取消</button>' +
-          '<button type="button" data-act="ok">' + escapeHtml(okText) + '</button>' +
-        '</div>' +
-      '</div>';
-    document.body.appendChild(ov);
-    const input = ov.querySelector("#confirm-input");
-    input.value = value;
-    input.placeholder = placeholder;
-    let done = false;
-    const finish = v => {
-      if (done) return;
-      done = true;
-      input.removeEventListener("keydown", onEnter);
-      document.removeEventListener("keydown", onEsc);
-      ov.remove();
-      resolve(v);
-    };
-    const onEnter = e => {
-      e.stopPropagation();            // 别漏进全局快捷键
-      if (e.key === "Enter") finish(input.value.trim());
-    };
-    const onEsc = e => { if (e.key === "Escape") finish(null); };
-    input.addEventListener("keydown", onEnter);
-    document.addEventListener("keydown", onEsc);
-    ov.querySelector("[data-act='ok']").onclick = () => finish(input.value.trim());
-    ov.querySelector("[data-act='ok']").onclick = () => finish(input.value.trim());
-    ov.querySelector("[data-act='cancel']").onclick = () => finish(null);
-    setTimeout(() => input.focus(), 0);
   });
 }
 
@@ -6685,119 +6544,6 @@ document.addEventListener("keydown", ev => {
   if (ev.key === "Escape") { ev.preventDefault(); closeSettings(); }
 });
 
-/* ============================================================
- * 统一悬浮提示: 接管原生 title（系统白框提示又慢又丑, 也无法换肤）
- * 悬停带 title 的元素时显示玻璃小气泡; 悬浮期间临时摘掉原生 title
- * ============================================================ */
-const tip = document.createElement("div");
-tip.id = "tip";
-document.body.appendChild(tip);
-let tipTimer = null, tipAnchor = null, tipSaved = null;
-
-function tipShow(el) {
-  const nativeTitle = el.getAttribute("title");
-  const text = nativeTitle || el.getAttribute("data-tip") || "";
-  if (!text) return;
-  tipSaved = { el, title: nativeTitle || null };   // 仅原生 title 需要压住/还原;
-  if (nativeTitle) el.removeAttribute("title");    // data-tip 不能回写 title, 否则动态
-  tip.textContent = text;                          // 改文案后会被旧 title 永远盖住
-  tip.classList.add("show");
-  const r = el.getBoundingClientRect();
-  const x = Math.max(8, Math.min(r.left + r.width / 2 - tip.offsetWidth / 2, window.innerWidth - tip.offsetWidth - 8));
-  let y = r.top - tip.offsetHeight - 7;   // 默认在元素上方
-  if (y < 8) y = r.bottom + 7;            // 顶部放不下: 移到下方
-  tip.style.left = x + "px";
-  tip.style.top = y + "px";
-}
-function tipHide() {
-  if (tipTimer) { clearTimeout(tipTimer); tipTimer = null; }
-  tip.classList.remove("show");
-  if (tipSaved) {
-    if (tipSaved.title) tipSaved.el.setAttribute("title", tipSaved.title);
-    tipSaved = null;
-  }
-}
-document.addEventListener("mouseover", ev => {
-  const el = ev.target.closest("[title], [data-tip]");
-  if (el === tipAnchor) return;   // 在同一元素内移动: 不重置计时
-  // 移到当前锚点内部没有提示的子元素: 保持现状, 避免"摘title/还原"抖动给原生提示钻空子
-  if (!el && tipAnchor && tipAnchor.contains(ev.target)) return;
-  tipAnchor = el;
-  tipHide();
-  if (!el) return;
-  tipTimer = setTimeout(() => { tipTimer = null; tipShow(el); }, 350);
-});
-document.addEventListener("mousedown", () => { tipAnchor = null; tipHide(); }, true);
-window.addEventListener("blur", tipHide);
-document.addEventListener("scroll", tipHide, true);
-
-/* ============================================================
- * 启动
- * ============================================================ */
-(async function init() {
-  await loadSettings();
-  await loadSessions();
-  refreshSkillCache();   // 斜杠补全数据源: 预取一次（cwd 视图; 切会话后按需重拉）
-  // 默认选最近的会话（列表已倒序，第一个即最新）; 没有会话则进入草稿态。
-  // 桌宠专属会话要跳过——它不在任务列表里, 却常常是最新(悬浮输入框一直
-  // 在用), 不跳过的话每次重启都自动打开它
-  const first = state.sessions.find(s => s.id !== petTaskSidSaved());
-  if (first) await selectSession(first.id);
-  else startDraft();
-  if (state.configured === false) openOnboarding();   // 首次使用: 先引导配置供应商
-  $("input").focus();
-  initUpdateCheck();   // 桌面壳: 静默检查更新（浏览器/源码运行无桥, 内部直接跳过）
-})();
-(() => {
-/* ===== 悬浮循环滚动(跑马灯): 侧栏被截断的项目名 / 任务标题, 悬浮时循环滚动展示全文 ===== */
-  const HS_SEL = ".session-item .title, .project-item .p-name";
-  const HS_SPEED = 40;    // 滚动速度 px/s
-  const HS_GAP = 56;      // 首尾相接处的间距 px
-  const HS_DELAY = 300;   // 悬停多久后开始滚动 ms
-  let hsCur = null;       // { el, html, timer }
-
-  if (!document.getElementById("hs-marquee-style")) {   // 一次性注入样式
-    const st = document.createElement("style");
-    st.id = "hs-marquee-style";
-    st.textContent =
-      ".hs-on{text-overflow:clip}" +
-      ".hs-track{display:inline-flex;white-space:nowrap;will-change:transform;animation:hs-marquee 10s linear infinite}" +
-      ".hs-track>span{flex:none;padding-right:" + HS_GAP + "px}" +
-      "@keyframes hs-marquee{from{transform:translateX(0)}to{transform:translateX(-50%)}}";
-    document.head.appendChild(st);
-  }
-
-  const hsStop = () => {
-    if (!hsCur) return;
-    clearTimeout(hsCur.timer);
-    const el = hsCur.el, html = hsCur.html;
-    hsCur = null;
-    if (!el.isConnected) return;   // 列表已重渲染, 元素已丢弃, 无需还原
-    el.classList.remove("hs-on");
-    el.innerHTML = html;           // 移除轨道, 还原原始内容
-  };
-
-  document.addEventListener("pointerover", e => {
-    const el = e.target.closest && e.target.closest(HS_SEL);
-    if (hsCur && el === hsCur.el) return;
-    hsStop();
-    if (!el) return;
-    hsCur = { el, html: el.innerHTML, timer: setTimeout(() => {
-      const dist = el.scrollWidth - el.clientWidth;
-      if (!el.isConnected || dist < 3) return;   // 未截断(或已被重渲染移除)则不滚动
-      const dur = Math.max(3, Math.round((el.scrollWidth + HS_GAP) / HS_SPEED));   // 一圈的秒数
-      el.classList.add("hs-on");
-      el.innerHTML =
-        '<span class="hs-track" style="animation-duration:' + dur + 's">' +
-        "<span>" + hsCur.html + "</span><span>" + hsCur.html + "</span></span>";
-    }, HS_DELAY) };
-  });
-
-  document.addEventListener("pointerout", e => {
-    if (hsCur && !hsCur.el.contains(e.relatedTarget)) hsStop();   // 离开该标题才停
-  });
-  window.addEventListener("blur", () => hsStop());
-})();
 
 /* ============================================================
  * 桌宠任务桥: 悬浮窗输入框 = 全功能任务入口(与主界面输入框同一条链路)
@@ -6944,3 +6690,71 @@ window.addEventListener("storage", (e) => {
     });
   }
 });
+
+/* ============================================================
+ * 启动
+ * ============================================================ */
+(async function init() {
+  await loadSettings();
+  await loadSessions();
+  refreshSkillCache();   // 斜杠补全数据源: 预取一次（cwd 视图; 切会话后按需重拉）
+  // 默认选最近的会话（列表已倒序，第一个即最新）; 没有会话则进入草稿态。
+  // 桌宠专属会话要跳过——它不在任务列表里, 却常常是最新(悬浮输入框一直
+  // 在用), 不跳过的话每次重启都自动打开它
+  const first = state.sessions.find(s => s.id !== petTaskSidSaved());
+  if (first) await selectSession(first.id);
+  else startDraft();
+  if (state.configured === false) openOnboarding();   // 首次使用: 先引导配置供应商
+  $("input").focus();
+  initUpdateCheck();   // 桌面壳: 静默检查更新（浏览器/源码运行无桥, 内部直接跳过）
+})();
+(() => {
+/* ===== 悬浮循环滚动(跑马灯): 侧栏被截断的项目名 / 任务标题, 悬浮时循环滚动展示全文 ===== */
+  const HS_SEL = ".session-item .title, .project-item .p-name";
+  const HS_SPEED = 40;    // 滚动速度 px/s
+  const HS_GAP = 56;      // 首尾相接处的间距 px
+  const HS_DELAY = 300;   // 悬停多久后开始滚动 ms
+  let hsCur = null;       // { el, html, timer }
+
+  if (!document.getElementById("hs-marquee-style")) {   // 一次性注入样式
+    const st = document.createElement("style");
+    st.id = "hs-marquee-style";
+    st.textContent =
+      ".hs-on{text-overflow:clip}" +
+      ".hs-track{display:inline-flex;white-space:nowrap;will-change:transform;animation:hs-marquee 10s linear infinite}" +
+      ".hs-track>span{flex:none;padding-right:" + HS_GAP + "px}" +
+      "@keyframes hs-marquee{from{transform:translateX(0)}to{transform:translateX(-50%)}}";
+    document.head.appendChild(st);
+  }
+
+  const hsStop = () => {
+    if (!hsCur) return;
+    clearTimeout(hsCur.timer);
+    const el = hsCur.el, html = hsCur.html;
+    hsCur = null;
+    if (!el.isConnected) return;   // 列表已重渲染, 元素已丢弃, 无需还原
+    el.classList.remove("hs-on");
+    el.innerHTML = html;           // 移除轨道, 还原原始内容
+  };
+
+  document.addEventListener("pointerover", e => {
+    const el = e.target.closest && e.target.closest(HS_SEL);
+    if (hsCur && el === hsCur.el) return;
+    hsStop();
+    if (!el) return;
+    hsCur = { el, html: el.innerHTML, timer: setTimeout(() => {
+      const dist = el.scrollWidth - el.clientWidth;
+      if (!el.isConnected || dist < 3) return;   // 未截断(或已被重渲染移除)则不滚动
+      const dur = Math.max(3, Math.round((el.scrollWidth + HS_GAP) / HS_SPEED));   // 一圈的秒数
+      el.classList.add("hs-on");
+      el.innerHTML =
+        '<span class="hs-track" style="animation-duration:' + dur + 's">' +
+        "<span>" + hsCur.html + "</span><span>" + hsCur.html + "</span></span>";
+    }, HS_DELAY) };
+  });
+
+  document.addEventListener("pointerout", e => {
+    if (hsCur && !hsCur.el.contains(e.relatedTarget)) hsStop();   // 离开该标题才停
+  });
+  window.addEventListener("blur", () => hsStop());
+})();
