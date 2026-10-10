@@ -11,7 +11,7 @@ from typing import Optional
 from pydantic import BaseModel, ValidationError
 
 from fsatomic import read_text_with_retry
-from models import Message
+from models import Message, TextContentBlock
 
 
 class StorageEntry(BaseModel):
@@ -79,8 +79,17 @@ class SessionStore:
     # JSONL 出现"一行撕成多行"的结构性损坏(20260925-022538 实测)。
     _append_lock = threading.Lock()
 
+    # 全文搜索: 每会话摘录上限; 摘录前后上下文宽度。量级考虑:
+    # 会话列表一屏放得下, 没必要做分页; 摘录太长反而淹没关键词。
+    SEARCH_SNIPPET_LIMIT = 3
+    SEARCH_CONTEXT = 60
+
     def __init__(self, storage_dir: Path):
         self._storage_dir = storage_dir
+        # 全文搜索的可搜文本缓存: (mtime_ns, size) -> 拼接后的正文。
+        # 文件追加(新消息)必改 mtime/size, 缓存自然失效; 进程重启清零,
+        # 无持久化——派生数据不落盘, 永不与 JSONL 失同步。
+        self._search_text_cache: dict[Path, tuple[int, int, str]] = {}
 
     def  _append_entry(self, path: Path, entry):
         """追加一条 JSONL 记录。entry 是已 dump 的 dict 或 pydantic 模型。
@@ -297,6 +306,91 @@ class SessionStore:
 
     def _session_path(self, session_id: str) -> Path:
         return self._storage_dir / f"{session_id}.jsonl"
+
+    # --- 会话全文搜索 (2026-10-10) ---
+    # 定位: "记得聊过什么但忘了是哪个会话"的兜底查找。线性扫描 + mtime
+    # 缓存, 不建倒排索引——几十 MB 量级全扫 <200ms(本机 84 会话/35MB 实测
+    # 110ms), 子串语义天然支持(倒排需分词且丢子串命中), 派生数据不落盘
+    # 永不漏命中。数据量涨到数百 MB 再考虑换实现, 接口不变。
+
+    @staticmethod
+    def _searchable_text(message: Message) -> str:
+        """拼接一条消息的可搜文本: text 块 + tool_use.input +
+        tool_result.output + file 块。image 无文本自然跳过;
+        title/workdir 等元数据记录不是 Message, 天然不参与。"""
+        parts: list[str] = []
+        for block in message.content:
+            if isinstance(block, TextContentBlock):
+                parts.append(block.text)
+            elif block.type == "tool_use":
+                parts.append(str(getattr(block, "input", "") or ""))
+            elif block.type == "tool_result":
+                parts.append(str(getattr(block, "output", "") or ""))
+            elif block.type == "file":
+                parts.append(f"{block.name} {block.text}")
+        return "\n".join(parts)
+
+    def _session_search_text(self, path: Path) -> str:
+        """取会话文件的可搜正文, 按 (mtime_ns, size) 缓存。
+        追加消息必改 mtime/size → 缓存自动失效; 校验不过就整文件重解析。"""
+        try:
+            st = path.stat()
+            key = (st.st_mtime_ns, st.st_size)
+        except OSError:
+            return ""
+        cached = self._search_text_cache.get(path)
+        if cached and cached[0] == key[0] and cached[1] == key[1]:
+            return cached[2]
+        parts: list[str] = []
+        for entry in self._read_entries(path):
+            if isinstance(entry, StorageEntry):
+                try:
+                    msg = Message.model_validate(entry.message)
+                    parts.append(self._searchable_text(msg))
+                except ValidationError:
+                    continue
+        text = "\n".join(parts)
+        self._search_text_cache[path] = (key[0], key[1], text)
+        return text
+
+    def search_sessions(self, query: str) -> dict[str, list[str]]:
+        """全库子串搜索消息正文, 返回 {会话id: [摘录, ...]}。
+
+        - 大小写不敏感(与前端标题过滤的 includes 语义一致)
+        - 摘录压缩空白为单行, 命中词两侧各留 SEARCH_CONTEXT 字符,
+          被截断的一侧以 … 起止; 每会话最多 SEARCH_SNIPPET_LIMIT 条
+        - query 去除首尾空白后为空 → 返回 {} (调用方回落标题过滤)
+        """
+        q = (query or "").strip().lower()
+        if not q:
+            return {}
+        results: dict[str, list[str]] = {}
+        if not self._storage_dir.exists():
+            return results
+        for path in sorted(self._storage_dir.glob("*.jsonl")):
+            text = self._session_search_text(path).lower()
+            if q not in text:
+                continue
+            snippets: list[str] = []
+            pos = 0
+            while len(snippets) < self.SEARCH_SNIPPET_LIMIT:
+                idx = text.find(q, pos)
+                if idx < 0:
+                    break
+                start = max(0, idx - self.SEARCH_CONTEXT)
+                end = min(len(text), idx + len(q) + self.SEARCH_CONTEXT)
+                # 大写原文按同一坐标切摘录, 大小写在摘录里保真
+                raw = self._session_search_text(path)[start:end]
+                snippet = " ".join(raw.split())  # 压换行/多空白为单空格
+                if start > 0:
+                    snippet = "…" + snippet
+                if end < len(text):
+                    snippet += "…"
+                snippets.append(snippet)
+                pos = idx + len(q)
+            if snippets:
+                results[path.stem] = snippets
+        return results
 
     def _read_entries(self, file_path: Path) -> list[StorageEntry]:
 

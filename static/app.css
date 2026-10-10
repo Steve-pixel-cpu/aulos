@@ -328,6 +328,26 @@
   }
   .session-item.unnamed .title { color: var(--text-3); font-style: italic; }
   .session-item .meta { flex: none; font-size: calc(11px * var(--fs-ui)); color: var(--text-3); }
+  /* 全文命中摘录行: 摘录出现时条目高度自适应（34px 固定高改为 auto） */
+  .session-item:has(.s-snippet:not(:empty)) {
+    height: auto; min-height: 34px; padding-top: 5px; padding-bottom: 5px;
+    flex-wrap: wrap;
+  }
+  .session-item .s-snippet {
+    flex-basis: 100%; display: none;
+    font-size: calc(11.5px * var(--fs-ui)); color: var(--text-3);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .session-item:has(.s-snippet:not(:empty)) .s-snippet { display: block; }
+  .s-snippet .snip-tag {
+    display: inline-block; margin-right: 6px; padding: 0 4px;
+    font-size: calc(10px * var(--fs-ui)); line-height: 15px;
+    border: 1px solid var(--border-strong); border-radius: 4px; color: var(--text-3);
+  }
+  .s-snippet mark {
+    background: var(--accent-soft); color: var(--accent);
+    border-radius: 3px; padding: 0 1px;
+  }
   .session-item .s-del, .session-item .s-ren {
     display: none; flex: none;
     width: 25px; height: 25px; padding: 0;

@@ -41,6 +41,7 @@ const state = {
   // 与该会话实际用的值不一致（用户看到的"串值"大多是这条路径）
   globalDefaults: { permissionMode: "prompt", permissionPlan: false, thinkingLevel: null, modelKey: null },
   runs: {},                 // sessionId → 运行态（多会话并行: 各自 WS/流式指针/审批）
+  fulltext: null,           // 全文搜索态: { query, hits, pending, seq }（null = 无）
 };
 
 /* 一个会话的运行态。多会话并行的核心: 每个会话有自己的 WebSocket、
@@ -1390,10 +1391,38 @@ function makeSessionItem(s) {
     + '<span class="s-unread"></span>'
     + '<span class="s-plan">待批计划</span>'
     + '<span class="title"></span><span class="meta"></span>'
+    + '<div class="s-snippet"></div>'
     + '<button class="s-ren" data-tip="重命名">' + PENCIL_SMALL_SVG + '</button>'
     + '<button class="s-del" data-tip="删除会话">' + TRASH_SMALL_SVG + '</button>';
   item.querySelector(".title").textContent = displayTitle(s);
   item.querySelector(".meta").textContent = relativeTime(s.id);
+  // 全文命中摘录: 标题也命中时同样展示（"正文"前缀区分命中来源）。
+  // 高亮用大小写不敏感正则逐段 append 文本节点/mark 节点——不用
+  // innerHTML 拼接, 工具输出里的 HTML 片段不会被当标记解析
+  const fts = state.fulltext;
+  const q = ($("search-input").value || "").trim().toLowerCase();   // renderSessionList 的局部 q 不在本作用域, 自行读取
+  const snipEl = item.querySelector(".s-snippet");
+  const hitSnips = (q && fts && fts.query === q && fts.hits && fts.hits[s.id]) || null;
+  if (hitSnips && hitSnips.length) {
+    snipEl.textContent = "";
+    const tag = document.createElement("span");
+    tag.className = "snip-tag";
+    tag.textContent = "正文";
+    snipEl.appendChild(tag);
+    const text = document.createElement("span");
+    const re = new RegExp(fts.query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi");
+    let last = 0, m;
+    while ((m = re.exec(hitSnips[0])) !== null) {
+      if (m.index > last) text.appendChild(document.createTextNode(hitSnips[0].slice(last, m.index)));
+      const mark = document.createElement("mark");
+      mark.textContent = m[0];
+      text.appendChild(mark);
+      last = m.index + m[0].length;
+      if (m[0].length === 0) re.lastIndex++;   // 防空匹配死循环
+    }
+    if (last < hitSnips[0].length) text.appendChild(document.createTextNode(hitSnips[0].slice(last)));
+    snipEl.appendChild(text);
+  }
   const run = state.runs[s.id];
   if (run && run.busy) item.classList.add("running");
   // 卡在计划审批: 元信息让位给"待批计划"徽标, 错过弹窗也能从侧栏看出
@@ -1473,6 +1502,10 @@ function renderSessionList() {
     list.dataset.booted = "1";
   }
   const q = ($("search-input").value || "").trim().toLowerCase();
+  // 全文搜索态: { query, hits: {sid: [摘录...]}, seq } —— 输入框有词且
+  // 全文接口已返回时非空; 标题本地过滤即时反馈, 全文结果异步叠加
+  const fts = state.fulltext;
+  const ftsActive = q && fts && fts.query === q && fts.hits;
   // 桌宠专属会话不进任务列表: 它是悬浮输入框的对话载体, 混在用户
   // 任务里只会越积越长。会话本体照常存在(WS/轮次/落盘), 仅列表不渲染
   const petSid = petTaskSidSaved();
@@ -1480,7 +1513,21 @@ function renderSessionList() {
     s => s.id !== petSid
       && (!q
         || (s.title || "").toLowerCase().includes(q)
-        || (s.workdir || "").toLowerCase().includes(q)));   // 项目路径/目录名也可搜
+        || (s.workdir || "").toLowerCase().includes(q)));
+  // 全文命中但标题没命中的会话也要显示（追加到过滤结果后面, 去重）
+  if (ftsActive) {
+    const seen = new Set(sessions.map(s => s.id));
+    for (const s of state.sessions) {
+      if (s.id !== petSid && !seen.has(s.id) && fts.hits[s.id]) sessions.push(s);
+    }
+  }
+  if (q && !sessions.length && ftsActive && !Object.keys(fts.hits).length && !fts.pending) {
+    const e = document.createElement("div");
+    e.className = "list-empty";
+    e.textContent = "标题和正文都没有匹配的会话";
+    list.appendChild(e);
+    return;
+  }
   const addLabel = text => {
     const l = document.createElement("div");
     l.className = "list-label";
@@ -4285,6 +4332,8 @@ function openSearch() {
 function closeSearch() {
   $("search-box").classList.remove("open");
   $("search-input").value = "";
+  state.fulltext = null;      // 清掉全文命中态, 残留会让下次渲染闪现旧摘录
+  clearTimeout(_ftsTimer);
   renderSessionList();
 }
 $("btn-search").onclick = () => {
@@ -4293,7 +4342,37 @@ $("btn-search").onclick = () => {
   else openSearch();
 };
 
-$("search-input").addEventListener("input", renderSessionList);
+let _ftsTimer = null;
+let _ftsSeq = 0;
+function scheduleFulltextSearch() {
+  // 防抖 300ms 后请求全文接口; 竞态用递增 seq 兜底——慢响应的旧请求
+  // 返回时 seq 已变, 结果丢弃（快速打字时防止旧词结果覆盖新词渲染）
+  clearTimeout(_ftsTimer);
+  const q = ($("search-input").value || "").trim();
+  if (!q) {
+    state.fulltext = null;
+    renderSessionList();
+    return;
+  }
+  _ftsTimer = setTimeout(async () => {
+    const seq = ++_ftsSeq;
+    state.fulltext = { query: q, hits: null, pending: true };
+    renderSessionList();
+    try {
+      const r = await fetch(`/api/sessions/search?q=${encodeURIComponent(q)}`);
+      if (!r.ok) throw new Error(r.status);
+      const hits = await r.json();
+      if (seq !== _ftsSeq) return;          // 过期响应丢弃
+      state.fulltext = { query: q, hits, pending: false };
+    } catch (e) {
+      if (seq !== _ftsSeq) return;
+      state.fulltext = { query: q, hits: {}, pending: false };  // 失败静默回落标题过滤
+    }
+    renderSessionList();
+  }, 300);
+}
+
+$("search-input").addEventListener("input", () => { renderSessionList(); scheduleFulltextSearch(); });
 $("search-input").addEventListener("keydown", ev => {
   if (ev.key === "Escape") closeSearch();
 });

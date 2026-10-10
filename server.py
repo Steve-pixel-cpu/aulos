@@ -1762,6 +1762,15 @@ async def api_list_dirs(path: str = ""):
     return {"path": str(target), "dirs": dirs}
 
 
+@app.get("/api/sessions/search")
+async def api_search_sessions(q: str = ""):
+    """会话全文搜索: 扫消息正文, 返回 {会话id: [摘录...]}。
+    空查询返回空对象, 前端回落标题过滤。文件 IO 阻塞, 丢线程池跑
+    不卡事件循环（量级: 几十 MB 全扫百来毫秒, 有 mtime 缓存兜底）。"""
+    import anyio
+    return await anyio.to_thread.run_sync(store.search_sessions, q)
+
+
 @app.get("/api/sessions/{session_id}/messages")
 async def api_get_messages(session_id: str):
     if session_id not in set(store.list_sessions()):
