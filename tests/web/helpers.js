@@ -80,7 +80,8 @@ function loadUiDialogs() {
 function loadApp() {
   const window = makeDom(pageHtml());
   runScripts(window, "ui-dialogs.js", "notify.js", "app.js",
-           "settings-extras.js", "desktop.js");   // 同 index.html 完整 defer 序
+           "settings-extras.js", "desktop.js", "bubbles.js", "msg-extras.js");
+  // ↑ 同 index.html 完整 defer 序; init() 的异步尾巴会调到后段模块的符号
   return { window };
 }
 

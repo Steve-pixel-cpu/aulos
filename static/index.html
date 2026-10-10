@@ -676,13 +676,15 @@
      → app(核心: state/WS/气泡/发送/设置/init)
      → settings-extras(设置页三节) + desktop(标题栏/右键/更新/拖宽,
        两者顶层自执行, 刻意放在 app.js 之后)
-     → music/pet。
+     → bubbles(气泡工厂)/msg-extras(滚动·minimap·斜杠·划词) → music/pet。
      后续拆分见 README「代码组织与拆分路线」; ?v= 手动 bump 双保险 -->
 <script src="/static/ui-dialogs.js?v=20261010a" defer></script>
 <script src="/static/tooltip.js?v=20261010a" defer></script>
 <script src="/static/notify.js?v=20261010a" defer></script>
-<script src="/static/app.js?v=20261010g" defer></script>
+<script src="/static/app.js?v=20261010i" defer></script>
 <script src="/static/settings-extras.js?v=20261010a" defer></script>
+<script src="/static/bubbles.js?v=20261010a" defer></script>
+<script src="/static/msg-extras.js?v=20261010a" defer></script>
 <script src="/static/desktop.js?v=20261010a" defer></script>
 <script src="/static/music.js?v=20260926b" defer></script>
 <script src="/static/pet.js?v=20260926a" defer></script>
