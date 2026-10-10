@@ -1,17 +1,19 @@
 {
   "name": "aulos",
-  "version": "5.0.0",
+  "version": "5.0.2",
   "description": "[DEPRECATED] Electron 壳已弃用, 桌面端由 Tauri 壳承担 (src-tauri/)。保留仅供参照, 不再随版本发布",
   "main": "electron/main.js",
   "private": true,
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder --win"
+    "dist": "electron-builder --win",
+    "test:web": "node --test tests/web/*.test.js"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.4",
     "electron": "^44.4.1",
-    "electron-builder": "^26.0.12"
+    "electron-builder": "^26.0.12",
+    "jsdom": "^29.1.1"
   },
   "build": {
     "appId": "com.aulos.desktop",
