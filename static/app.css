@@ -3225,10 +3225,12 @@ body.col-resizing, body.col-resizing * { cursor: col-resize !important; }
   :root[data-mica="1"] #pane.plan-open > #plan-panel {
     background: transparent;
   }
-  :root[data-mica="1"] #sidebar,
-  :root[data-mica="1"] #titlebar {
+  :root[data-mica="1"] #sidebar {
     background: color-mix(in srgb, var(--bg-side) 30%, transparent);
   }
+  /* 标题条: 与文档头一致坐裸云母(Win11 原生应用标题栏同语言), 底部
+   * 分隔线保留。原先跟着侧栏 30% 着色, 亮壁纸上叠出一层白, 撤掉 */
+  :root[data-mica="1"] #titlebar { background: transparent; }
   /* 云母下 backdrop-filter 全部退休: 模糊窗口内像素没有意义。
    * 覆盖 Fluent 叠加层里带 blur 的五处(@supports 块), 置 none + 提权 */
   :root[data-mica="1"] #sidebar,
@@ -3258,13 +3260,23 @@ body.col-resizing, body.col-resizing * { cursor: col-resize !important; }
   :root[data-mica="1"] .plan-card,
   :root[data-mica="1"] .todo-card,
   :root[data-mica="1"] .todo-list { background: transparent; }
-  :root[data-mica="1"] #input-card { background: color-mix(in srgb, var(--surface) 78%, transparent); }
+  :root[data-mica="1"] #input-card { background: color-mix(in srgb, var(--surface) 65%, transparent); }
+  /* 侧栏搜索框: 实底白在云母上是一块死白 → 转半透让云母透上来 */
+  :root[data-mica="1"] #search-input { background: color-mix(in srgb, var(--surface) 60%, transparent); }
   /* 弹层: 实底不变(遮不住底下的聊天内容就不叫弹层) */
   :root[data-mica="1"] .dd-pop,
   :root[data-mica="1"] .modal-box,
   :root[data-mica="1"] .plan-pop,
   :root[data-mica="1"] .approve-card,
   :root[data-mica="1"] #mm-pop { background: var(--pop-bg-solid, var(--surface)); }
+  /* 全屏遮罩(确认/更新/灯箱): 撤 backdrop blur——云母下 UI 坐在壁纸上,
+   * blur 会把窗口内容连壁纸一起搅成脏雾; 留暗化就够聚焦 */
+  :root[data-mica="1"] #confirm-overlay,
+  :root[data-mica="1"] #update-overlay,
+  :root[data-mica="1"] #img-lightbox {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
   /* 摸鱼电台: dock 挂侧栏淡着色坐云母(与 #sidebar 同层, 不再是一块实灰),
    * 弹层面板同弹层规则——退休 backdrop-filter + 实底 */
   :root[data-mica="1"] #music-dock {
