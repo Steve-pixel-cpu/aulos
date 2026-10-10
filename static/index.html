@@ -669,6 +669,12 @@
   </div>
 </div>
 
+<!-- app.js 拆分进行时: notify.js 是低耦合功能域外迁的第一个（完成通知/提示音）。
+     三个文件同为全局作用域经典脚本, defer 按序执行、同域共享, 无模块系统——
+     notify.js 的函数在 app.js 里直接裸调。后续拆分照此模式: 对外符号少的
+     域先走; 网状耦合的核心（state/WS/气泡/发送）留在 app.js。
+     ?v= 手动 bump 与 no-cache 中间件双保险 -->
+<script src="/static/notify.js?v=20261010a" defer></script>
 <script src="/static/app.js?v=20261010c" defer></script>
 <script src="/static/music.js?v=20260926b" defer></script>
 <script src="/static/pet.js?v=20260926a" defer></script>

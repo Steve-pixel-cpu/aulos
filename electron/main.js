@@ -1,3 +1,8 @@
+// [DEPRECATED 2026-10-10] Electron 壳已弃用: 桌面端由 Tauri 壳（src-tauri/）
+// 承担——更小的包体、WebView2 系统共享运行时、原生通知/单实例/自动更新
+// 均已对齐。本目录保留仅供参照, 不再随版本发布; `npm start` 仍可跑通,
+// 但新能力只做 Tauri 侧, 请勿在此继续投入。
+//
 // aulos 桌面壳:
 //   - 缺省端口上已有 aulos 服务在跑 → 直接复用, 不拉进程、退出时不杀
 //     （开发态 8000 / ~/.aulos/port; 打包态 18080 / ~/.aulos/release-port,

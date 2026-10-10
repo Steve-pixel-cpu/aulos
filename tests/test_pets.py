@@ -16,6 +16,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import server
+import server_pets
 
 
 @pytest.fixture()
@@ -165,7 +166,7 @@ def test_list_pets_priority_and_cache(tmp_path, monkeypatch):
     _make_pet(install, "shared")                 # 两边同 id: 安装目录赢
     _make_pet(codex, "shared", manifest={"displayName": "Codex 侧"})
     _make_pet(codex, "codex-only")
-    monkeypatch.setattr(server, "_pets_dirs",
+    monkeypatch.setattr(server_pets, "_pets_dirs",
                         lambda: [(install, "install"), (codex, "codex")])
     out = server._list_pets()
     ids = [p["id"] for p in out["pets"]]
@@ -173,7 +174,7 @@ def test_list_pets_priority_and_cache(tmp_path, monkeypatch):
     assert out["pets"][0]["source"] == "install"
     assert out["pets"][1]["source"] == "codex"
     assert out["petsDir"] == str(install)
-    assert server._pet_sheets["shared"] == install / "shared" / "spritesheet.png"
+    assert server_pets._pet_sheets["shared"] == install / "shared" / "spritesheet.png"
 
 
 # ------------------------------------------------------------
@@ -192,7 +193,7 @@ def test_builtin_pet_ships():
 def _isolated_pets(tmp_path, monkeypatch):
     install = tmp_path / "pets"
     _make_pet(install, "pet-a")
-    monkeypatch.setattr(server, "_pets_dirs", lambda: [(install, "install")])
+    monkeypatch.setattr(server_pets, "_pets_dirs", lambda: [(install, "install")])
     return install
 
 
@@ -374,13 +375,13 @@ def test_pet_chat_unknown_provider_falls_back_to_global(client, monkeypatch):
     """provider 不存在/被禁用: 回落全局单例, 也不留桌宠专属缓存。"""
     monkeypatch.setattr(server, "_provider_cfg",
                         {"active": {}, "providers": []})
-    monkeypatch.setattr(server, "_pet_client", None)
+    monkeypatch.setattr(server_pets, "_pet_client", None)
     calls = _stub_generate(monkeypatch, '{"say": "在"}')
     r = client.post("/api/pet/chat", json={
         "provider_id": "ghost", "model_id": "x"})
     assert r.json() == {"say": "在"}
     assert calls                                              # 走的就是全局单例
-    assert server._pet_client is None
+    assert server_pets._pet_client is None   # 缓存宿主在 server_pets
 
 
 def test_pet_chat_dedicated_client_cached(client, monkeypatch):
@@ -395,7 +396,7 @@ def test_pet_chat_dedicated_client_cached(client, monkeypatch):
                        "base_url": "", "protocol": "anthropic",
                        "models": [{"id": "big"}]}],
     })
-    monkeypatch.setattr(server, "_pet_client", None)
+    monkeypatch.setattr(server_pets, "_pet_client", None)
     built = []
 
     def fake_make(protocol, *, api_key, model, base_url, **kw):
@@ -405,7 +406,8 @@ def test_pet_chat_dedicated_client_cached(client, monkeypatch):
         built.append((protocol, api_key, model, base_url))
         return stub
 
-    monkeypatch.setattr(server, "make_api_client", fake_make)
+    # 拆分后 _pet_api_client 宿主是 server_pets: patch 它命名空间的工厂
+    monkeypatch.setattr(server_pets, "make_api_client", fake_make)
     cli1 = server._pet_api_client("cheap", "mini")
     cli2 = server._pet_api_client("cheap", "mini")
     assert cli1 is cli2 and len(built) == 1                   # 缓存命中

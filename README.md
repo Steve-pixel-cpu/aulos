@@ -92,6 +92,10 @@
        │            WebSocket/REST (token 门禁)
        │          ┌──────────────┴───────────────────┐
        └──────────►   server.py (FastAPI 后端)        │
+                  │     ├─ server_common  装配基座    │
+                  │     ├─ server_music   电台 API    │
+                  │     ├─ server_bilibili B站代理    │
+                  │     └─ server_pets    桌宠 API    │
                   └──────────────┬───────────────────┘
                                  │
         ┌────────────────────────┴───────────────────────┐
@@ -111,6 +115,9 @@
 |---|---|
 | `main.py` | CLI 入口：REPL、斜杠命令、headless、工具 spec、装配（CLI 与 Web 共用） |
 | `server.py` | FastAPI 后端：WebSocket 推流、权限审批桥、会话/设置/MCP/记忆 REST API |
+| `server_common.py` | Web 共享基座：store/api_client/app 单例、事件路由（dispatch）、浏览器镜像、令牌门禁令牌 |
+| `server_music.py` / `server_bilibili.py` | 摸鱼电台 REST：本地曲库与网易云代理 / B 站音频流本地代理 |
+| `server_pets.py` | 桌宠 REST：图集契约校验、精灵图服务、周期点评 side-call |
 | `runtime.py` | Agent 主循环：事件流、并行工具执行、打断、预算、护栏与检查点 |
 | `api_client.py` | Anthropic / OpenAI 流式客户端、思考档位、退避重试 |
 | `tools.py` | 内置工具实现与注册表（后台任务、行预算落盘、取消检查点） |
@@ -298,7 +305,10 @@ build-exe.cmd
 端口自动避让（8000 被占时退让 8010–8019）、父子进程看门狗、令牌门禁等。
 
 `build-mac.sh` 与 `scripts/build-linux-tauri.sh` 提供 macOS / Linux 打包入口；
-`electron/` 为备选桌面壳（Electron + electron-builder，跨平台 dmg/NSIS/portable）。
+> **Electron 壳已弃用（2026-10）**：`electron/` 目录保留仅供参照，不再随版本
+> 发布。桌面端能力（原生通知、单实例、自动更新、多窗口/桌宠）已全部由
+> Tauri 壳承担且包体更小（WebView2 系统共享运行时）。`npm start` 仍可跑通，
+> 但新功能只做 Tauri 侧，请勿在 electron/ 继续投入。
 
 ## 发版
 
@@ -338,6 +348,45 @@ git push origin v4.2.0
 - VMware 等无 3D 加速环境: 应用自动设置 `WEBKIT_DISABLE_DMABUF_RENDERER=1`
   回退 WebKitGTK 的非加速渲染路径——否则窗口会停留在过期帧/空白 (页面
   实际正常)。已显式设置该变量的环境不受影响。
+
+## 命名约定与改名史
+
+项目经历了 `x-code → aulos` 更名（v5.0.0 完成），由此形成两条持久的约定：
+
+**显示名与标识符双轨**——用户可见处一律首字母大写 **Aulos**（窗口标题、
+快捷方式、CLI 横幅、README 标题、安装包名）；技术标识符一律小写 `aulos`
+且**不可改动**，改了会断机制或丢数据：
+
+| 标识 | 为什么不能改 |
+|---|---|
+| `config.py` 的 `APP_NAME = "aulos"` | 决定用户数据目录 `~/.aulos`，改名 = 全部会话/配置/记忆"消失" |
+| `x-aulos-token` 头 / `aulos_token` cookie | 桌面壳与后端的握手约定，两端必须一致 |
+| `/api/ping` 返回的 `app: "aulos"` | 壳靠它确认"这是 aulos 后端"（8000 可能被打印服务等抢占） |
+| `com.aulos.desktop` / `aulos-server.exe` | 打包标识与 sidecar 文件名，发布链按此装配 |
+
+**产物名单点化**——安装包/更新清单的文件名（`Aulos_<ver>_x64-setup.exe` 等）
+统一从 `src-tauri/tauri.conf.json` 的 `productName` 派生：JS 脚本直接读 conf，
+cmd 批处理用 `findstr` 提取。改名只动 conf 一处，各发布脚本零改动；
+漏改任何一处会导致 `latest.json` 指向不存在的文件、自动更新静默断链。
+
+`config.py` 里保留的 `LEGACY_APP_NAME = "x-code"` 与一次性迁移逻辑是给
+老用户的无感升级路径（首启自动搬 `~/.xcode` → `~/.aulos`），新代码不要
+引用它，也不要删除——直到官方宣布不再支持 v4 以前的升级。
+
+## 代码组织与拆分路线
+
+两个历史巨石文件正在按域渐进拆分（机械搬移 + 门面保兼容，不做大爆炸重写）：
+
+- **`server.py`（后端门面）**：装配单例与事件路由已上移 `server_common.py`，
+  电台/B站/桌宠三个低耦合 REST 域拆为 `server_music.py` / `server_bilibili.py` /
+  `server_pets.py`（import 即挂路由）。`import server` 的全部既有调用点与
+  测试零改动——server.py re-export 共享名。后续候选：WS 路由、设置/供应商
+  运行态、Skills/记忆管理各自成模块。
+- **`static/app.js`（前端，全局作用域经典脚本）**：按「低耦合域先外迁」
+  模式拆分，已完成 `notify.js`（完成通知/提示音）；`music.js`/`pet.js` 是
+  更早的外迁先例。同域共享全局作用域、defer 按序加载，无模块系统。
+  网状耦合的核心（state/WS/气泡工厂/发送链路）留在 app.js——在补齐
+  前端测试前不做 ES 模块化改造（导出面太大，回归风险大于收益）。
 
 ## 测试
 

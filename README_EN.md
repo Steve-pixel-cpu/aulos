@@ -126,6 +126,10 @@ harness, and session persistence.
        │            WebSocket/REST (token gate)
        │          ┌──────────────┴───────────────────┐
        └──────────►   server.py (FastAPI backend)     │
+                  │     ├─ server_common  shared core │
+                  │     ├─ server_music   radio API   │
+                  │     ├─ server_bilibili Bili proxy │
+                  │     └─ server_pets    pet API     │
                   └──────────────┬───────────────────┘
                                  │
         ┌────────────────────────┴───────────────────────┐
@@ -145,6 +149,9 @@ harness, and session persistence.
 |---|---|
 | `main.py` | CLI entry: REPL, slash commands, headless, tool specs, assembly (shared by CLI & Web) |
 | `server.py` | FastAPI backend: WebSocket streaming, permission approval bridge, session/settings/MCP/memory REST API |
+| `server_common.py` | Web shared core: store/api_client/app singletons, event dispatch, browser mirror, token gate |
+| `server_music.py` / `server_bilibili.py` | Music radio REST: local library & NetEase proxy / Bilibili audio local proxy |
+| `server_pets.py` | Desktop pet REST: spritesheet contract, sheet serving, periodic quip side-call |
 | `runtime.py` | Agent main loop: event stream, parallel tool execution, interrupts, budgets, guards & checkpoints |
 | `api_client.py` | Anthropic / OpenAI streaming clients, thinking levels, backoff retry |
 | `tools.py` | Built-in tools & registry (background tasks, line-budget spill, cancel checkpoints) |
@@ -159,7 +166,12 @@ harness, and session persistence.
 | `call_log.py` | Per-call duration/usage log |
 | `hooks.py` / `retry.py` / `prompt.py` | Pre/PostToolUse hooks / backoff curves / system prompt builder |
 | `static/` | Web frontend (vanilla JS, no framework) |
-| `src-tauri/` / `electron/` | Desktop shells: backend spawn, token gate, single instance, watchdog |
+| `src-tauri/` / > **The Electron shell is deprecated (2026-10)**: the `electron/` directory is
+> kept for reference only and no longer ships with releases. All desktop
+> capabilities (native notifications, single instance, auto-update,
+> multi-window/pet) are covered by the Tauri shell with a smaller footprint
+> (shared system WebView2 runtime). `npm start` still works, but new features
+> land on the Tauri side only — do not invest further in electron/.
 
 ## Getting Started
 
@@ -397,6 +409,54 @@ git push origin v4.2.0
 - On VMs without 3D acceleration (e.g. VMware): the app sets
   `WEBKIT_DISABLE_DMABUF_RENDERER=1` automatically to fall back to WebKitGTK's
   non-accelerated path — otherwise the window can stick to stale/blank frames.
+
+## Naming Conventions & Rename History
+
+The project was renamed `x-code → aulos` (completed in v5.0.0), leaving two
+standing conventions:
+
+**Display names vs. identifiers** — everything user-facing uses capitalized
+**Aulos** (window titles, shortcuts, CLI banner, README titles, installer
+names); technical identifiers are lowercase `aulos` and **must not change** —
+renaming them breaks mechanisms or loses data:
+
+| Identifier | Why it must not change |
+|---|---|
+| `APP_NAME = "aulos"` in `config.py` | Determines the data directory `~/.aulos`; renaming = all sessions/config/memory "vanish" |
+| `x-aulos-token` header / `aulos_token` cookie | Handshake contract between shell and backend; both sides must match |
+| `app: "aulos"` returned by `/api/ping` | The shell uses it to verify "this is the aulos backend" (port 8000 may be taken by print services) |
+| `com.aulos.desktop` / `aulos-server.exe` | Packaging identifiers and sidecar filename; the release pipeline assembles around them |
+
+**Single-source artifact names** — installer/update-manifest filenames
+(`Aulos_<ver>_x64-setup.exe` etc.) derive from `productName` in
+`src-tauri/tauri.conf.json`: JS scripts read the conf directly, cmd batches
+extract it with `findstr`. Renaming touches the conf only; missing any one
+script would point `latest.json` at a nonexistent file and silently break
+auto-update.
+
+`LEGACY_APP_NAME = "x-code"` and the one-shot migration in `config.py` are
+the seamless-upgrade path for old users (first launch moves `~/.xcode` →
+`~/.aulos`). Do not reference it in new code; do not delete it until upgrades
+from pre-v4 are officially unsupported.
+
+## Code Organization & Split Roadmap
+
+The two historical monolith files are being split incrementally by domain
+(mechanical moves + facade for compatibility; no big-bang rewrite):
+
+- **`server.py` (backend facade)**: assembly singletons & event routing moved
+  up to `server_common.py`; the three low-coupling REST domains (radio /
+  Bilibili / pet) are now `server_music.py` / `server_bilibili.py` /
+  `server_pets.py` (routes register on import). Every existing `import server`
+  call site and test keeps working via re-exports. Next candidates: WS
+  routing, settings/provider runtime state, Skills/memory management.
+- **`static/app.js` (frontend, classic global-scope script)**: splits by
+  "migrate low-coupling domains first" — `notify.js` (completion
+  notifications/chime) is done; `music.js`/`pet.js` are earlier precedents.
+  Domains share the global scope via deferred sequential loading — no module
+  system. The densely-coupled core (state/WS/bubble factory/send pipeline)
+  stays in app.js; no ES-module conversion until frontend tests exist (the
+  export surface is too large; regression risk outweighs benefit).
 
 ## Testing
 

@@ -132,120 +132,23 @@ setup_console()  # Windows 控制台 UTF-8 兜底（服务器日志不乱码，�
 #     （设置页/初始化页写入, 读写逻辑在 config.py）。
 #     没有 .env 兜底——未配置时 api_key 为空串照常起服务,
 #     前端检测到(/api/settings.configured=false)会弹初始化页引导填写 ---
-
-# --- 与 CLI 同源的装配: 同一份存储、同一套工具、同一个默认模型 ---
-STORAGE_DIR = USER_DIR / "sessions"
-store = SessionStore(storage_dir=STORAGE_DIR)
-
-# 已创建但尚未落盘的会话 id: POST /api/sessions 只生成 id，首条消息落盘才建
-# 文件（与 CLI 一致）。列表/历史接口必须认得它们，否则"新建会话"在侧栏
-# 不出现、历史接口 404，前端渲染成空白。
-_pending_sessions: set[str] = set()
-
-runtime_config: RuntimeConfig = ConfigLoader(
-    cwd=Path.cwd(), config_home=USER_DIR   # aulos 自己的用户配置目录
-).load()
-
-# --- 连接门禁: 桌面壳与后端共享 ~/.aulos/token 里的随机令牌 ---
-# 所有请求必须携带 x-aulos-token 头 / cookie / query 之一, 否则 403 拒绝——
-# 浏览器直接访问 127.0.0.1:8000 因此被挡在门外, 只有桌面壳能进来
-_TOKEN_FILE = USER_DIR / "token"
-
-
-def _ensure_api_token() -> str:
-    _TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        t = _TOKEN_FILE.read_text(encoding="utf-8").strip()
-        if t:
-            return t
-    except OSError:
-        pass
-    t = secrets.token_hex(32)
-    _TOKEN_FILE.write_text(t, encoding="utf-8")
-    return t
-
-
-API_TOKEN = _ensure_api_token()
-system_prompt = (
-    SystemPromptBuilder()
-    .with_os(platform.system(), platform.release())
-    .build()
+# --- 装配与共享基座（store/api_client/app/dispatch/镜像）已上移 server_common.py;
+# --- 功能域路由（music/bili/pets）拆分至 server_music/_bilibili/_pets。此处
+# --- re-export 全部共享名, 既有 `import server` 调用点与测试零改动 ---
+from server_common import (  # noqa: E402,F401  re-export
+    STORAGE_DIR, store, _pending_sessions, runtime_config,
+    API_TOKEN, system_prompt, _mirror_rate_limit_retry, _should_stop_now,
+    api_client, _utility_client, app, STATIC_DIR,
+    dispatch, _wire_to_frontend, _mirror_on_event,
+    _TurnBinding, TurnDispatch,
 )
-
-
-def _session_system_prompt(workdir: Optional[str]) -> list:
-    """按会话工作目录构建系统提示: 注入真实的 cwd/日期/CLAUDE.md 指令
-    文件。没有 workdir 时回落全局默认（与旧行为一致）。环境段位于缓存
-    边界之后, 会话间不同不影响静态前缀的 prompt 缓存。没有这一步, 模型
-    看到的 Working directory 是 unknown——正是它开局跑 pwd && ls 探路、
-    用散弹枪 glob 乱扫的直接原因。"""
-    if not workdir:
-        base = list(system_prompt)
-    else:
-        ctx = ProjectContext.discover(
-            Path(workdir), datetime.now().strftime("%Y-%m-%d"))
-        base = (
-            SystemPromptBuilder()
-            .with_os(platform.system(), platform.release())
-            .with_project_context(ctx)
-            .build()
-        )
-    # 技能清单挂在尾部追加段: name+description 而已, 量级小且不碰静态前缀
-    skills_section = render_skills_section(
-        discover_skills(Path(workdir) if workdir else Path.cwd(), USER_DIR))
-    if skills_section:
-        base.append(skills_section)
-    return base
-
-
-def _mirror_rate_limit_retry(attempt: int, max_retries: int,
-                             delay_s: float, error) -> None:
-    """限流退避镜像: 长退避期间告知前端"还活着、正在重试", 不再静默卡住。
-    dispatch 在模块后段才定义, 回调运行于 turn 工作线程, 取到时必然已就绪;
-    取不到出口（CLI/无连接）静默。仅 429 触发——其余错误的短退避
-    （<1s）不值得打扰界面。"""
-    if getattr(error, "status_code", None) != 429:
-        return
-    sink = dispatch.current()
-    if sink is not None:
-        sink({"type": "rate_limited_retry", "attempt": attempt,
-              "max_retries": max_retries, "delay_s": round(delay_s, 1)})
-
-
-def _should_stop_now() -> bool:
-    """打断检查点: 取本轮绑定的 should_stop 并真正调用它。
-    注意必须调用返回的可调用对象——直接把可调用对象当布尔值用,
-    恒为真, 每次建连都会被误判成"已打断"。"""
-    check = dispatch.current_should_stop()
-    return bool(check and check())
-
-
-api_client = ClaudeApiClient(
-    api_key="",   # 未配置时为空串: 服务照常起, 由初始化页引导填写
-    model=runtime_config.model() or "",   # 不设默认模型: 由用户显式添加
-    tools=TOOLS,
-    emit_output=False,  # Web 模式不打印终端，事件改推给浏览器
-    thinking_level=runtime_config.thinking_level(),
-    on_retry=_mirror_rate_limit_retry,
-    # 打断检查点: 重试退避/建连静默窗口内轮询, 点停止立即生效
-    # （dispatch 在模块后段定义, 函数运行时才解析, 无先后问题）
-    should_stop_provider=_should_stop_now,
-    # 浏览器镜像: 开流时按轮解析 contextvars 绑定的 sink（取代旧的
-    # _LiveClientProxy 客户端包装, 协议知识不再进 server）
-    on_event_provider=lambda: _mirror_on_event(dispatch.current_sink()),
-)
-
-# side-call 专用 client（utilityProvider 小模型）: 自动命名/压缩摘要等
-# "整理型"调用走它, 主循环不动。None = 未配置, 回落主模型。
-# 由 _apply_provider_config 统一构建/重建（见 _rebuild_utility_client）。
-_utility_client: Optional[object] = None
-
-app = FastAPI(title="Aulos web")
 
 
 @app.middleware("http")
 async def _token_gate(request: Request, call_next):
-    """连接门禁: 缺少有效令牌的请求一律 403（API_TOKEN 为空 = 门禁关闭, 供测试）。"""
+    """连接门禁: 缺少有效令牌的请求一律 403（API_TOKEN 为空 = 门禁关闭, 供测试）。
+    刻意读本模块命名空间的 API_TOKEN 而非 server_common 的——测试以
+    monkeypatch.setattr(server, "API_TOKEN", "") 关门禁, patch 的是这里。"""
     if API_TOKEN:
         provided = (request.headers.get("x-aulos-token")
                     or request.cookies.get("aulos_token")
@@ -253,12 +156,9 @@ async def _token_gate(request: Request, call_next):
         if provided != API_TOKEN:
             return JSONResponse(
                 status_code=403,
-                content={"detail": "请通过 aulos 桌面应用打开"},
+                content={"detail": "请通过 Aulos 桌面应用打开"},
             )
     return await call_next(request)
-STATIC_DIR = Path(__file__).parent / "static"
-# 静态资源 (app.css / app.js): index.html 拆分后由这里托管
-app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
 @app.middleware("http")
@@ -269,132 +169,6 @@ async def no_cache_shell(request: Request, call_next):
     if p == "/" or p == "/pet.html" or p.startswith("/static"):
         response.headers["Cache-Control"] = "no-cache"
     return response
-
-MAX_CONCURRENT_TURNS = 4  # 全局并发上限: 同时跑的轮次超过这个数就排队
-UNTITLED = "(未命名)"
-_CANCEL_SENTINEL = "__cancelled__"
-
-
-# ============================================================================
-# 按线程路由事件: 内核挂点 → 当前会话的 emit
-# ============================================================================
-
-@dataclass
-class _TurnBinding:
-    """一轮对话挂在工作线程上的绑定四件套。"""
-    emit: Callable
-    workdir: Optional[str] = None
-    should_stop: Optional[Callable[[], bool]] = None
-    session_id: Optional[str] = None
-
-
-_binding_var: ContextVar[Optional[_TurnBinding]] = ContextVar(
-    "aulos_turn_binding", default=None)
-
-
-class TurnDispatch:
-    """按上下文路由事件。
-
-    工作线程开跑一轮前 bind(emit)，结束后 unbind()。内核侧三个挂点
-    （SSE 流代理 / 工具注册表 / 权限桥）在事件发生时用 current() 拿到
-    本轮绑定的 emit——多个会话各开各的线程，互不串线。
-    同时绑定本轮的会话工作目录，工具执行时取 current_workdir()；
-    绑定 should_stop 勾子，流式代理逐事件检查以支持即时打断。
-
-    旧实现按线程号存 emit——runtime 串行执行工具时成立；工具并行执行
-    进线程池后，挂点可能运行在池线程上, 线程号字典查不到绑定, tool_result
-    会被静默吞掉。改用 contextvars：runtime 提交并行任务时带 copy_context()
-    快照, 池内线程读到本轮的绑定; turn 工作线程各设各的上下文, 并发轮次
-    依然互不串线。
-    """
-
-    def bind(self, emit: Callable, workdir: Optional[str] = None,
-             should_stop: Optional[Callable[[], bool]] = None,
-             session_id: Optional[str] = None) -> None:
-        _binding_var.set(_TurnBinding(emit=emit, workdir=workdir,
-                                      should_stop=should_stop,
-                                      session_id=session_id))
-
-    def unbind(self) -> None:
-        _binding_var.set(None)
-
-    def current(self) -> Optional[Callable]:
-        binding = _binding_var.get()
-        return binding.emit if binding else None
-
-    def current_workdir(self) -> Optional[str]:
-        binding = _binding_var.get()
-        return binding.workdir if binding else None
-
-    def current_should_stop(self) -> Optional[Callable[[], bool]]:
-        binding = _binding_var.get()
-        return binding.should_stop if binding else None
-
-    def current_session_id(self) -> Optional[str]:
-        binding = _binding_var.get()
-        return binding.session_id if binding else None
-
-    def current_sink(self) -> Optional[Callable[[dict], None]]:
-        """本轮绑定的前端事件 sink（浏览器镜像观察者挂接点）。"""
-        binding = _binding_var.get()
-        return binding.emit if binding else None
-
-
-dispatch = TurnDispatch()
-
-
-# ============================================================================
-# 浏览器镜像: 协议中立的线级事件（WireEvent）→ 前端事件
-#
-# 旧实现用 _LiveClientProxy/_LiveStreamProxy 包装 anthropic 客户端、逐个
-# 解析 SDK 原生事件再转发——协议线格式因此在 server 被解析了两次。现在
-# api_client.stream(on_event=...) 把线级事件按线上顺序回调出来, server 只
-# 做一次"wire → 前端事件"的翻译（_wire_to_frontend）, 对 OpenAI 等新协议
-# 零改动。用户打断不再在代理里掐（旧代理是唯一能从外部安全掐断流的
-# 位置）, 改由 api_client 的 should_stop 检查点在建连/重试窗口轮询 +
-# runtime 的历史一致点收束, 语义与 CLI 一致。
-# ============================================================================
-
-def _wire_to_frontend(event: WireEvent, sink: Callable[[dict], None],
-                      state: dict) -> None:
-    """单个 wire 事件 → 前端事件。state 为每次调用独立的镜像状态:
-    thinking_t0 记录思考块起点（thinking_end 汇报耗时）。"""
-    etype = type(event)
-    if etype is WireTextDelta:
-        sink({"type": "text_delta", "text": event.text})
-    elif etype is WireToolStart:
-        # 块开始即镜像: 大参数（write_file 整文件等）的工具 JSON 流式期
-        # 可达几十秒, 等到块结束才发 tool_use 的话, 这段时间前端没有任何
-        # 活动指示, 像卡死。前端收到 tool_use_started 提前建"运行中"工具卡。
-        sink({"type": "tool_use_started", "id": event.id, "name": event.name})
-    elif etype is WireToolEnd:
-        sink({"type": "tool_use", "id": event.id, "name": event.name,
-              "input": event.input_json})
-    elif etype is WireThinkingStart:
-        state["thinking_t0"] = time.monotonic()
-        sink({"type": "thinking_start"})
-    elif etype is WireThinkingEnd:
-        t0 = state.pop("thinking_t0", None)
-        if t0 is not None:
-            sink({"type": "thinking_end",
-                  "duration_ms": int((time.monotonic() - t0) * 1000)})
-
-
-def _mirror_on_event(sink: Optional[Callable[[dict], None]]) -> Optional[WireObserver]:
-    """把本轮绑定的前端 sink 包装成线级事件观察者（api_client 每次开流时
-    调用 provider 取到本函数的返回值）。开流即广播一次 await_output: 工具
-    跑完到下一个 token 之间有一段 prefill 空窗, 界面全静会像已经结束——
-    前端据此显示等待转圈。sink 为 None（CLI/无绑定轮）返回 None = 不挂。"""
-    if sink is None:
-        return None
-    sink({"type": "await_output"})
-    state: dict = {}
-
-    def _observe(event: WireEvent) -> None:
-        _wire_to_frontend(event, sink, state)
-
-    return _observe
-
 
 # ============================================================================
 # 模型供应商配置: 读写归口 config.py（~/.aulos/settings.json 的
@@ -528,6 +302,36 @@ def _api_client_for(web_session):
         on_event_provider=lambda: _mirror_on_event(dispatch.current_sink()),
     )
     return web_session.api_client
+
+
+# --- 会话级系统提示（拆分时从装配段归位到此: 仅 server 主流程使用）---
+def _session_system_prompt(workdir: Optional[str]) -> list:
+    """按会话工作目录构建系统提示: 注入真实的 cwd/日期/CLAUDE.md 指令
+    文件。没有 workdir 时回落全局默认（与旧行为一致）。环境段位于缓存
+    边界之后, 会话间不同不影响静态前缀的 prompt 缓存。没有这一步, 模型
+    看到的 Working directory 是 unknown——正是它开局跑 pwd && ls 探路、
+    用散弹枪 glob 乱扫的直接原因。"""
+    if not workdir:
+        base = list(system_prompt)
+    else:
+        ctx = ProjectContext.discover(
+            Path(workdir), datetime.now().strftime("%Y-%m-%d"))
+        base = (
+            SystemPromptBuilder()
+            .with_os(platform.system(), platform.release())
+            .with_project_context(ctx)
+            .build()
+        )
+    # 技能清单挂在尾部追加段: name+description 而已, 量级小且不碰静态前缀
+    skills_section = render_skills_section(
+        discover_skills(Path(workdir) if workdir else Path.cwd(), USER_DIR))
+    if skills_section:
+        base.append(skills_section)
+    return base
+
+MAX_CONCURRENT_TURNS = 4  # 全局并发上限: 同时跑的轮次超过这个数就排队
+UNTITLED = "(未命名)"
+_CANCEL_SENTINEL = "__cancelled__"
 
 
 def _api_config_for_session(session_id: Optional[str]
@@ -1789,485 +1593,29 @@ async def api_get_messages(session_id: str):
 # ============================================================================
 
 # ============================================================================
-# REST: 摸鱼电台（在线只读代理 + 本地曲库读写, 不碰会话/模型状态）
-# ============================================================================
-# 在线部分（搜索/直链/歌词）上游失败转 502; 本地曲库是文件读写:
-# KeyError→404（歌单/收藏不存在）, ValueError→400（参数非法）,
-# 不走 _music_call（那是给上游 502 用的包装）。
-
-async def _music_call(fn, *args, **kwargs):
-    """统一的 502 包装: 上游失败不往客户端抛裸 500。"""
-    try:
-        return fn(*args, **kwargs)
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=str(e))
-
-
-def _library_call(fn, *args, **kwargs):
-    try:
-        return fn(*args, **kwargs)
-    except KeyError as e:
-        raise HTTPException(status_code=404, detail=f"不存在: {e.args[0]}")
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-
-@app.get("/api/music/library")
-async def api_music_library():
-    """整个本地曲库（收藏 + 自定义歌单）。"""
-    return _music.list_library()
-
-
-# ---- 收藏 ----
-
-@app.post("/api/music/favorites")
-async def api_music_fav_add(payload: Optional[dict] = Body(None)):
-    if not isinstance(payload, dict) or not isinstance(payload.get("songs"), list):
-        raise HTTPException(status_code=400, detail="需要 {\"songs\": [...]}")
-    return _music.add_favorites(payload["songs"])
-
-
-@app.delete("/api/music/favorites/{song_id}")
-async def api_music_fav_remove(song_id: str, source: str = "netease"):
-    return _library_call(_music.remove_favorite, song_id, source)
-
-
-# ---- 自定义播放列表 ----
-
-@app.post("/api/music/playlists")
-async def api_music_pl_create(payload: Optional[dict] = Body(None)):
-    if not isinstance(payload, dict):
-        raise HTTPException(status_code=400, detail="需要 JSON body")
-    return _library_call(_music.create_playlist,
-                         payload.get("name"), payload.get("songs"))
-
-
-@app.patch("/api/music/playlists/{pid}")
-async def api_music_pl_rename(pid: int, payload: Optional[dict] = Body(None)):
-    if not isinstance(payload, dict):
-        raise HTTPException(status_code=400, detail="需要 JSON body")
-    return _library_call(_music.rename_playlist, pid, payload.get("name"))
-
-
-@app.delete("/api/music/playlists/{pid}")
-async def api_music_pl_delete(pid: int):
-    return _library_call(_music.delete_playlist, pid)
-
-
-@app.post("/api/music/playlists/{pid}/songs")
-async def api_music_pl_add_songs(pid: int, payload: Optional[dict] = Body(None)):
-    if not isinstance(payload, dict) or not isinstance(payload.get("songs"), list):
-        raise HTTPException(status_code=400, detail="需要 {\"songs\": [...]}")
-    return _library_call(_music.add_to_playlist, pid, payload["songs"])
-
-
-@app.delete("/api/music/playlists/{pid}/songs/{song_id}")
-async def api_music_pl_remove_song(pid: int, song_id: str, source: str = "netease"):
-    return _library_call(_music.remove_from_playlist, pid, [song_id], source)
-
-
-@app.get("/api/music/search")
-async def api_music_search(kw: str = "", limit: int = 30):
-    return await _music_call(_music.search_songs, kw, limit)
-
-
-@app.get("/api/music/url")
-async def api_music_url(id: int, br: int = 128000):
-    """播放直链。VIP/无版权歌 url 为 None, 前端按「跳过」处理。"""
-    return await _music_call(_music.song_url, id, br)
-
-
-@app.get("/api/music/lyric")
-async def api_music_lyric(id: int):
-    return await _music_call(_music.song_lyric, id)
-
-
-# ============================================================================
-# REST: 摸鱼电台 · B站视频（纯音频, 搜索/直链/音频流本地代理）
-# ============================================================================
-# 同样复用 _music_call 的 502 包装; 顺序代理给 <audio> 用。
-# 前端 B 站播放与网易云共用一条播放条: 直链走本地 /api/bili/stream,
-# 不直连 B 站 CDN（防盗链只认 B 站 Referer, 浏览器从 localhost 会 403）。
-
-@app.get("/api/bili/search")
-async def api_bili_search(kw: str = "", limit: int = 30):
-    return await _music_call(_bili.search_videos, kw, limit)
-
-
-@app.get("/api/bili/url")
-async def api_bili_url(bvid: str = ""):
-    """拿音频直链信息; 前端不直接用它连 CDN, 而是拿 token 走 /stream。"""
-    token = _bili.make_stream_token(bvid)
-    url = await _music_call(_bili.get_audio_url, bvid)
-    return {"source": "bili", "id": bvid, "token": token, "url": url}
-
-
-@app.get("/api/bili/stream")
-async def api_bili_stream(request: Request, token: str = ""):
-    """音频流本地代理: 带 B 站 Referer 拉直链, 逐块转发给前端 <audio>。
-    Range 透传: 浏览器读流会带 Range, seek 也会发二次 Range(206), 透传给 CDN。"""
-    range_h = request.headers.get("range")
-    status, ctype, crange, chunks = await _music_call(
-        _bili.stream_audio, token, range_h)
-    headers = {"Content-Type": ctype}
-    if crange:
-        headers["Content-Range"] = crange
-        headers["Accept-Ranges"] = "bytes"
-    return StreamingResponse(chunks, status_code=status, headers=headers)
-
-
-# ============================================================================
-# REST: 桌宠（兼容 Codex 宠物格式: <pets>/<pet-id>/pet.json + spritesheet 图集）
+# 功能域路由: 摸鱼电台(网易云+B站)与桌宠, 拆分至独立模块（挂同一 app）。
+# import 即注册; 兼容别名供既有测试/调用点使用。
 # ============================================================================
 
-# Codex 图集契约: 固定 1536 宽、8 列; v1 高 1872(9 行), v2 高 2288(11 行,
-# 末两行是环视——本次也接受, 前端只播 0-8 行)。单格 192×208。
-_PET_SHEET_WIDTH = 1536
-_PET_ROW_HEIGHT = 208
-_PET_ID_RE = re.compile(r"^[A-Za-z0-9._-]+$")
-_PET_SHEET_FALLBACKS = ("spritesheet.webp", "spritesheet.png", "spritesheet.gif")
-_PET_SHEET_MEDIA = {".webp": "image/webp", ".png": "image/png", ".gif": "image/gif"}
+from server_music import (  # noqa: E402  _music_call/_library_call 测试引用
+    _music_call,
+    _library_call,
+)
+import server_bilibili  # noqa: E402,F401  import 即挂路由
+from server_pets import (  # noqa: E402,F401  测试引用内部函数
+    _pets_dirs,
+    _pet_sheets,
+    _list_pets,
+    _scan_pet_folder,
+    _pet_persona,
+    _image_size,
+    _pet_api_client,
+    _pet_system_prompt,
+    _pet_quip_prompt,
+    _pet_parse_reply,
+    api_ping,
+)
 
-# id → 精灵图绝对路径, 每次 /api/pets 重扫时整体重建（事件循环内串行, 无锁）
-_pet_sheets: dict[str, Path] = {}
-
-
-def _pets_dirs() -> list[tuple[Path, str]]:
-    """宠物目录候选（按优先级, id 冲突靠前者胜）: 用户目录 → 安装目录 → Codex。
-    用户目录 ~/.aulos/pets 是唯一可写目录, 「打开目录」开的就是它——
-    用户宠物不能往安装目录里放: 冻结态装在 Program Files 下不可写,
-    升级换目录还会被清掉; 源码态写仓库会污染源码树。
-    安装目录候选是安装包自带的只读样例（冻结态后端在 <安装>/resources/server/
-    下, 向上两级是安装根, Tauri 布局 pets 装在 <安装>/pets; Electron 布局
-    资源落在 resources/pets 一并兼容）; 源码态附带回仓库 pets/ 里的开发样例。
-    Codex 目录支持 CODEX_HOME 覆盖, 只读。
-    返回 (目录, 来源标签) 对, 来源供前端区分 install/codex。"""
-    codex_home = os.environ.get("CODEX_HOME") or str(Path.home() / ".codex")
-    codex = (Path(codex_home) / "pets", "codex")
-    user = (USER_DIR / "pets", "user")
-    if getattr(sys, "frozen", False):
-        server_dir = Path(sys.executable).resolve().parent
-        return [user,
-                (server_dir.parent.parent / "pets", "install"),   # Tauri: <安装>/pets
-                (server_dir.parent / "pets", "install"),          # Electron: resources/pets
-                codex]
-    return [user,
-            (Path(__file__).resolve().parent / "pets", "install"),  # 开发样例
-            codex]
-
-
-def _image_size(path: Path) -> Optional[tuple[int, int]]:
-    """读文件头取宽高（宠物图集只可能是 PNG/WebP/GIF 三种）。失败返回 None。"""
-    try:
-        head = path.read_bytes()[:32]
-    except OSError:
-        return None
-    if head.startswith(b"\x89PNG\r\n\x1a\n") and len(head) >= 24:
-        return (int.from_bytes(head[16:20], "big"),
-                int.from_bytes(head[20:24], "big"))
-    if head[:6] in (b"GIF87a", b"GIF89a") and len(head) >= 10:
-        return (int.from_bytes(head[6:8], "little"),
-                int.from_bytes(head[8:10], "little"))
-    if len(head) >= 30 and head[:4] == b"RIFF" and head[8:12] == b"WEBP":
-        if head[12:16] == b"VP8X":   # 扩展头: canvas 尺寸存 1 偏移的 3 字节
-            return (int.from_bytes(head[24:27], "little") + 1,
-                    int.from_bytes(head[27:30], "little") + 1)
-        if head[12:16] == b"VP8 ":   # 有损: 关键帧起始码后跟 14bit 宽高
-            return (int.from_bytes(head[26:28], "little") & 0x3FFF,
-                    int.from_bytes(head[28:30], "little") & 0x3FFF)
-        if head[12:16] == b"VP8L" and len(head) >= 25:   # 无损: 宽高拆位存 4 字节
-            b = head[21:25]
-            return (1 + (((b[1] & 0x3F) << 8) | b[0]),
-                    1 + (((b[3] & 0x0F) << 10) | (b[2] << 2) | ((b[1] & 0xC0) >> 6)))
-    return None
-
-
-def _pet_persona(raw: dict) -> dict:
-    """pet.json persona 字段白名单清洗: 人设只有 name/style 两个自由文本槽,
-    lines 是事件台词包(分组名 → 句子数组)。超长截断, 空段丢弃。"""
-    out: dict = {}
-    name = raw.get("name")
-    if isinstance(name, str) and name.strip():
-        out["name"] = name.strip()[:40]
-    style = raw.get("style")
-    if isinstance(style, str) and style.strip():
-        out["style"] = " ".join(style.split())[:300]
-    lines = raw.get("lines")
-    if isinstance(lines, dict):
-        clean: dict[str, list[str]] = {}
-        for group, arr in lines.items():
-            if not isinstance(arr, list):
-                continue
-            ls = [s.strip() for s in arr if isinstance(s, str) and s.strip()]
-            if ls:
-                clean[str(group)[:20]] = ls[:12]
-        if clean:
-            out["lines"] = clean
-    return out
-
-
-def _scan_pet_folder(folder: Path, source: str) -> Optional[tuple[dict, Path]]:
-    """解析一个宠物文件夹: manifest 缺字段回退, 找到合规精灵图才算宠物。
-    manifest 的 spritesheetPath 必须仍解析在文件夹内——Codex 生态的防穿越
-    约定。返回 (信息, 精灵图路径) 或 None。"""
-    manifest: dict = {}
-    try:
-        loaded = json.loads((folder / "pet.json").read_text(encoding="utf-8"))
-        if isinstance(loaded, dict):
-            manifest = loaded
-    except (OSError, ValueError):
-        pass
-    sheet: Optional[Path] = None
-    rel = manifest.get("spritesheetPath")
-    if isinstance(rel, str) and rel:
-        cand = (folder / rel).resolve()
-        try:
-            cand.relative_to(folder.resolve())
-        except ValueError:
-            cand = None
-        if cand and cand.is_file():
-            sheet = cand
-    if sheet is None:
-        for name in _PET_SHEET_FALLBACKS:
-            if (folder / name).is_file():
-                sheet = folder / name
-                break
-    if sheet is None:
-        return None
-    size = _image_size(sheet)
-    # 图集契约硬校验: 宽 1536、高是 208 的整数倍且行数只认 9(v1)/11(v2)
-    if (not size or size[0] != _PET_SHEET_WIDTH
-            or size[1] % _PET_ROW_HEIGHT
-            or size[1] // _PET_ROW_HEIGHT not in (9, 11)):
-        return None
-    pid = folder.name
-    name = manifest.get("displayName")
-    desc = manifest.get("description")
-    info = {"id": pid,
-            "displayName": name.strip() if isinstance(name, str) and name.strip() else pid,
-            "description": desc.strip() if isinstance(desc, str) else "",
-            "source": source,
-            "rows": size[1] // _PET_ROW_HEIGHT}
-    persona = manifest.get("persona")
-    if isinstance(persona, dict):
-        cleaned = _pet_persona(persona)
-        if cleaned:
-            info["persona"] = cleaned
-    return (info, sheet)
-
-
-def _list_pets() -> dict:
-    """扫描全部宠物目录。首个候选(用户目录)顺手建出来——用户要往里放宠物;
-    其余目录(内置样例/ Codex 的)只读, 不存在就跳过。"""
-    dirs = _pets_dirs()
-    with suppress(OSError):
-        dirs[0][0].mkdir(parents=True, exist_ok=True)
-    pets: list[dict] = []
-    sheets: dict[str, Path] = {}
-    seen: set[str] = set()
-    for d, source in dirs:
-        try:
-            entries = sorted(d.iterdir())
-        except OSError:
-            continue
-        for folder in entries:
-            pid = folder.name
-            if (pid in seen or not folder.is_dir()
-                    or not _PET_ID_RE.match(pid)):
-                continue
-            found = _scan_pet_folder(folder, source)
-            if found:
-                info, sheet = found
-                seen.add(pid)
-                sheets[pid] = sheet
-                pets.append(info)
-    _pet_sheets.clear()
-    _pet_sheets.update(sheets)
-    return {"petsDir": str(dirs[0][0]), "pets": pets}
-
-
-@app.get("/api/pets")
-async def api_pets():
-    """桌宠列表: 安装目录 + ~/.codex/pets 里所有符合图集契约的宠物。"""
-    # no-store: 列表必须每次回源。WebView2 的启发式缓存会把无缓存头的响应
-    # 存下来——悬浮窗启动拉旧列表, 刷新进来的新宠物"不存在", 选它唤醒白屏,
-    # 得重启应用才恢复(实测)。
-    return JSONResponse(_list_pets(), headers={"Cache-Control": "no-store"})
-
-
-@app.get("/api/pets/{pid}/sheet")
-async def api_pet_sheet(pid: str):
-    """宠物精灵图。id 只认白名单字符, 杜绝路径穿越; 命中不了缓存就重扫一次
-    （进程启动后才放进目录的宠物不必重启）。"""
-    if not _PET_ID_RE.match(pid):
-        raise HTTPException(status_code=404, detail="宠物不存在")
-    sheet = _pet_sheets.get(pid)
-    if sheet is None:
-        _list_pets()
-        sheet = _pet_sheets.get(pid)
-    if sheet is None or not sheet.is_file():
-        raise HTTPException(status_code=404, detail="宠物不存在")
-    # no-cache: 图集允许缓存但要回源验证, 替换图集后各窗口能拿到新图
-    return FileResponse(
-        sheet,
-        media_type=_PET_SHEET_MEDIA.get(sheet.suffix.lower(), "application/octet-stream"),
-        headers={"Cache-Control": "no-cache"},
-    )
-
-
-@app.post("/api/pets/open-dir")
-async def api_pets_open_dir():
-    """设置页「打开目录」: 在系统文件管理器里打开宠物目录,
-    用户把宠物文件夹直接丢进去即可(与 /api/open-config 同一套打法)。"""
-    d = _pets_dirs()[0][0]
-    d.mkdir(parents=True, exist_ok=True)
-    try:
-        if sys.platform == "win32":
-            os.startfile(str(d))
-        elif sys.platform == "darwin":
-            subprocess.Popen(["open", str(d)])
-        else:
-            subprocess.Popen(["xdg-open", str(d)])
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"打开失败: {e}")
-    return {"ok": True}
-
-
-# ============================================================================
-# REST: 桌宠周期点评（现场统计 + pet.json 人设 → 一句应景台词; 悬浮输入框
-# 的任务/点歌走完整 agent 会话, 不经过这里）
-# ============================================================================
-
-_PET_DEFAULT_STYLE = ("摸鱼搭子: 住在主人屏幕上的电子小同事, 会吐槽会捧场, "
-                      "陪摸鱼也催干活, 对点歌点单来者不拒")
-
-
-def _pet_system_prompt(persona: dict) -> str:
-    """桌宠 system prompt: 人设来自 pet.json(前端透传), 交互规则留在代码里。
-    规则收紧到"一句话 + JSON 输出", 让便宜小模型也能稳定被解析。"""
-    name = str(persona.get("name") or "").strip() or "桌宠"
-    style = str(persona.get("style") or "").strip() or _PET_DEFAULT_STYLE
-    return "\n".join([
-        f"你是桌面宠物「{name}」, 住在主人的电脑屏幕上。",
-        f"人设: {style}",
-        "说话规则: 每次只说一句话, 最多 20 个字; 口语化、有趣; 不用引号、"
-        "换行、序号和 emoji; 不复述代码或命令内容。",
-        '输出格式: 只输出一个 JSON 对象: {"say": "你要说的话"}。',
-    ])
-
-
-def _pet_quip_prompt(state: dict) -> str:
-    """点评/事件台词的现场上下文: 只有工具名与计数, 永不携带代码/命令内容。
-    event 存在 = 事件驱动台词(针对刚发生的事说), 否则是兜底随机点评。"""
-    parts: list[str] = []
-    event = str(state.get("event") or "").strip()
-    if event:
-        parts.append("刚刚发生: " + event[:100])
-    base = str(state.get("base") or "idle")
-    parts.append("当前状态: " + ("正在打工" if base.startswith("running") else "空闲摸鱼"))
-    minutes = state.get("run_minutes")
-    if isinstance(minutes, (int, float)) and minutes >= 1:
-        parts.append(f"这一轮已经跑了 {int(minutes)} 分钟")
-    top = str(state.get("top_tools") or "").strip()
-    if top:
-        parts.append("用得最多的工具: " + top[:60])
-    errs = state.get("errors")
-    if isinstance(errs, int) and errs > 0:
-        parts.append(f"出错 {errs} 次")
-    hour = state.get("hour")
-    if isinstance(hour, int) and 0 <= hour <= 23:
-        parts.append(f"现在 {hour} 点")
-    busy = state.get("busy_sessions")
-    if isinstance(busy, int) and busy > 0:
-        parts.append(f"有 {busy} 个会话在干活")
-    tail = ("针对刚发生的这件事, 说一句应景的吐槽"
-            if event else "结合人设和现场说一句应景的点评")
-    return "\n".join(parts) + "\n" + tail
-
-
-def _pet_parse_reply(text: str) -> dict:
-    """宽松解析 LLM 回复: 取首个平衡 {...} 块认 JSON。没有花括号 → 整段
-    当 say(模型无视格式的兜底); 有花括号但认不出/截断 → 空 say——
-    半截 JSON 不当人话, 前端有内置台词兜底。"""
-    t = (text or "").strip().strip("`")
-    start = t.find("{")
-    if start < 0:
-        return {"say": " ".join(t.split())[:80] if t else ""}
-    depth = 0
-    for i in range(start, len(t)):
-        if t[i] == "{":
-            depth += 1
-        elif t[i] == "}":
-            depth -= 1
-            if depth == 0:
-                try:
-                    obj = json.loads(t[start:i + 1])
-                except ValueError:
-                    return {"say": ""}
-                if isinstance(obj, dict) and isinstance(obj.get("say"), str):
-                    return {"say": " ".join(obj["say"].split())[:80]}
-                return {"say": ""}
-    return {"say": ""}
-
-
-# 桌宠专属 client 单槽缓存: (provider_id, api_key, base_url, protocol, model, cli)。
-# 桌宠同一时刻只用一个模型, 任何连接要素变化即重建——构建很轻(SDK 客户端初始化)。
-_pet_client: Optional[tuple] = None
-
-
-def _pet_api_client(provider_id: Optional[str], model_id: Optional[str]):
-    """桌宠请求所用 client: 未指定模型 → 全局单例(跟随全局模型);
-    指定 provider|model → 按该供应商配置构建专属 client(用户选的便宜小模型)。
-    供应商被删/禁用回落全局。不挂镜像/打断钩子——generate_text 是直连
-    SDK 的一次性调用, 不进轮次循环, 也不该被"点停止"打断。"""
-    global _pet_client
-    active = _provider_cfg.get("active") or {}
-    if not provider_id or provider_id == active.get("provider"):
-        return api_client
-    prov = next((p for p in _provider_cfg.get("providers", [])
-                 if p.get("id") == provider_id), None)
-    if not prov or not prov.get("enabled"):
-        return api_client
-    protocol = _protocol_of(prov)
-    base_url = _normalize_base_url(prov.get("base_url"), protocol=protocol) or None
-    api_key = prov.get("api_key") or ""
-    cached = _pet_client
-    if (cached is not None and cached[0] == provider_id and cached[1] == api_key
-            and cached[2] == base_url and cached[3] == protocol
-            and cached[4] == (model_id or "")):
-        return cached[5]
-    cli = make_api_client(
-        protocol, api_key=api_key, model=model_id or "", base_url=base_url,
-        tools=TOOLS, emit_output=False,
-    )
-    _pet_client = (provider_id, api_key, base_url, protocol, model_id or "", cli)
-    return cli
-
-
-@app.post("/api/pet/chat")
-def api_pet_chat(payload: Optional[dict] = Body(None)):
-    """桌宠周期点评: 现场统计(事件/工具直方图/时长, 全是数字) + pet.json
-    人设 → 一句应景台词。同 _ai_title 的 side-call 打法: 一次性生成,
-    无工具、不进会话历史。隐私红线: 入参只收工具名/计数, 不收代码内容。
-    任何失败返回 {"say": ""}, 前端回退内置台词, 桌宠永不因 AI 失败而沉默。"""
-    data = payload if isinstance(payload, dict) else {}
-    persona = data.get("persona") if isinstance(data.get("persona"), dict) else {}
-    cli = _pet_api_client(str(data.get("provider_id") or "").strip() or None,
-                          str(data.get("model_id") or "").strip() or None)
-    state = data.get("state") if isinstance(data.get("state"), dict) else {}
-    try:
-        raw = cli.generate_text(
-            [_pet_system_prompt(persona)], _pet_quip_prompt(state), 64)
-    except Exception:
-        return {"say": ""}
-    return _pet_parse_reply(raw)
-
-
-@app.get("/api/ping")
-async def api_ping():
-    """探测端点: 桌面壳用它确认"这是 aulos 后端"。
-    8000 端口可能被 C-Lodop 打印服务等程序抢占, 不能只看 200 就当作就绪。"""
-    return {"app": "aulos"}
 
 
 # --- Skills 管理: 清单查看 + 社区仓库安装 + 卸载（设置页"Skills"分区） ---
