@@ -84,6 +84,7 @@ const curRun = () => (state.sessionId ? runOf(state.sessionId) : null);
 /* 手动添加的项目 / 项目折叠状态: localStorage 持久化 */
 state.customProjects = JSON.parse(localStorage.getItem("xc-projects") || "[]");
 state.collapsedProjects = new Set(JSON.parse(localStorage.getItem("xc-collapsed") || "[]"));
+state.collapsedTasks = localStorage.getItem("xc-collapsed-tasks") === "1";   // 「任务」区块折叠态
 state.draftInput = "";   // 草稿态未发送的输入
 state.skillCache = null; // 当前工作目录的技能清单（refreshSkillCache 填充, 斜杠补全数据源）
 

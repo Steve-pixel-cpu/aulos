@@ -363,9 +363,15 @@ function renderSessionList() {
   }
 
   // 任务 = 没有选择文件夹的会话; 标题行带 + 与项目分组一致
+  // 标题行可点: 折叠/展开整个区块（与项目组折叠交互一致; 搜索时强制展开）
+  const taskCollapsed = state.collapsedTasks && !q;
+  const loose = sessions.filter(s => !s.workdir);
   const taskRow = document.createElement("div");
-  taskRow.className = "list-label-row";
-  taskRow.innerHTML = '<span class="list-label">任务</span>';
+  taskRow.className = "list-label-row" + (loose.length ? " tappable" : "")
+    + (taskCollapsed ? " collapsed" : "");
+  if (loose.length) taskRow.dataset.tip = "收起/展开";
+  taskRow.innerHTML = '<span class="list-label">任务</span>'
+    + (loose.length ? '<svg class="t-chev" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>' : "");
   const taskAdd = document.createElement("button");
   taskAdd.type = "button";
   taskAdd.className = "icon-btn";
@@ -373,13 +379,31 @@ function renderSessionList() {
   taskAdd.innerHTML = PLUS_SMALL_SVG;
   taskAdd.onclick = ev => { ev.stopPropagation(); startDraft(); };
   taskRow.appendChild(taskAdd);
+  if (loose.length) {
+    taskRow.onclick = ev => {
+      if (ev.target.closest(".icon-btn")) return;   // 点 + 不触发折叠
+      state.collapsedTasks = !state.collapsedTasks;
+      localStorage.setItem("xc-collapsed-tasks", state.collapsedTasks ? "1" : "0");
+      renderSessionList();
+    };
+  }
   list.appendChild(taskRow);
-  const loose = sessions.filter(s => !s.workdir);
   if (!loose.length) {
     const e = document.createElement("div");
     e.className = "list-empty";
     e.textContent = "还没有任务";
     list.appendChild(e);
+  } else if (taskCollapsed) {
+    // 折叠态: 一行占位概要「N 个任务」, 点击同样展开
+    const ph = document.createElement("div");
+    ph.className = "task-collapsed-ph";
+    ph.textContent = loose.length + " 个任务";
+    ph.onclick = () => {
+      state.collapsedTasks = false;
+      localStorage.setItem("xc-collapsed-tasks", "0");
+      renderSessionList();
+    };
+    list.appendChild(ph);
   } else {
     for (const s of loose) list.appendChild(makeSessionItem(s));
   }

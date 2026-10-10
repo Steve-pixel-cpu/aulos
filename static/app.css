@@ -306,6 +306,22 @@
   .project-item.collapsed .p-chev { transform: rotate(-90deg); }
   .session-item.in-project { margin-left: 26px; width: calc(100% - 42px); }
 
+  /* 「任务」区块折叠: 标题行 chevron + 折叠态占位概要行 */
+  .list-label-row .t-chev {
+    flex: none; display: inline-flex; color: var(--text-3);
+    margin-left: auto; margin-right: 2px;
+    transition: transform .15s;
+  }
+  .list-label-row.collapsed .t-chev { transform: rotate(-90deg); }
+  .list-label-row.tappable { cursor: pointer; }
+  .task-collapsed-ph {
+    font-size: calc(12.5px * var(--fs-ui)); color: var(--text-3);
+    margin: 1px 18px; padding: 0 8px; height: 26px;
+    display: flex; align-items: center; cursor: pointer;
+    border-radius: var(--r-sm); transition: background .12s;
+  }
+  .task-collapsed-ph:hover { background: var(--hover); }
+
   .session-item {
     position: relative; display: flex; align-items: center; gap: 8px;
     width: calc(100% - 16px); margin: 1px 8px; padding: 0 8px 0 12px; height: 34px;
@@ -3182,11 +3198,6 @@ body.col-resizing, body.col-resizing * { cursor: col-resize !important; }
   .tool-group .tg-sum .cnt.bad {
     background: var(--warn-soft); color: var(--warn);
   }
-  /* 思考次数胶囊: 中性灰紫, 区别于成功绿/需注意橙 */
-  .tool-group .tg-sum .cnt.think {
-    background: color-mix(in srgb, var(--accent) 12%, transparent);
-    color: color-mix(in srgb, var(--accent) 75%, var(--text-3));
-  }
   .tool-group .tg-sum .tg-dur {
     font-family: var(--font-mono); font-size: calc(10.5px * var(--fs-ui));
     color: var(--text-3); opacity: .85;
@@ -3207,6 +3218,11 @@ body.col-resizing, body.col-resizing * { cursor: col-resize !important; }
    * 文字对比由系统保证); 侧栏留极淡着色区分区域 + 承托侧栏文字 */
   :root[data-mica="1"] #pane,
   :root[data-mica="1"] #doc-header {
+    background: transparent;
+  }
+  /* 右侧计划面板: 网格并排栏(非浮层, 底下只有云母)同 #pane 坐裸云母,
+   * 只留 border-left 分层; 不透明 --bg 会把右栏云母整列遮死 */
+  :root[data-mica="1"] #pane.plan-open > #plan-panel {
     background: transparent;
   }
   :root[data-mica="1"] #sidebar,

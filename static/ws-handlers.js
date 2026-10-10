@@ -206,14 +206,17 @@ function onThinkingStart(msg, sid) {
   clearRateLimitNote(run);   // 思考已开始: 限流重试成功, 撤提示行
   const active = sid === state.sessionId;
   run.awaiting = false;                    // 思考行已是可见反馈: 空窗结束
-  if (active) syncThinkingIndicator();
   flushAssistantBubble(run);
-  if (run.curThinking) return;   // 已有实时思考行或乐观胶囊: 直接采用, 计时连续不归零
+  if (run.curThinking) {   // 已有实时思考行或乐观胶囊: 直接采用, 计时连续不归零
+    if (active) syncThinkingIndicator();   // 转圈归位到列尾(可能在思考行之下)
+    return;
+  }
   const div = document.createElement("div");
   div.className = "think-row thinking";
   div.innerHTML = '<span class="t-ico">' + ICON_MIND + '</span>' +
     '<span class="shine">思考中…</span>';
   colOf(sid).appendChild(div);
+  if (active) syncThinkingIndicator();   // 思考行之后才归位转圈: 顺序反了转圈会压在思考行上面
   run.curThinking = { el: div, t0: Date.now() };
   run.lastThinkRow = div;   // 本轮思考行引用: 打断时「已停止」挂在这里
   if (active) scrollToBottom();
@@ -256,8 +259,6 @@ function absorbThinkRowIntoToolGroup(el) {
   }
   if (!prev || !prev.classList.contains("tool-group")) return;
   prev.querySelector(".tg-body").appendChild(el);
-  prev._thinkN = (prev._thinkN || 0) + 1;
-  updateToolGroupHeader(prev);
 }
 
 /* ---------- 乐观思考胶囊 ----------
@@ -323,7 +324,6 @@ function updateToolGroupHeader(group) {
      * group._ms(setToolState 里 += ), 历史回放无 _t0 则无耗时, 照旧不显示。 */
     let html = '<span class="cnt ok">' + ok + '</span>';
     if (bad) html += '<span class="cnt bad">' + bad + '</span>';
-    if (group._thinkN) html += '<span class="cnt think">思 ' + group._thinkN + '</span>';
     if (group._ms >= 100) html += '<span class="tg-dur">' + fmtToolDur(group._ms) + '</span>';
     sum.innerHTML = html;
     sum.className = "tg-sum" + (bad ? " bad" : "");
