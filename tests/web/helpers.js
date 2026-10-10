@@ -81,7 +81,8 @@ function loadApp() {
   const window = makeDom(pageHtml());
   runScripts(window, "ui-dialogs.js", "notify.js", "app.js",
            "settings-extras.js", "desktop.js", "bubbles.js",
-           "msg-extras.js", "ws-handlers.js");   // = index.html 完整 defer 序
+           "msg-extras.js", "ws-handlers.js", "sidebar.js",
+           "settings-page.js");   // = index.html 完整 defer 序
   return { window };
 }
 
