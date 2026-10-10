@@ -239,7 +239,25 @@ function onThinkingEnd(msg, sid) {
     '<span>思考 · 持续了 ' + fmtDuration(ms) + suffix + '</span>';
   run.curThinking = null;
   run.lastThinkRow = cur.el;
+  absorbThinkRowIntoToolGroup(cur.el);
   if (active) scrollToBottom();
+}
+
+/* 思考行收口后的归类: 前面若已有一个工具分组（中间只隔"工作中"转圈）,
+ * 说明这轮思考是"工具结果 → 模型消化 → 下一步"的中间推理, 挪进该分组
+ * 尾部——否则每个工具间隙的思考都散落在组外, 一轮 N 次调用就拖出 N 条
+ * 孤行。组前第一条思考（本轮的引导推理）保持独立显示。行元素原样搬移,
+ * lastThinkRow 引用与打断「已停止」标记不受影响; 思考期间不会有新工具行
+ * 落入分组（工具事件会先收掉思考行）, 追加到尾部即保持时间顺序。 */
+function absorbThinkRowIntoToolGroup(el) {
+  let prev = el.previousElementSibling;
+  while (prev && (prev.id === "thinking" || prev.classList.contains("think-row"))) {
+    prev = prev.previousElementSibling;   // 转圈/相邻思考行不阻断归类
+  }
+  if (!prev || !prev.classList.contains("tool-group")) return;
+  prev.querySelector(".tg-body").appendChild(el);
+  prev._thinkN = (prev._thinkN || 0) + 1;
+  updateToolGroupHeader(prev);
 }
 
 /* ---------- 乐观思考胶囊 ----------
@@ -305,6 +323,7 @@ function updateToolGroupHeader(group) {
      * group._ms(setToolState 里 += ), 历史回放无 _t0 则无耗时, 照旧不显示。 */
     let html = '<span class="cnt ok">' + ok + '</span>';
     if (bad) html += '<span class="cnt bad">' + bad + '</span>';
+    if (group._thinkN) html += '<span class="cnt think">思 ' + group._thinkN + '</span>';
     if (group._ms >= 100) html += '<span class="tg-dur">' + fmtToolDur(group._ms) + '</span>';
     sum.innerHTML = html;
     sum.className = "tg-sum" + (bad ? " bad" : "");
@@ -1446,8 +1465,14 @@ function syncThinkingIndicator() {
   const show = !!(run && run.busy);
   el.style.display = show ? "flex" : "none";
   if (state.sessionId) {
-    colOf(state.sessionId).appendChild(el);
-    if (show) scrollToBottom();   // 挂到列尾会撑高内容: 贴底时跟着滚, 别让转圈悬在视口外
+    // 已在当前列尾就绝不动节点: appendChild 对已连接节点 = 移除+重插,
+    // CSS 旋转动画被取消并从头重播。本函数每条 text_delta 都会调,
+    // 无条件挪节点曾让流式期间转圈反复归零——"转得不顺畅"的根因。
+    const col = colOf(state.sessionId);
+    if (el.parentNode !== col || col.lastElementChild !== el) {
+      col.appendChild(el);
+      if (show) scrollToBottom();   // 挂到列尾会撑高内容: 贴底时跟着滚, 别让转圈悬在视口外
+    }
   }
 }
 

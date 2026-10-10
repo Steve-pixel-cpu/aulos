@@ -841,8 +841,14 @@
   .tool-group .tg-sum.run { animation: pulse 1.2s infinite; color: var(--text-2); }
   .tool-group .tg-sum.bad { color: var(--warn); }
   .tool-group .tg-body .tool-row { margin: 2px 0 6px 9px; }
-  /* 折叠: 收起已结束的行与附属面板（diff/输出/todo）, 运行中的行保持可见 */
+  /* 组内思考行: 归入工具分组的中间推理, 视觉弱化、与工具行同缩进 */
+  .tool-group .tg-body .think-row {
+    margin: 2px 0 6px 9px; padding: calc(3px * var(--density)) 9px;
+    font-size: calc(11.5px * var(--fs-ui)); opacity: .85;
+  }
+  /* 折叠: 收起已结束的行与附属面板（diff/输出/todo/思考行）, 运行中的行保持可见 */
   .tool-group.collapsed .tg-body .tool-row:not([data-state="run"]),
+  .tool-group.collapsed .tg-body .think-row,
   .tool-group.collapsed .td-wrap,
   .tool-group.collapsed .to-wrap,
   .tool-group.collapsed .todo-list { display: none; }
@@ -3175,6 +3181,11 @@ body.col-resizing, body.col-resizing * { cursor: col-resize !important; }
   }
   .tool-group .tg-sum .cnt.bad {
     background: var(--warn-soft); color: var(--warn);
+  }
+  /* 思考次数胶囊: 中性灰紫, 区别于成功绿/需注意橙 */
+  .tool-group .tg-sum .cnt.think {
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    color: color-mix(in srgb, var(--accent) 75%, var(--text-3));
   }
   .tool-group .tg-sum .tg-dur {
     font-family: var(--font-mono); font-size: calc(10.5px * var(--fs-ui));
