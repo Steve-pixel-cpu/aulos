@@ -13,6 +13,23 @@
 #   EmittingToolRegistry — 工具执行完镜像 tool_result
 #   WebPermissionPrompter — 权限询问转发成弹窗，阻塞等浏览器审批
 
+import sys
+
+if __name__ == "__main__":
+    # 入口防双执行自举: 本文件作为 PyInstaller 入口 / `python server.py`
+    # 以 __main__ 执行时, 下方功能域模块 (server_settings 等) 回投
+    # `import server` 会把本文件再完整执行一遍——两份模块副本状态分裂,
+    # 第二份在 re-export 处撞上半初始化的 server_settings 直接
+    # ImportError (v5.1.0 打包版启动即崩, 2026-10-11)。这里先把真正的
+    # 模块副本初始化出来, 入口副本只当跳板: main() 在模块副本的命名
+    # 空间里拿 app/全局单例, 全程只有一份状态。
+    import os as _os_boot
+
+    sys.path.insert(0, _os_boot.path.dirname(_os_boot.path.abspath(__file__)))
+    from server import main
+
+    sys.exit(main())
+
 import asyncio
 # --- AppImage 环境清洗: 必须早于其它导入与任何子进程派生 ---
 # Tauri 壳已在启动前剥掉 AppImage/linuxdeploy 注入的污染, 但 onefile
@@ -1885,7 +1902,12 @@ async def ws_endpoint(websocket: WebSocket, session_id: str):
             await sender_task
 
 
-if __name__ == "__main__":
+def main() -> int:
+    """启动入口: 参数解析 / 父进程看门狗 / 端口避让 / uvicorn 服务循环。
+
+    只被文件头部的 __main__ 自举跳板调用（`from server import main`）,
+    保证运行态永远在模块副本的命名空间里, 与测试/功能域模块看到的
+    `import server` 是同一份状态。"""
     import socket
     import uvicorn
 
@@ -1899,7 +1921,7 @@ if __name__ == "__main__":
             (USER_DIR / "startup-error.log").write_text(reason, encoding="utf-8")
         except OSError:
             pass
-        sys.exit(1)
+        return 1
 
     args = sys.argv[1:]
     port = int(args[args.index("--port") + 1]) if "--port" in args \
@@ -1942,10 +1964,15 @@ if __name__ == "__main__":
     chosen = next((q for q in candidates if _port_free(q)), None)
     if chosen is None:
         print(f"✗ {port}–{port + 19} 端口全部被占用（如 C-Lodop 打印服务）, 请释放后重试")
-        sys.exit(1)
+        return 1
     USER_DIR.mkdir(parents=True, exist_ok=True)
     port_file.parent.mkdir(parents=True, exist_ok=True)
     port_file.write_text(str(chosen), encoding="utf-8")
     (USER_DIR / "startup-error.log").unlink(missing_ok=True)   # 启动成功: 旧原因作废
     print(f"✓ aulos 服务: http://127.0.0.1:{chosen}")
     uvicorn.run(app, host="127.0.0.1", port=chosen)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
