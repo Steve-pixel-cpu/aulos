@@ -1524,6 +1524,12 @@ async function sendCurrent() {
   const adopted = wasDraft && !state.draft && state.sessionId === null;
   if (adopted) state.sessionId = sid;
   const foreground = state.sessionId === sid;
+  if (wasDraft && foreground) {
+    // 草稿列先转正, 再碰任何 colOf(sid): 否则 colOf(sid) 先造出一个新的
+    // 空列, 可见的旧草稿列(带着欢迎空态)随后也改名成同一 id——DOM 出现
+    // 重复 id, 流式事件按 id 解析回旧列插在欢迎页下面, 气泡却在另一列
+    colOf("__draft__").id = "msg-col-" + sid;
+  }
   if (foreground) {
     colOf(sid).querySelector(".empty-state")?.remove();
     $("pane").classList.remove("empty-view");   // 有内容了: 输入卡落回底部
@@ -1590,9 +1596,7 @@ async function sendCurrent() {
     myRun.loaded = true;   // 草稿列里的气泡就是全部内容, 无需再拉历史
     if (foreground) {
       renderQueueCards();   // 草稿转正: 现在挂在具体会话上（新会话队列必为空, 清掉草稿态可能的残留）
-      // 草稿列转正为该会话的消息列（气泡不挪窝）; 仅前台可改列名,
-      // 后台路径动了会偷走用户切去视图/新草稿的可见列
-      colOf("__draft__").id = "msg-col-" + sid;
+      // 列名转正已在上方 foreground 判定处完成(必须先于一切 colOf(sid))
     }
     connectWs(sid);
     // WS 建立期间消息进 pendingSends, onopen 后按序冲刷。列表刷新退到

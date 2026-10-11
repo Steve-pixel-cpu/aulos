@@ -163,8 +163,32 @@ test("忙碌会话发送: 消息进该会话队列并从该会话 WS 发出", as
   assert.equal(inputEl(window).value, "", "输入已清空");
 });
 
-// ---- 第二扇窗口: 列表刷新不阻塞消息上线 ----
+// ---- 列转正次序: 欢迎/empty 状态移除 + 列 id 唯一 ----
 
+test("草稿转正: 欢迎空态移除, 列 id 唯一, 气泡在同一列", async () => {
+  const { window, calls } = boot();
+  const api = window.__api;
+
+  api.startDraft();   // startDraft → showEmptyState: 草稿列里挂着欢迎空态
+  assert.ok(window.document.querySelector("#msg-col-__draft__ .empty-state"),
+            "前置: 草稿列确有欢迎空态");
+  inputEl(window).value = "测列转正";
+  const sending = api.sendCurrent();
+  calls.find(c => c.method === "POST" && c.url === "/api/sessions")
+       .resolve({ id: "new-c" });
+  await sending;
+  await tick();
+
+  // 曾实测的翻车形态: colOf(sid) 先造新空列, 旧草稿列随后改名成同一
+  // id → DOM 两份 msg-col-new-c, 流式内容解析回旧列插在欢迎页下
+  assert.equal(window.document.querySelectorAll("#msg-col-new-c").length, 1,
+               "转正后 DOM 只允许一份 msg-col-new-c");
+  const col = api.colOf("new-c");
+  assert.equal(col.querySelector(".empty-state"), null, "欢迎空态已移除");
+  assert.ok(col.querySelector(".msg.user"), "用户气泡就在转正后的列里");
+});
+
+// ---- 第二扇窗口: 列表刷新不阻塞消息上线 ----
 test("GET /api/sessions 永不返回, 消息也照常进入发送队列", async () => {
   const { window, calls } = boot();
   const api = window.__api;
