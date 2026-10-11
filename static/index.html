@@ -26,7 +26,8 @@
 
 <!-- ============ 自绘标题栏（仅桌面壳显示, 高度/主题跟随应用） ============ -->
 <div id="titlebar">
-  <img class="tb-icon" src="/api/icon" alt="" draggable="false">
+  <img class="tb-icon" src="/api/icon" alt="" draggable="false"
+        onerror="this.onerror=null;this.src='/api/icon?v='+Date.now()">
   <span class="tb-name">Aulos</span>
   <span class="tb-ver" id="tb-version" hidden></span>
   <button class="tb-update-dl" id="tb-update-dl" hidden></button>
