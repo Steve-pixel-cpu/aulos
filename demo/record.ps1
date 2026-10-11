@@ -42,10 +42,11 @@ $out = Join-Path $outDir "${Name}_$stamp.mp4"
 
 Write-Host ""
 Write-Host "=== 3 秒后开始录制区域 ($X,$Y) ${W}x${H} @$Fps fps ===" -ForegroundColor Green
-Write-Host "=== 停止: 回到本窗口按 Ctrl+C ==="
+Write-Host "=== 停止: 回到本窗口按 Ctrl+C（会等 ffmpeg 正常收尾再退出）==="
 Start-Sleep -Seconds 3
 
+# -t 600: 兜底 10 分钟上限，防止忘停产生巨大文件; Ctrl+C 触发 ffmpeg 正常收尾写 moov
 ffmpeg -f gdigrab -framerate $Fps -offset_x $X -offset_y $Y -video_size "${W}x${H}" `
-       -i desktop -c:v libx264 -preset ultrafast -crf 18 -pix_fmt yuv420p "$out"
+       -i desktop -t 600 -c:v libx264 -preset ultrafast -crf 18 -pix_fmt yuv420p "$out"
 
 Write-Host "已保存: $out" -ForegroundColor Green
