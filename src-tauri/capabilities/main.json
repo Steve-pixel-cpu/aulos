@@ -13,6 +13,7 @@
     "allow-notify-desktop",
     "allow-check-update",
     "allow-install-update",
+    "allow-apply-update",
     "allow-update-status",
     "allow-minimize-main",
     "allow-toggle-maximize-main",

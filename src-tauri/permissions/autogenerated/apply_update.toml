@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-apply-update"
+description = "Enables the apply_update command without any pre-configured scope."
+commands.allow = ["apply_update"]
+
+[[permission]]
+identifier = "deny-apply-update"
+description = "Denies the apply_update command without any pre-configured scope."
+commands.deny = ["apply_update"]
