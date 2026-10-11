@@ -66,3 +66,4 @@ evals/report.md
 /cargo-*.log
 /tauri-build*.log
 /uvicorn_*.log
+demo/video/public/raw/
