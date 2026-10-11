@@ -34,11 +34,20 @@ export const SafeVideo: React.FC<{
     );
   }
   return (
-    <Video
-      src={staticFile(src)}
-      playbackRate={speed}
-      trimBefore={startFrom}
-      muted
-    />
+    <AbsoluteFill>
+      <Video
+        src={staticFile(src)}
+        playbackRate={speed}
+        trimBefore={startFrom}
+        muted
+        style={{
+          position: "absolute",
+          inset: 0,
+          width: "100%",
+          height: "100%",
+          objectFit: "cover",
+        }}
+      />
+    </AbsoluteFill>
   );
 };

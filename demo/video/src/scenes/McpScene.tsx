@@ -21,7 +21,7 @@ export const McpScene: React.FC = () => (
         <SafeVideo src="raw/mcp_2k.mp4" speed={3} startFrom={0} />
       </AbsoluteFill>
     </Zoomable>
-    <ChapterBar index="03" title="MCP · 万物皆可接入" delay={40} />
+    <ChapterBar index="02" title="MCP · 万物皆可接入" delay={40} />
     <KineticSubtitle lines={["放一首 周杰伦的晴天"]} startFrame={300} />
   </SceneShell>
 );

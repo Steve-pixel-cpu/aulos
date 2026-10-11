@@ -23,7 +23,7 @@ export const DesktopScene: React.FC = () => (
         <SafeVideo src="raw/desktop_2k.mp4" speed={5} startFrom={0} />
       </AbsoluteFill>
     </Zoomable>
-    <ChapterBar index="02" title="桌面端 · 会话与计划卡" delay={40} />
+    <ChapterBar index="01" title="桌面端 · 会话与计划卡" delay={40} />
     <KineticSubtitle lines={["看着它思考 每一步"]} startFrame={110} />
   </SceneShell>
 );
