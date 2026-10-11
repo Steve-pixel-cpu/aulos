@@ -10,7 +10,10 @@
 - _AgentToolbox 单例与 set_api_config_provider 的注入/回落
 """
 import json
+import os
 import shutil
+import subprocess
+import sys
 from pathlib import Path
 import tempfile
 
@@ -398,20 +401,63 @@ def test_current_session_id_reads_real_dispatch_binding():
 
 # ------------------------------------------------------------
 # 8. 孤儿对账（multi_agent.reconcile_orphans）
+#    语义: "running" ≠ 孤儿。只有 owner 进程已死（或旧 manifest 无
+#    owner_pid 记录）的 running 才是上次进程遗留的孤儿, 才标记 failed。
+#    多进程共享 ~/.aulos/agents/ 时, 活进程正在跑的 worker 绝不能被
+#    另一个进程的启动对账误杀（曾经的真实事故: 3 秒大的 worker 被误标,
+#    跑完后 complete_agent 又把状态翻转回 completed, .md 里两段矛盾结果）。
 # ------------------------------------------------------------
 
-def test_reconcile_marks_running_as_failed():
-    orch = agent_tools._toolbox._orchestrator
+def _spawn_dead_pid_agent(orch, description="死 PID 孤儿"):
+    """用确证已死的 PID 造一个真孤儿 manifest（模拟上次进程崩溃遗留）。"""
+    proc = subprocess.Popen([sys.executable, "-c", "pass"])
+    proc.wait()  # 确证退出
     rec = RecordingSpawn()
     orch2 = AgentOrchestrator(orch._store_dir, spawn_fn=rec)
-    m1 = orch2.spawn_agent("孤儿一", "p")
-    m2 = orch2.spawn_agent("孤儿二", "p")
+    m = orch2.spawn_agent(description, "p", _owner_pid=proc.pid)
+    return m
+
+
+def test_reconcile_marks_dead_pid_running_as_failed():
+    """真孤儿（owner PID 已死）→ 对账标记 failed。"""
+    orch = agent_tools._toolbox._orchestrator
+    m1 = _spawn_dead_pid_agent(orch, "孤儿一")
+    m2 = _spawn_dead_pid_agent(orch, "孤儿二")
     n = orch.reconcile_orphans()
     assert n == 2
     s1 = orch.get_status(m1.agent_id)
     assert s1.status == "failed"
     assert "重启" in s1.error
     assert orch.get_status(m2.agent_id).status == "failed"
+
+
+def test_reconcile_spares_running_of_live_process():
+    """活进程正在跑的 worker 不被对账误杀（跨进程共享 store 的核心场景）。"""
+    orch = agent_tools._toolbox._orchestrator
+    rec = RecordingSpawn()
+    orch2 = AgentOrchestrator(orch._store_dir, spawn_fn=rec)
+    # 本测试进程还活着 → spawn_agent 默认记 owner_pid=os.getpid()
+    m = orch2.spawn_agent("活进程的 worker", "p")
+    n = orch.reconcile_orphans()
+    assert n == 0
+    assert orch.get_status(m.agent_id).status == "running"
+
+
+def test_reconcile_legacy_manifest_without_owner_pid_treated_as_orphan():
+    """旧版本 manifest 没有 owner_pid 字段 → 无法验尸, 按孤儿处理。"""
+    orch = agent_tools._toolbox._orchestrator
+    rec = RecordingSpawn()
+    orch2 = AgentOrchestrator(orch._store_dir, spawn_fn=rec)
+    m = orch2.spawn_agent("旧版遗留", "p")
+    # 抹掉 owner_pid, 伪装成 5.1.1 时代写的 manifest
+    json_path = orch._store_dir / f"{m.agent_id}.json"
+    d = json.loads(json_path.read_text(encoding="utf-8"))
+    assert "owner_pid" in d  # spawn 已在记录 owner（新行为生效的前提）
+    del d["owner_pid"]
+    json_path.write_text(json.dumps(d), encoding="utf-8")
+    n = orch.reconcile_orphans()
+    assert n == 1
+    assert orch.get_status(m.agent_id).status == "failed"
 
 
 def test_reconcile_keeps_terminal_states():

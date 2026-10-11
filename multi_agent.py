@@ -1,5 +1,6 @@
 import json
 import os
+import sys
 import threading
 import uuid
 from datetime import datetime, timezone
@@ -34,6 +35,44 @@ TOOL_WHITELIST: dict[str, set[str]] = {
     "explore_web": {"web_search", "web_fetch"},
 }
 
+def pid_alive(pid: Optional[int]) -> bool:
+    """探活一个进程 ID（跨平台, 零依赖）。
+
+    Windows: os.kill(pid, 0) 在 CPython 3.14 实测分不清死活（已退出进程
+    的句柄还被本进程持有时不抛异常）, 故走 ctypes OpenProcess +
+    WaitForSingleObject(handle, 0): WAIT_TIMEOUT = 还在运行;
+    打不开句柄 = 进程对象已消失 = 死。PROCESS_QUERY_LIMITED_INFORMATION
+    权限足够且不触发 UAC。
+    POSIX: 信号 0 只做存在性检查, ESRCH = 死, EPERM = 活（无权限发信号）。
+    """
+    if not pid or pid <= 0:
+        return False
+    if sys.platform == "win32":
+        import ctypes
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        WAIT_TIMEOUT = 0x00000102
+        STILL_ACTIVE = 259
+        k32 = ctypes.windll.kernel32
+        handle = k32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+        if not handle:
+            return False   # 打不开: 进程对象已不存在
+        try:
+            code = ctypes.c_ulong()
+            if k32.GetExitCodeProcess(handle, ctypes.byref(code)):
+                return code.value == STILL_ACTIVE
+            # GetExitCodeProcess 失败: 用超时探测兜底
+            return k32.WaitForSingleObject(handle, 0) == WAIT_TIMEOUT
+        finally:
+            k32.CloseHandle(handle)
+    try:
+        os.kill(pid, 0)
+        return True
+    except PermissionError:
+        return True    # 进程存在但无权发信号 → 活
+    except OSError:
+        return False
+
+
 class AgentStatus(Enum):
     PENDING = "pending"
     RUNNING = "running"
@@ -55,6 +94,10 @@ class AgentManifest(BaseModel):
     # True = 结果已注入 Leader 对话（收割过）。与 status 解耦: completed 只说明
     # worker 跑完, delivered 才说明结果进了对话——两者之间可能隔着 Leader 忘轮询。
     delivered: bool = False
+    # 派生该 worker 的进程 PID。agent 存储目录全局共享（CLI/Web 多进程共写）,
+    # 启动对账靠它验尸: 只有 owner 进程已死的 running 才是上次进程的孤儿。
+    # None = 旧版本写的 manifest（无法验尸, 对账按孤儿保守处理）。
+    owner_pid: Optional[int] = None
 
 class AgentJob(BaseModel):
     manifest: AgentManifest
@@ -72,6 +115,12 @@ class AgentJob(BaseModel):
 def allowed_tools_for_subagent(subagent_type: str) -> set[str]:
     default_set = TOOL_WHITELIST["general"]
     return TOOL_WHITELIST.get(subagent_type, default_set)
+
+
+def _resolve_owner_pid(explicit: Optional[int]) -> Optional[int]:
+    """spawn 时决定 manifest 的 owner PID: 显式指定优先（测试造孤儿用）,
+    否则记当前进程——测试进程自己 spawn 的 worker 归测试进程所有。"""
+    return explicit if explicit is not None else os.getpid()
 
 
 # --- 第 12 课: worker 的 runtime 组装 ---
@@ -302,7 +351,8 @@ class AgentOrchestrator:
 
     def spawn_agent(self, description: str, prompt: str, name: Optional[str] = None, subagent_type: str = "general",
                     workdir: Optional[str] = None,
-                    api_config: Optional[tuple[str, Optional[str], str, str]] = None) -> AgentManifest:
+                    api_config: Optional[tuple[str, Optional[str], str, str]] = None,
+                    _owner_pid: Optional[int] = None) -> AgentManifest:
         if description.strip() == "" or prompt.strip() == "":
             raise ValueError("description or prompt are null")
         self._store_dir.mkdir(parents=True, exist_ok=True)
@@ -325,7 +375,8 @@ class AgentOrchestrator:
             started_at=now,
             created_at=now,
             completed_at=None,
-            error=None
+            error=None,
+            owner_pid=_resolve_owner_pid(_owner_pid),
         )
         md_content = dedent(f"""\
             # Agent Task
@@ -423,6 +474,10 @@ class AgentOrchestrator:
 
     def complete_agent(self, agent_id: str, result:str):
         manifest = self.get_status(agent_id)
+        # 终态保护: 已是终态（如被启动对账标记的 failed, 或重复收尾）就不
+        # 覆盖——与 fail_agent 同一条"先到先得"规则, 防状态翻转。
+        if manifest.status in (AgentStatus.COMPLETED.value, AgentStatus.FAILED.value):
+            return
         self._persist_terminal_state(manifest=manifest, status=AgentStatus.COMPLETED.value,result=result, error=None)
 
 
@@ -456,13 +511,18 @@ class AgentOrchestrator:
 
     def reconcile_orphans(self) -> int:
         """启动对账: 进程死亡时 daemon worker 随之消失, manifest 永远停在
-        running——把 running 一律标记 failed。
+        running——把 owner 进程已死的 running 标记为 failed。
 
-        简化假设: 对账只在进程启动时调用一次, 此刻本进程不可能有 running
-        worker（_default_spawn_fn 还没跑过）, 所有 running 都是上次进程的
-        孤儿。运行期绝不能调用。"""
+        agent 存储目录全局共享（CLI / Web / 多个会话进程共写）, "running"
+        不等于孤儿: 别的活进程可能正在跑这个 worker。所以验尸后再定罪——
+        manifest 带 owner_pid 时用 pid_alive() 查 owner 是否还活着, 活着
+        的跳过; 没有 owner_pid 的旧版 manifest 无法验尸, 按孤儿保守处理。
+
+        简化假设: 对账只在进程启动时调用一次, 此刻本进程的 _default_spawn_fn
+        还没跑过。运行期绝不能调用。"""
         orphans = [m for m in self.list_agents()
-                   if m.status == AgentStatus.RUNNING.value]
+                   if m.status == AgentStatus.RUNNING.value
+                   and not (m.owner_pid and pid_alive(m.owner_pid))]
         for m in orphans:
             self.fail_agent(m.agent_id,
                             "进程重启时该 worker 仍在运行, 已标记为失败（结果未产出）")
@@ -471,4 +531,10 @@ class AgentOrchestrator:
 
     def fail_agent(self, agent_id: str, error: str) :
         manifest = self.get_status(agent_id)
-        self._persist_terminal_state(manifest = manifest, status = AgentStatus.FAILED.value,result=None, error= error)
+        # 终态保护: 已是终态就不翻转（先到先得）。真实事故: worker 被另一
+        # 进程的启动对账误标 failed, 82 秒后 worker 正常跑完, complete_agent
+        # 无条件覆盖 → 状态翻转, .md 里留下两段矛盾 Result。终态一旦写入,
+        # 迟到的一方必须让步。
+        if manifest.status in (AgentStatus.COMPLETED.value, AgentStatus.FAILED.value):
+            return
+        self._persist_terminal_state(manifest=manifest, status=AgentStatus.FAILED.value, result=None, error=error)

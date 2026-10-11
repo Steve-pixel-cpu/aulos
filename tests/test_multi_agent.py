@@ -286,3 +286,37 @@ def test_terminal_ops_on_missing_id_raise(tmp_path):
         orch.complete_agent("no-such-id", "r")
     with pytest.raises(FileNotFoundError):
         orch.fail_agent("no-such-id", "e")
+
+
+# ------------------------------------------------------------
+# 8. 终态不可降级覆盖（对账误标与 worker 正常收尾的竞争防线）
+#    曾经的真实事故: 3 秒大的 worker 被另一进程的启动对账误标 failed,
+#    82 秒后 worker 正常跑完, complete_agent 无条件覆盖 → 状态翻转,
+#    .md 里留下两段矛盾 Result。终态一旦写入, 另一侧必须让步。
+# ------------------------------------------------------------
+
+def test_fail_agent_cannot_downgrade_completed(tmp_path):
+    """completed 之后 fail_agent 到达: 状态保持 completed, 不翻转。"""
+    orch, _ = make_orchestrator(tmp_path / "agents")
+    m = orch.spawn_agent("d", "p")
+    orch.complete_agent(m.agent_id, "正常完成的结果")
+
+    orch.fail_agent(m.agent_id, "迟到的失败标记")
+
+    status = orch.get_status(m.agent_id)
+    assert status.status == "completed"        # 状态不被降级
+    assert status.result == "正常完成的结果"    # 结果不被清掉
+    assert status.error is None                # 错误不写进 manifest
+
+
+def test_complete_agent_cannot_overwrite_failed(tmp_path):
+    """failed 之后 complete_agent 到达: 状态保持 failed（先到先得）。"""
+    orch, _ = make_orchestrator(tmp_path / "agents")
+    m = orch.spawn_agent("d", "p")
+    orch.fail_agent(m.agent_id, "先到的失败")
+
+    orch.complete_agent(m.agent_id, "迟到的结果")
+
+    status = orch.get_status(m.agent_id)
+    assert status.status == "failed"
+    assert status.error == "先到的失败"
