@@ -775,11 +775,11 @@ def resolve_permission_mode(runtime_config: RuntimeConfig) -> tuple:
     return DANGER_FULL_ACCESS_MODE, False
 
 BANNER_ART = r"""
- __  __        ____ ___  ____  _____
- \ \/ /       / ___/ _ \|  _ \| ____|
-  \  /  _____| |  | | | | | | |  _|
-  /  \ |_____| |__| |_| | |_| | |___|
- /_/\_\       \____\___/|____/|_____|
+    _     _   _  _    ___   ___
+   / \   | | | | | |  / _ \ / __|
+  / _ \  | | | | | | | | | | \__ \
+ / ___ \ | |_| | | | | |_| | ___) |
+/_/   \_\ \___/ |_|  \___/ |___/
 """
 def print_banner(name: str = "Aulos", width: int = 40) -> None:
     """Print an ASCII-art startup banner with the app name and help hint."""

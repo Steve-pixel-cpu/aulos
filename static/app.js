@@ -433,6 +433,20 @@ function decorateCode(root) {
       '<span class="code-lang"></span>' +
       '<button class="code-copy" type="button">' + COPY_SVG + '<span>复制</span></button>';
     head.querySelector(".code-lang").textContent = lang || "代码";
+    // 复制按钮: 复制代码原文（textContent, 非高亮后的 HTML）, 成功短暂反馈
+    head.querySelector(".code-copy").addEventListener("click", async e => {
+      const btn = e.currentTarget;
+      const ok = await copyText(code ? code.textContent : pre.textContent);
+      toast(ok ? "已复制" : "复制失败");
+      if (ok) {
+        btn.classList.add("copied");
+        btn.innerHTML = CHECK_SVG + "<span>已复制</span>";
+        setTimeout(() => {
+          btn.classList.remove("copied");
+          btn.innerHTML = COPY_SVG + "<span>复制</span>";
+        }, 1400);
+      }
+    });
     pre.replaceWith(wrap);
     wrap.appendChild(head);
     wrap.appendChild(pre);
