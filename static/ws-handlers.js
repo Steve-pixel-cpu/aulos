@@ -957,7 +957,21 @@ function onPermissionRequest(msg, sid) {
     row.appendChild(buildRememberDirBtn(msg.request_id, sid2, msg.input));
   }
 
-  colOf(sid2).appendChild(row);
+  // 审批卡紧跟它所属的工具行（进分组、组若折叠则展开并保持）:
+  // 追加在列尾会落在"工作中"转圈/新内容之后, 同一条命令读起来像凭空
+  // 重复了一条、顺序错乱。工具卡还没建（理论少见）才退回列尾。
+  const anchor = (run.activeToolCard && run.activeToolCard.isConnected)
+    ? run.activeToolCard : null;
+  if (anchor) {
+    const grp = anchor.closest(".tool-group");
+    if (grp && grp.classList.contains("collapsed")) {
+      grp.classList.remove("collapsed");   // 等审批的分组必须可见
+      grp._userOpen = true;                // 且不随运行中收起
+    }
+    anchor.insertAdjacentElement("afterend", row);
+  } else {
+    colOf(sid2).appendChild(row);
+  }
   if (sid2 === state.sessionId) scrollToBottom();
 }
 
@@ -1097,9 +1111,10 @@ function markPermResolved(sid, requestId, approved) {
     `.perm-row[data-req-id="${requestId}"], .plan-card[data-req-id="${requestId}"]`
   ).forEach(markCard);
   // 右侧面板脚注同步定格（面板正显示这份计划且属于本会话才动——
-  // 面板可能已被另一会话的计划占用）
+  // 面板可能已被另一会话的计划占用; 已定格过（如过期路径先到）不覆盖）
   const pa = $("plan-actions");
-  if (pa.dataset.reqId === requestId && pa.dataset.reqSession === sid) {
+  if (pa.dataset.reqId === requestId && pa.dataset.reqSession === sid
+      && !pa.querySelector(".pr-mark")) {
     pa.innerHTML = "";
     pa.appendChild(makePrMark(approved ? "已批准 · 开始实施" : "已拒绝", approved));
   }
@@ -1147,7 +1162,13 @@ function settlePendingPermsOnTurnEnd(run, sid) {
 
 function respondPermission(requestId, approved, sid) {
   const run = runOf(sid);
-  if (!run || !run.pendingPerms[requestId]) return;
+  if (!run || !run.pendingPerms[requestId]) {
+    // 请求已随轮次收口/已在别处批复, 登记已清: 残留的可点击卡就地定格,
+    // 不留"看着能点、点了没反应"的死卡（markPermResolved 幂等——已定格
+    // 的卡原样保留; 无卡场合纯 no-op, 也不向服务端发注定错配的响应）
+    markPermResolved(sid, requestId, approved);
+    return;
+  }
   delete run.pendingPerms[requestId];
   sendWs({ type: "permission_response", request_id: requestId, approved }, sid);
   markPermResolved(sid, requestId, approved);

@@ -508,6 +508,8 @@ class WebPermissionPrompter:
         })
         # 不设超时地等待审批（用户明确要求取消 120s 自动拒绝）:
         # 只被 resolve() / cancel()（stop、断连）解除, 弹窗可见就一直等。
+        result = None
+        approved_flag = False
         while True:
             try:
                 got_id, approved = self._responses.get()
@@ -517,12 +519,14 @@ class WebPermissionPrompter:
                 # cancel 打断（stop/断连/计划追加接力）: 与手动拒绝走同一
                 # 理由回流（"修订后再弹"）, 但 stop_requested 已置位, 内核
                 # 在下一个流事件即抛 TurnInterrupted, 模型不会真的修订。
-                return self._finish_deny(
+                result = self._finish_deny(
                     request,
                     "Plan rejected by the user. Revise the plan per the "
                     "feedback and present it again with present_plan.")
+                break
             if got_id != request_id:
                 continue  # stale/重放的响应，忽略
+            approved_flag = approved
             if approved:
                 # 计划批准 = 模式升级的触发点: plan → workspace-write,
                 # 升级回调在 _start_turn 注入（拿得到 web_session）。
@@ -533,19 +537,36 @@ class WebPermissionPrompter:
                         self._on_plan_approved()
                     except Exception:
                         pass
-                    return PermissionResult(
+                    result = PermissionResult(
                         decision=PermissionDecision.ALLOW,
                         reason="Plan approved. Implement it now.")
-                return PermissionResult(
-                    decision=PermissionDecision.ALLOW, reason="user said yes!")
-            if request.tool_name == "present_plan":
+                else:
+                    result = PermissionResult(
+                        decision=PermissionDecision.ALLOW, reason="user said yes!")
+            elif request.tool_name == "present_plan":
                 # 计划被拒: 不产生 tool_result 卡, 理由回流让模型修订计划
-                return self._finish_deny(
+                result = self._finish_deny(
                     request,
                     "Plan rejected by the user. Revise the plan per the "
                     "feedback and present it again with present_plan.")
-            return self._finish_deny(
-                request, f"User denied permission to run {request.tool_name}!")
+            else:
+                result = self._finish_deny(
+                    request, f"User denied permission to run {request.tool_name}!")
+            break
+        # 决议落地即广播: 多窗口/桌宠/REST 任一处批复、或打断自动拒绝,
+        # 所有连接的审批卡统一定格（前端 onPermissionResolved 消费）。
+        # 此前从不广播, 别处批过的请求主窗永远停在"待确认", 按钮点击
+        # 全部落空——打断后残留的死卡就是这么来的。
+        self._emit_resolved(request_id, approved_flag)
+        return result
+
+    def _emit_resolved(self, request_id: str, approved: bool) -> None:
+        """permission_resolved 广播。决议已定, 广播失败不影响结果本身。"""
+        try:
+            self._emit({"type": "permission_resolved",
+                        "request_id": request_id, "approved": approved})
+        except Exception:
+            pass
 
     def resolve(self, request_id: str, approved: bool) -> None:
         """事件循环侧: 浏览器的审批结果送达。"""
