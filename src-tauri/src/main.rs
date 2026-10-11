@@ -489,9 +489,15 @@ fn kill_tree(pid: u32) {
 static PENDING_UPDATE: LazyLock<Mutex<Option<tauri_plugin_updater::Update>>> =
     LazyLock::new(|| Mutex::new(None));
 static INSTALL_STARTED: LazyLock<Mutex<bool>> = LazyLock::new(|| Mutex::new(false));
+/// 已下载待安装的更新包（后台下载的产物）。Update.clone() 留在队列里是为了
+/// install(bytes) 需要元数据（extract_path/安装器参数）; 字节是包本体。
+/// apply_update 消费; 失败放回可重试。
+static PENDING_INSTALL: LazyLock<
+    Mutex<Option<(tauri_plugin_updater::Update, Vec<u8>)>>,
+> = LazyLock::new(|| Mutex::new(None));
 
 /// 下载进度: install_update 的回调线程写入, update_status 由前端轮询读取。
-/// phase: 0=空闲 1=下载中 2=下载完成(安装器已拉起) 3=安装失败
+/// phase: 0=空闲 1=下载中 2=下载完成 3=下载失败 4=已下载待安装(apply_update 消费)
 static DL_PHASE: AtomicU8 = AtomicU8::new(0);
 static DL_RECEIVED: AtomicU64 = AtomicU64::new(0);
 static DL_TOTAL: AtomicU64 = AtomicU64::new(0);
@@ -533,13 +539,21 @@ async fn check_update(app: AppHandle) -> Result<serde_json::Value, String> {
     }
 }
 
-/// 开始下载并安装: 下载在后台线程推进（进度写 DL_* 原子量, 前端轮询
-/// update_status）; 完成后拉起 NSIS 安装器（passive 模式）, 旧进程退出、
-/// 新版本启动。后端子进程由 --parent-pid 看门狗随壳退出, 端口自动释放。
+/// 开始后台下载: 下载在后台线程推进（进度写 DL_* 原子量, 前端轮询
+/// update_status）, 期间用户可正常使用应用; 完成后 DL_PHASE=4（已下载待
+/// 安装）, 由前端调 apply_update 拉起 NSIS 安装器（passive 模式）——旧进程
+/// 退出、新版本启动, 后端子进程由 --parent-pid 看门狗随壳退出。
+/// 失败时 PENDING_UPDATE 里留有 clone, 前端可直接重试（无需重新 check）。
 #[tauri::command]
-async fn install_update(app: AppHandle) -> Result<(), String> {
-    let Some(update) = PENDING_UPDATE.lock().unwrap().take() else {
-        return Err("没有待安装的更新（请先检查更新）".into());
+async fn install_update(_app: AppHandle) -> Result<(), String> {
+    let update = {
+        let mut pending = PENDING_UPDATE.lock().unwrap();
+        let Some(update) = pending.take() else {
+            return Err("没有待安装的更新（请先检查更新）".into());
+        };
+        // clone 留底: 下载失败重试不需要重新 check（Update: Clone）
+        *pending = Some(update.clone());
+        update
     };
     {
         let mut started = INSTALL_STARTED.lock().unwrap();
@@ -551,41 +565,70 @@ async fn install_update(app: AppHandle) -> Result<(), String> {
     DL_TOTAL.store(0, Ordering::SeqCst);
     DL_RECEIVED.store(0, Ordering::SeqCst);
     DL_PHASE.store(1, Ordering::SeqCst);
-    boot_log("updater", "开始下载更新");
-    // download_and_install 是 async 且阻塞到安装完成, 放 tauri 异步运行时
-    // 的独立任务里跑, 命令立刻返回——进度靠前端轮询 DL_*
-    let app2 = app.clone();
+    boot_log("updater", "开始后台下载更新");
+    // download 只取字节并验签, 不安装——放 tauri 异步运行时的独立任务里跑,
+    // 命令立刻返回, 用户继续用应用; 进度靠前端轮询 DL_*
     tauri::async_runtime::spawn(async move {
         let result = update
-            .download_and_install(
+            .download(
                 |chunk, total| {
                     if let Some(t) = total {
                         DL_TOTAL.store(t as u64, Ordering::SeqCst);
                     }
                     DL_RECEIVED.fetch_add(chunk as u64, Ordering::SeqCst);
                 },
-                || {
-                    DL_PHASE.store(2, Ordering::SeqCst);
-                    boot_log("updater", "下载完成, 拉起安装器");
-                },
+                || boot_log("updater", "下载完成（已验签）"),
             )
             .await;
         match result {
-            Ok(()) => {
-                // Windows NSIS: 安装器运行时本进程已被要求退出; 若仍在运行
-                // （被动安装的边缘情况）, 主动重启走正常退出路径（杀后端）
-                boot_log("updater", "更新安装完成, 重启应用");
-                let _ = app2.restart();
+            Ok(bytes) => {
+                *PENDING_INSTALL.lock().unwrap() = Some((update, bytes));
+                DL_PHASE.store(4, Ordering::SeqCst);
+                boot_log("updater", "更新包就绪, 等待用户确认安装");
             }
             Err(e) => {
-                boot_log("updater", &format!("ERROR: 安装失败: {e}"));
+                boot_log("updater", &format!("ERROR: 下载失败: {e}"));
                 DL_PHASE.store(3, Ordering::SeqCst);
                 *INSTALL_STARTED.lock().unwrap() = false;
-                *PENDING_UPDATE.lock().unwrap() = None;
             }
         }
     });
     Ok(())
+}
+
+/// 安装已下载的更新包: 消费 PENDING_INSTALL → 拉起 NSIS 安装器 → 重启。
+/// 失败时包放回 PENDING_INSTALL（DL_PHASE 保持 4）, 前端可重试。
+#[tauri::command]
+async fn apply_update(app: AppHandle) -> Result<(), String> {
+    let Some((update, bytes)) = PENDING_INSTALL.lock().unwrap().take() else {
+        return Err("没有已下载的更新包（请先下载）".into());
+    };
+    DL_PHASE.store(2, Ordering::SeqCst);
+    boot_log("updater", "拉起安装器");
+    // install 在阻塞线程跑（写注册表/落盘安装器）, 不占异步运行时
+    let r = tauri::async_runtime::spawn_blocking(move || update.install(bytes)).await;
+    match r {
+        Ok(Ok(())) => {
+            boot_log("updater", "更新安装完成, 重启应用");
+            // restart 请求退出后本进程很快终止, 其后的 Ok(()) 实际不可达;
+            // 返回值仅为满足签名。
+            #[allow(unreachable_code)]
+            {
+                let _ = app.restart();
+                Ok(())
+            }
+        }
+        Ok(Err(e)) => {
+            boot_log("updater", &format!("ERROR: 安装失败: {e}"));
+            DL_PHASE.store(4, Ordering::SeqCst);
+            Err(format!("安装失败: {e}"))
+        }
+        Err(e) => {
+            boot_log("updater", &format!("ERROR: 安装任务失败: {e}"));
+            DL_PHASE.store(4, Ordering::SeqCst);
+            Err(format!("安装任务失败: {e}"))
+        }
+    }
 }
 
 /// 前端轮询的进度快照
@@ -662,6 +705,41 @@ fn notify_desktop(app: AppHandle, title: String, body: String) -> Result<(), Str
 fn read_clipboard_text(app: AppHandle) -> Result<String, String> {
     use tauri_plugin_clipboard_manager::ClipboardExt;
     app.clipboard().read_text().map_err(|e| e.to_string())
+}
+
+/// 读系统剪贴板图片（前端经 window.aulosReadClipboardImage() 调用, 右键菜单
+/// "粘贴"对纯图片剪贴板——系统截图 Win+Shift+S 等——转附件用）。
+/// 有图返回 PNG dataURL, 无图/读取失败一律 Ok(None)（前端据此回退到
+/// "剪贴板是空的"提示, 不弹错误）。async: 插件文档明确 read_image 不可在
+/// 主线程调用（Linux 下与 WebView 剪贴板互操作可能死锁）, Tauri 的 async
+/// 命令跑在独立线程池。包成应用命令而非插件 JS 命令, 理由同上（remote ACL）。
+#[tauri::command]
+async fn read_clipboard_image(app: AppHandle) -> Result<Option<String>, String> {
+    use base64::Engine as _;
+    use tauri_plugin_clipboard_manager::ClipboardExt;
+    let img = match app.clipboard().read_image() {
+        Ok(img) => img,
+        Err(e) => {
+            // 无图片格式（纯文本剪贴板/空剪贴板）是最常见情形, 不算错误
+            boot_log("clipboard", &format!("read_image 无图或失败: {e}"));
+            return Ok(None);
+        }
+    };
+    // RGBA 原始像素 → PNG（无损, 尺寸小）→ base64 dataURL 传给渲染层
+    let mut png = std::io::Cursor::new(Vec::new());
+    use image::ImageEncoder as _;
+    image::codecs::png::PngEncoder::new(&mut png)
+        .write_image(
+            img.rgba().as_ref(),
+            img.width(),
+            img.height(),
+            image::ExtendedColorType::Rgba8,
+        )
+        .map_err(|e| format!("剪贴板图片编码 PNG 失败: {e}"))?;
+    Ok(Some(format!(
+        "data:image/png;base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(png.into_inner())
+    )))
 }
 
 #[tauri::command]
@@ -1124,6 +1202,19 @@ const BRIDGE_JS: &str = r#"
       }
     };
   }
+  // 剪贴板图片桥（右键粘贴对纯图片剪贴板——系统截图——转附件用）:
+  // 有图返回 PNG dataURL, 无图/失败返回 null（不 reject, 前端据此提示"剪贴板是空的"）
+  if (!window.aulosReadClipboardImage) {
+    window.aulosReadClipboardImage = async () => {
+      if (!window.__TAURI_INTERNALS__) return null;   // 页面在浏览器里预览: 无壳
+      try {
+        return await window.__TAURI_INTERNALS__.invoke('read_clipboard_image');
+      } catch (e) {
+        console.error('[aulos] read_clipboard_image IPC 失败:', e);
+        return null;
+      }
+    };
+  }
   // 应用版本号桥: 标题栏徽标用。打包后的 Python 后端不带 pyproject.toml,
   // 服务端读不到版本 → 壳内一律问壳自己。版本号由 Rust 在注入脚本头部
   // 烤成 window.__AULOS_VERSION__（create_main_window 处拼接）, 这里直接读;
@@ -1189,6 +1280,7 @@ const BRIDGE_JS: &str = r#"
     window.aulosDesktopUpdater = {
       check: () => updInvoke('check_update'),
       install: () => updInvoke('install_update'),
+      apply: () => updInvoke('apply_update'),
       status: () => updInvoke('update_status'),
     };
   }
@@ -1263,9 +1355,11 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             pick_folder,
             read_clipboard_text,
+            read_clipboard_image,
             notify_desktop,
             check_update,
             install_update,
+            apply_update,
             update_status,
             minimize_main,
             toggle_maximize_main,

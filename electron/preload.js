@@ -12,6 +12,11 @@ contextBridge.exposeInMainWorld("aulosPickFolder", async () => {
 contextBridge.exposeInMainWorld("aulosReadClipboard", async () => {
   return await ipcRenderer.invoke("read-clipboard-text");
 });
+// 剪贴板图片桥: 有图返回 PNG dataURL, 无图返回 null（不 reject,
+// 前端据此提示"剪贴板是空的"）——系统截图右键粘贴转附件用
+contextBridge.exposeInMainWorld("aulosReadClipboardImage", async () => {
+  return await ipcRenderer.invoke("read-clipboard-image");
+});
 contextBridge.exposeInMainWorld("aulosAppVersion", async () => {
   return await ipcRenderer.invoke("get-app-version");
 });

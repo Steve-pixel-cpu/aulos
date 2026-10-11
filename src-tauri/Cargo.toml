@@ -1,6 +1,6 @@
 [package]
 name = "aulos"
-version = "5.0.2"
+version = "5.1.1"
 description = "aulos 桌面壳（Tauri 版）"
 edition = "2021"
 
@@ -13,6 +13,10 @@ tauri-plugin-opener = "2"
 tauri-plugin-single-instance = "2"
 # 右键菜单的"粘贴": 读系统剪贴板走 Rust 侧, 避开 WebView2 剪贴板读权限弹窗
 tauri-plugin-clipboard-manager = "2"
+# read_clipboard_image: 剪贴板 RGBA 原始像素编 PNG（右键粘贴系统截图转附件）。
+# image 本就在依赖树（tauri 自带）, 显式声明仅启用 png 编解码, 控制编译体积
+base64 = "0.22"
+image = { version = "0.25", default-features = false, features = ["png"] }
 # 原生"选择文件夹"对话框（对应 Electron 版 preload 桥的 pick-folder）
 rfd = "0.15"
 # 系统原生桌面通知: WebView2 未实现 Web Notification API, 前端的

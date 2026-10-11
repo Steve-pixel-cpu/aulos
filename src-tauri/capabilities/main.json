@@ -9,6 +9,7 @@
     "core:default",
     "allow-pick-folder",
     "allow-read-clipboard-text",
+    "allow-read-clipboard-image",
     "allow-notify-desktop",
     "allow-check-update",
     "allow-install-update",

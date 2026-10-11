@@ -135,10 +135,26 @@ scripts\publish.cmd <版本> "说明"    ← git tag v<版本> + gh release crea
 
 | 侧 | 文件 | 内容 |
 |---|---|---|
-| Rust | `src-tauri/src/main.rs` | `check_update` / `install_update` / `update_status` 三个命令 + `window.aulosDesktopUpdater` 桥 |
+| Rust | `src-tauri/src/main.rs` | `check_update` / `install_update`（后台下载）/ `apply_update`（安装重启）/ `update_status` 四个命令 + `window.aulosDesktopUpdater` 桥 |
 | 壳配置 | `tauri.conf.json` | `bundle.createUpdaterArtifacts` + `plugins.updater`（公钥/端点/passive 安装） |
-| 前端 | `static/app.js`（UPD 段） | 启动静默检查、徽标红点、更新弹窗与进度轮询 |
+| 前端 | `static/desktop.js`（UPD 段） | 启动静默检查、徽标红点、更新弹窗、全局进度轮询、标题栏进度 pill、设置→关于节 |
 | 进度 | 轮询 `update_status` | 下载进度经静态原子量传递（不用插件事件——远端页面事件 ACL 不可靠） |
+
+### 两阶段下载/安装协议
+
+更新拆成「下载」与「安装」两个命令，中间可断开（后台下载）：
+
+1. `install_update`：只下载。Rust 后台任务逐块拉包并验签，进度写 `DL_*` 原子量；
+   命令立即返回，用户可关弹窗继续使用应用。失败时 `PENDING_UPDATE` 留有 clone，
+   前端直接重试本命令即可（无需重新检查）。
+2. `update_status.phase`：`0` 空闲 / `1` 下载中 / `2` 安装进行中 / `3` 下载失败 /
+   `4` 已下载待安装（包暂存内存 `PENDING_INSTALL`，约百 MB）。
+3. `apply_update`：用户确认后消费 `PENDING_INSTALL` 拉起 NSIS 安装器（passive）→
+   壳重启到新版本。失败时包放回可重试。中途退出应用则丢弃已下载包，下次重新检查。
+
+入口：标题栏版本徽标 / 更新 pill（下载中=查看进度，就绪=点击安装，失败=点击重试）/
+设置 → 关于（版本号 + 检查更新按钮 + 状态行）。浏览器（无壳）模式下关于节只显示
+版本，更新按钮隐藏。
 
 更新检查失败的常见原因看 `~/.aulos/boot.log` 的 `[updater]` 段：无网/清单 404
 （还没发过版）/签名不匹配（私钥换过）。

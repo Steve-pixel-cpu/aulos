@@ -1952,6 +1952,27 @@
     margin-left: 5px; border-radius: 50%; background: var(--err);
     vertical-align: 1px;
   }
+  /* 标题栏更新进度 pill: 下载中/已就绪/失败 三态（内容与状态类由 desktop.js 写） */
+  .tb-update-dl {
+    display: inline-flex; align-items: center; gap: 6px;
+    margin-left: 8px; padding: 3px 10px; border-radius: 999px;
+    border: 1px solid var(--accent-border);
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+    color: var(--text-2); font-size: calc(11.5px * var(--fs-ui));
+    line-height: 1.4; max-width: 260px; overflow: hidden;
+    white-space: nowrap; text-overflow: ellipsis; cursor: pointer;
+  }
+  .tb-update-dl[hidden] { display: none; }
+  .tb-update-dl.ready {
+    border-color: color-mix(in srgb, var(--ok, #34c77b) 45%, transparent);
+    background: color-mix(in srgb, var(--ok, #34c77b) 12%, transparent);
+    color: var(--text); font-weight: 600;
+  }
+  .tb-update-dl.err {
+    border-color: color-mix(in srgb, var(--err) 45%, transparent);
+    background: color-mix(in srgb, var(--err) 10%, transparent);
+  }
+  .tb-update-dl:hover { filter: brightness(1.1); }
   #update-overlay {
     display: none; position: fixed; inset: 0; z-index: 300;
     background: var(--overlay); backdrop-filter: blur(3px);

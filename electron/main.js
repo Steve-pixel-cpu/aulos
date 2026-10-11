@@ -241,6 +241,12 @@ if (!gotLock) {
   });
   // 系统剪贴板文本（渲染层右键"粘贴"用; execCommand('paste') 在渲染层被禁）
   ipcMain.handle("read-clipboard-text", () => clipboard.readText());
+  // 系统剪贴板图片（右键粘贴对纯图片剪贴板——系统截图——转附件用）:
+  // 有图返回 PNG dataURL, 无图返回 null。toDataURL 缺省即 image/png
+  ipcMain.handle("read-clipboard-image", () => {
+    const img = clipboard.readImage();
+    return img.isEmpty() ? null : img.toDataURL();
+  });
   // 应用版本号: 标题栏徽标用（打包后从 package.json 读取）
   ipcMain.handle("get-app-version", () => app.getVersion());
   // 系统云母开关: on=true 开 DWM 云母, false 关(回实底)。深浅明暗跟随系统

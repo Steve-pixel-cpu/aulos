@@ -29,6 +29,7 @@
   <img class="tb-icon" src="/api/icon" alt="" draggable="false">
   <span class="tb-name">Aulos</span>
   <span class="tb-ver" id="tb-version" hidden></span>
+  <button class="tb-update-dl" id="tb-update-dl" hidden></button>
   <div class="tb-spring"></div>
   <div class="tb-controls">
     <button class="tb-btn" id="tb-min" title="最小化">
@@ -159,6 +160,10 @@
     <button class="menu-item nav-item" data-section="config">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h6"/></svg>
       配置
+    </button>
+    <button class="menu-item nav-item" data-section="about">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7.5v.5"/></svg>
+      关于
     </button>
   </div>
 
@@ -606,6 +611,23 @@
           <button type="button" class="icon-act" id="btn-open-config">打开文件</button>
         </div>
       </div>
+      <div class="sp-section-body" data-section="about" style="display:none">
+        <div class="sp-section">关于</div>
+        <div class="sp-section-desc">Aulos 桌面版支持应用内自动更新：检查到新版本后可后台下载（不耽误使用），下载完成后确认安装并自动重启</div>
+        <div class="set-row">
+          <div class="set-info">
+            <div class="set-name">当前版本</div>
+            <div class="set-desc" id="about-version">…</div>
+          </div>
+          <button type="button" class="icon-act" id="btn-about-check" hidden>检查更新</button>
+        </div>
+        <div class="set-row">
+          <div class="set-info">
+            <div class="set-name">更新状态</div>
+            <div class="set-desc" id="about-update-status">未检查</div>
+          </div>
+        </div>
+      </div>
         </div>
       </div>
     </div>
@@ -688,7 +710,7 @@
 <script src="/static/ws-handlers.js?v=20261010a" defer></script>
 <script src="/static/sidebar.js?v=20261010a" defer></script>
 <script src="/static/settings-page.js?v=20261010a" defer></script>
-<script src="/static/desktop.js?v=20261010a" defer></script>
+<script src="/static/desktop.js?v=20261011a" defer></script>
 <script src="/static/music.js?v=20260926b" defer></script>
 <script src="/static/pet.js?v=20260926a" defer></script>
 </body>
