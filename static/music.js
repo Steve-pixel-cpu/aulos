@@ -942,6 +942,21 @@
     ev.stopPropagation();
     if (ev.key === "Enter") doSearch();
   });
+  /* 叉号可见性跟着内容走; 清空 = 输入框归零 + 结果区回占位提示 */
+  const syncMusicClear = () => {
+    $("music-search-input").closest(".mp-input-wrap")
+      .classList.toggle("has-value", !!$("music-search-input").value);
+  };
+  $("music-search-input").addEventListener("input", syncMusicClear);
+  $("music-search-clear").onclick = () => {
+    const input = $("music-search-input");
+    if (!input.value) return;
+    input.value = "";
+    syncMusicClear();
+    $("music-search-results").innerHTML =
+      `<div class="mp-empty">${mstate.src === "bili" ? "B站视频只取音轨, 画面不进电台" : "搜歌名 / 歌手"}</div>`;
+    input.focus();
+  };
   /* 搜索来源切换: 网易云 / B站。切来源时清空结果, 换 placeholder */
   $$("#music-src-btns > button").forEach(b => {
     b.onclick = () => {

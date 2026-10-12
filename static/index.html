@@ -70,7 +70,7 @@
     <div class="seg-acts"></div>
   </div>
 
-  <div id="search-box"><input id="search-input" type="text" placeholder="搜索标题 / 项目 / 正文…"></div>
+  <div id="search-box"><span id="search-ico" aria-hidden="true"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M16.5 16.5L21 21"/></svg></span><input id="search-input" type="text" placeholder="搜索标题 / 项目 / 正文…"><button id="search-clear" type="button" data-tip="清空搜索" aria-label="清空搜索"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
 
   <div id="side-scroll">
     <div id="session-list"></div>
@@ -656,7 +656,11 @@
         <button data-src="netease" class="on"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>网易云</button>
         <button data-src="bili"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="15" rx="2"/><path d="M17 2l-5 5-5-5"/></svg>B站</button>
       </div>
-      <input id="music-search-input" type="text" placeholder="搜歌名 / 歌手，回车搜索" spellcheck="false" autocomplete="off">
+      <div class="mp-input-wrap">
+        <span class="mp-search-ico" aria-hidden="true"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M16.5 16.5L21 21"/></svg></span>
+        <input id="music-search-input" type="text" placeholder="搜歌名 / 歌手，回车搜索" spellcheck="false" autocomplete="off">
+        <button id="music-search-clear" type="button" aria-label="清空搜索"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      </div>
     </div>
     <div class="mp-search-results" id="music-search-results"></div>
   </div>

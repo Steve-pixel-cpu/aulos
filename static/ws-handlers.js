@@ -1743,9 +1743,15 @@ function openSearch() {
   $("search-box").classList.add("open");
   $("search-input").focus();
 }
+/* 叉号可见性跟着内容走（程序清空不会触发 input 事件, 各改动 .value 的
+ * 地方统一调这个收口） */
+function syncSearchClear() {
+  $("search-box").classList.toggle("has-value", !!$("search-input").value);
+}
 function closeSearch() {
   $("search-box").classList.remove("open");
   $("search-input").value = "";
+  syncSearchClear();
   state.fulltext = null;      // 清掉全文命中态, 残留会让下次渲染闪现旧摘录
   clearTimeout(_ftsTimer);
   renderSessionList();
@@ -1786,10 +1792,22 @@ function scheduleFulltextSearch() {
   }, 300);
 }
 
-$("search-input").addEventListener("input", () => { renderSessionList(); scheduleFulltextSearch(); });
+$("search-input").addEventListener("input", () => { syncSearchClear(); renderSessionList(); scheduleFulltextSearch(); });
 $("search-input").addEventListener("keydown", ev => {
   if (ev.key === "Escape") closeSearch();
 });
+/* 一键清除: 只清内容、保留搜索框展开与焦点（和 Esc/再点搜索钮的"收起"
+ * 区分开）; 清空后走与打字清空相同的收口——标题过滤重绘 + 全文态清除 */
+$("search-clear").onclick = () => {
+  const input = $("search-input");
+  if (!input.value) return;
+  input.value = "";
+  syncSearchClear();
+  state.fulltext = null;
+  clearTimeout(_ftsTimer);
+  renderSessionList();
+  input.focus();
+};
 
 document.addEventListener("keydown", ev => {
   const mod = ev.ctrlKey || ev.metaKey;
