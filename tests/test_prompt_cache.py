@@ -16,9 +16,9 @@ from types import SimpleNamespace
 import anthropic
 import httpx2 as httpx
 
-from api_client import CACHE_CONTROL, ClaudeApiClient
-from models import Message
-from prompt import SYSTEM_PROMPT_DYNAMIC_BOUNDARY
+from aulos.api_client import CACHE_CONTROL, ClaudeApiClient
+from aulos.models import Message
+from aulos.prompt import SYSTEM_PROMPT_DYNAMIC_BOUNDARY
 
 
 class FakeStream:

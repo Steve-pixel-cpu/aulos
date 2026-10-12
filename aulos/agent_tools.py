@@ -17,7 +17,7 @@ import threading
 from pathlib import Path
 from typing import Optional
 
-from multi_agent import AgentOrchestrator
+from aulos.multi_agent import AgentOrchestrator
 
 # 状态字段在 spec 的 enum 里写死（pydantic 枚举不进 schema）
 _AGENT_STATUSES = ("pending", "running", "completed", "failed")
@@ -25,7 +25,7 @@ _AGENT_TYPES = ("explore", "plan", "verification", "general")
 
 # 子 agent 产出文件的存放位置（用户目录下, 与会话存储平级）
 def default_agents_dir() -> Path:
-    from config import USER_DIR
+    from aulos.config import USER_DIR
     return USER_DIR / "agents"
 
 
@@ -170,7 +170,7 @@ def current_session_id() -> Optional[str]:
     延迟导入 + 异常兜底: agent_tools 被 CLI（main）导入时不能反向依赖
     server 模块（FastAPI 导入重, 且 CLI 场景没有 dispatch 绑定）。"""
     try:
-        from server import dispatch
+        from aulos.server import dispatch
         return dispatch.current_session_id()
     except Exception:
         return None
@@ -186,7 +186,7 @@ def current_session_api_config() -> Optional[tuple[str, Optional[str], str, str]
     if not sid:
         return None
     try:
-        from server import _api_config_for_session
+        from aulos.server import _api_config_for_session
         return _api_config_for_session(sid)
     except Exception:
         return None

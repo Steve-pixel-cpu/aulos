@@ -12,8 +12,8 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from models import Message, TextContentBlock
-from storage import (PermissionModeRecord, SessionStore, StorageEntry,
+from aulos.models import Message, TextContentBlock
+from aulos.storage import (PermissionModeRecord, SessionStore, StorageEntry,
                      TitleRecord)
 
 
@@ -150,7 +150,7 @@ def test_meta_returns_copy(tmp_path):
 
 @pytest.fixture()
 def meta_client(tmp_path, monkeypatch):
-    import server
+    import aulos.server as server
     store = SessionStore(tmp_path)
     monkeypatch.setattr(server, "store", store)
     monkeypatch.setattr(server, "_pending_sessions", set())
@@ -173,7 +173,7 @@ def test_list_endpoint_wiring(meta_client):
 
 def test_list_endpoint_pending_session(meta_client):
     client, store = meta_client
-    import server
+    import aulos.server as server
     server._pending_sessions.add("pending-1")
     r = client.get("/api/sessions")
     item = next(i for i in r.json()["sessions"] if i["id"] == "pending-1")

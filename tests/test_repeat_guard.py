@@ -14,10 +14,10 @@ grep/git log 这类确定性只读探查不清零计数——旧规则"任何 ba
     uv run pytest tests/test_repeat_guard.py -v
 """
 
-from api_client import MessageStopEvent, TextDeltaEvent, ToolUseEvent
-from models import Session
-from permissions import PermissionMode, PermissionPolicy
-from runtime import ConversationRuntime
+from aulos.api_client import MessageStopEvent, TextDeltaEvent, ToolUseEvent
+from aulos.models import Session
+from aulos.permissions import PermissionMode, PermissionPolicy
+from aulos.runtime import ConversationRuntime
 
 
 class ScriptedClient:
@@ -55,8 +55,8 @@ def make_runtime(executor) -> ConversationRuntime:
 
 def _run_tools(rt, calls: list[tuple[str, str]]):
     """直接走 _execute_tool 管线（绕过 stream）。返回每条的 output。"""
-    from models import ToolContentBlock
-    from hooks import HookResult
+    from aulos.models import ToolContentBlock
+    from aulos.hooks import HookResult
 
     outs = []
     for i, (name, inp) in enumerate(calls):
@@ -169,7 +169,7 @@ import json as _json
 
 import pytest
 
-from runtime import shell_command_is_read_only
+from aulos.runtime import shell_command_is_read_only
 
 
 def _ro(name: str, cmd: str) -> bool:
@@ -230,8 +230,8 @@ def test_powershell_同规则():
 # 工具结果回填后调用）
 # ------------------------------------------------------------
 
-from hooks import HookResult
-from models import ToolContentBlock
+from aulos.hooks import HookResult
+from aulos.models import ToolContentBlock
 
 QUESTION = "马乐不是企业知识库管理员，有切部门的功能。排查一下原因"
 
@@ -246,7 +246,7 @@ def _step(rt, msgs: list, name: str, inp: str, i: int, q: str = QUESTION):
 
 
 def test_调用时钟跨过阈值触发检查点_附原始问题引述():
-    from runtime import CONCLUSION_CHECKPOINT_EVERY as EVERY
+    from aulos.runtime import CONCLUSION_CHECKPOINT_EVERY as EVERY
 
     ex = RecordingExecutor()
     rt = make_runtime(ex)
@@ -264,7 +264,7 @@ def test_调用时钟跨过阈值触发检查点_附原始问题引述():
 
 
 def test_检查点按倍数档位重复触发():
-    from runtime import CONCLUSION_CHECKPOINT_EVERY as EVERY
+    from aulos.runtime import CONCLUSION_CHECKPOINT_EVERY as EVERY
 
     ex = RecordingExecutor()
     rt = make_runtime(ex)
@@ -283,7 +283,7 @@ def test_检查点按倍数档位重复触发():
 def test_并行批次跨过档位也触发():
     """一批 5 个调用把时钟从 14 推到 19: 19 % 16 != 0, 按"取模"判定会
     永远错过——按"跨档"判定必须命中。"""
-    from runtime import CONCLUSION_CHECKPOINT_EVERY as EVERY
+    from aulos.runtime import CONCLUSION_CHECKPOINT_EVERY as EVERY
 
     ex = RecordingExecutor()
     rt = make_runtime(ex)
@@ -307,7 +307,7 @@ def test_sqlcmd_python螺旋不清零时钟_检查点照常触发():
     ——这些命令在变异判定里全是"可能改状态", 旧设计把检查点时钟挂在只读
     连击上被反复清零, 检查点在唯一需要它的螺旋里全程失明。时钟与变异判定
     解耦后, 混合螺旋照常计数、照常触发。"""
-    from runtime import CONCLUSION_CHECKPOINT_EVERY as EVERY
+    from aulos.runtime import CONCLUSION_CHECKPOINT_EVERY as EVERY
 
     ex = RecordingExecutor()
     rt = make_runtime(ex)
@@ -329,7 +329,7 @@ def test_sqlcmd_python螺旋不清零时钟_检查点照常触发():
 
 
 def test_新回合时钟重置_检查点重新计数():
-    from runtime import CONCLUSION_CHECKPOINT_EVERY as EVERY
+    from aulos.runtime import CONCLUSION_CHECKPOINT_EVERY as EVERY
 
     ex = RecordingExecutor()
     rt = make_runtime(ex)
@@ -382,7 +382,7 @@ def test_压缩激活清空护栏计数():
 # ------------------------------------------------------------
 
 def test_并行批次内同参工具也计数():
-    from api_client import MessageStopEvent
+    from aulos.api_client import MessageStopEvent
 
     ex = RecordingExecutor()
     rt = make_runtime(ex)

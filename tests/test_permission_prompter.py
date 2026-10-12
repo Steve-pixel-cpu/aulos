@@ -10,8 +10,8 @@ import json
 import threading
 import time
 
-from permissions import PermissionDecision, PermissionMode, PermissionRequest
-from server import WebPermissionPrompter
+from aulos.permissions import PermissionDecision, PermissionMode, PermissionRequest
+from aulos.server import WebPermissionPrompter
 
 
 def _bash_request() -> PermissionRequest:

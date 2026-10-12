@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from memory.store import JsonFileStore, MEMORY_MAX, EVICTED_MAX
+from aulos.memory.store import JsonFileStore, MEMORY_MAX, EVICTED_MAX
 
 
 @pytest.fixture
@@ -140,7 +140,7 @@ def test_non_dict_json_reset(store, tmp_path):
 
 # ---------- 注入渲染 ----------
 
-from memory.inject import render_memories, MEMORY_BUDGET_CHARS
+from aulos.memory.inject import render_memories, MEMORY_BUDGET_CHARS
 
 
 def test_render_empty_returns_none(store):

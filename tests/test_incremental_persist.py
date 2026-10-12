@@ -10,11 +10,11 @@ on_compacted 只是纯通知(旧版会原地替换历史并重写会话文件, �
 
 import pytest
 
-from api_client import MessageStopEvent, TextDeltaEvent, UsageInfo
-from models import Message, Session
-from permissions import ALLOW_MODE, PermissionPolicy
-from runtime import ConversationRuntime
-from storage import SessionStore
+from aulos.api_client import MessageStopEvent, TextDeltaEvent, UsageInfo
+from aulos.models import Message, Session
+from aulos.permissions import ALLOW_MODE, PermissionPolicy
+from aulos.runtime import ConversationRuntime
+from aulos.storage import SessionStore
 
 
 class ScriptedClient:
@@ -56,7 +56,7 @@ def make_runtime(session, client) -> ConversationRuntime:
 
 
 def test_on_iterate_用户消息后与工具结果后各触发一次():
-    from api_client import ToolUseEvent
+    from aulos.api_client import ToolUseEvent
     client = ScriptedClient([
         [ToolUseEvent(id="t1", name="bash", input="ls"), MessageStopEvent()],
         make_events("done"),

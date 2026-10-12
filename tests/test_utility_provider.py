@@ -11,11 +11,11 @@ import json
 
 import pytest
 
-import config
-import main as main_mod
-from config import load_utility_provider
-from permissions import ALLOW_MODE, PermissionPolicy
-from runtime import ConversationRuntime
+import aulos.config as config
+import aulos.main as main_mod
+from aulos.config import load_utility_provider
+from aulos.permissions import ALLOW_MODE, PermissionPolicy
+from aulos.runtime import ConversationRuntime
 
 from test_llm_summary import NoopExecutor, SummaryFakeClient, make_session
 
@@ -117,7 +117,7 @@ def test_llm_summarize_falls_back_without_utility_client():
 
 def test_assemble_wires_utility_client(monkeypatch, tmp_path):
     from types import SimpleNamespace
-    from storage import SessionStore
+    from aulos.storage import SessionStore
     monkeypatch.setenv("API_KEY", "test-key")
     monkeypatch.setattr(main_mod, "get_orchestrator", lambda: SimpleNamespace(
         reconcile_orphans=lambda: 0))
@@ -135,7 +135,7 @@ def test_assemble_wires_utility_client(monkeypatch, tmp_path):
 
 def test_assemble_invalid_utility_provider_degrades(monkeypatch, tmp_path, capsys):
     from types import SimpleNamespace
-    from storage import SessionStore
+    from aulos.storage import SessionStore
     monkeypatch.setenv("API_KEY", "test-key")
     monkeypatch.setattr(main_mod, "get_orchestrator", lambda: SimpleNamespace(
         reconcile_orphans=lambda: 0))
@@ -156,8 +156,8 @@ def test_assemble_invalid_utility_provider_degrades(monkeypatch, tmp_path, capsy
 
 import asyncio  # noqa: E402
 
-import server  # noqa: E402
-from config import (load_utility_provider_setting,  # noqa: E402
+import aulos.server as server  # noqa: E402
+from aulos.config import (load_utility_provider_setting,  # noqa: E402
                     save_utility_provider_setting)
 from fastapi import HTTPException  # noqa: E402
 

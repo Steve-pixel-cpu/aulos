@@ -6,7 +6,7 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
-from config import RuntimeConfig
+from aulos.config import RuntimeConfig
 
 
 class HookEvent(Enum):

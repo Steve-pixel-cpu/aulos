@@ -14,7 +14,7 @@ import shutil
 import time
 from typing import Any, Optional
 
-from fsatomic import atomic_write_text
+from aulos.fsatomic import atomic_write_text
 
 # 容量常量。集中在此供测试引用; 日后要做成配置项时从这里搬。
 MEMORY_MAX = 200       # 记忆条数硬上限, add 时超限触发淘汰

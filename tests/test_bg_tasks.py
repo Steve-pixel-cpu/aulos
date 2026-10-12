@@ -13,7 +13,7 @@ task_output、task_stop。
 
 import time
 
-import tools
+import aulos.tools as tools
 
 
 def _task_id_of(started: str) -> str:

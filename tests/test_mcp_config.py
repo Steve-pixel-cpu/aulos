@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from config import ConfigError, ConfigLoader
+from aulos.config import ConfigError, ConfigLoader
 
 
 def _load(tmp_path, user=None, project=None, local=None):

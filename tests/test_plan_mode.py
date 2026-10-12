@@ -19,13 +19,13 @@ import json
 
 import pytest
 
-from permissions import (
+from aulos.permissions import (
     PermissionDecision,
     PermissionMode,
     PermissionPolicy,
     PermissionRequest,
 )
-from main import TOOL_REQUIREMENTS, build_registry
+from aulos.main import TOOL_REQUIREMENTS, build_registry
 from conftest import ws_connect
 from tests.test_permission_prompt import RecordingPrompter
 
@@ -33,15 +33,15 @@ from tests.test_permission_prompt import RecordingPrompter
 @pytest.fixture()
 def client():
     from fastapi.testclient import TestClient
-    import server
+    import aulos.server as server
     return TestClient(server.app)
 
 
 @pytest.fixture()
 def isolated_store(monkeypatch, tmp_path):
     """server.store 指到临时目录（与 test_server.py 同名夹具同语义）。"""
-    import server
-    from storage import SessionStore
+    import aulos.server as server
+    from aulos.storage import SessionStore
     st = SessionStore(tmp_path)
     monkeypatch.setattr(server, "store", st, raising=False)
     return st
@@ -156,9 +156,9 @@ def test_after_approval_present_plan_no_longer_prompts():
 # ------------------------------------------------------------
 
 def test_run_turn_plan_mode_appends_instruction_to_system_prompt():
-    from api_client import MessageStopEvent, TextDeltaEvent
-    from models import Session
-    from runtime import ConversationRuntime, PLAN_MODE_INSTRUCTION
+    from aulos.api_client import MessageStopEvent, TextDeltaEvent
+    from aulos.models import Session
+    from aulos.runtime import ConversationRuntime, PLAN_MODE_INSTRUCTION
     from tests.test_runtime import ScriptedApiClient, EchoExecutor
 
     fake = ScriptedApiClient([[TextDeltaEvent(text="ok"), MessageStopEvent()]])
@@ -203,9 +203,9 @@ def test_run_turn_plan_mode_appends_instruction_to_system_prompt():
 def test_run_turn_plan_overlay_off_restores_base_prompt():
     """开关关闭: 生效档位回落基础模式, 计划指令段移除（同 runtime 实例上
     开→关的往返, 对齐批准回调/CLI /mode plan 的路径）。"""
-    from api_client import MessageStopEvent, TextDeltaEvent
-    from models import Session
-    from runtime import ConversationRuntime, PLAN_MODE_INSTRUCTION
+    from aulos.api_client import MessageStopEvent, TextDeltaEvent
+    from aulos.models import Session
+    from aulos.runtime import ConversationRuntime, PLAN_MODE_INSTRUCTION
     from tests.test_runtime import ScriptedApiClient, EchoExecutor
 
     class _Spy(ScriptedApiClient):
@@ -233,9 +233,9 @@ def test_run_turn_plan_overlay_off_restores_base_prompt():
 def test_run_turn_present_plan_approved_upgrades_mode_mid_turn():
     """批准回调关闭计划开关: 同一轮里 present_plan 之后的 write_file 直接
     放行（模拟"批准后立刻实施"——基础档 workspace-write 时）。"""
-    from api_client import MessageStopEvent, TextDeltaEvent, ToolUseEvent
-    from models import Session
-    from runtime import ConversationRuntime
+    from aulos.api_client import MessageStopEvent, TextDeltaEvent, ToolUseEvent
+    from aulos.models import Session
+    from aulos.runtime import ConversationRuntime
     from tests.test_runtime import ScriptedApiClient, EchoExecutor
 
     upgrades = []
@@ -257,10 +257,10 @@ def test_run_turn_present_plan_approved_upgrades_mode_mid_turn():
             if request.tool_name == "present_plan":
                 self.policy.set_plan(False)
                 upgrades.append(request.tool_name)
-                from permissions import PermissionResult
+                from aulos.permissions import PermissionResult
                 return PermissionResult(decision=PermissionDecision.ALLOW,
                                         reason="Plan approved.")
-            from permissions import PermissionResult
+            from aulos.permissions import PermissionResult
             return PermissionResult(decision=PermissionDecision.DENY,
                                     reason="no")
 
@@ -286,7 +286,7 @@ def test_run_turn_present_plan_approved_upgrades_mode_mid_turn():
 def test_web_prompter_plan_approval_triggers_upgrade_and_broadcast(client, isolated_store):
     """WebPermissionPrompter: present_plan 批准 → 升级回调跑 + mode_changed
     广播; ALLOW 带实施指令 reason。"""
-    import server
+    import aulos.server as server
 
     web_session = server.get_or_create_web_session("s-plan-ok")
     received = []
@@ -323,7 +323,7 @@ def test_web_prompter_plan_approval_triggers_upgrade_and_broadcast(client, isola
 
 def test_web_prompter_plan_rejection_returns_revision_reason(client, isolated_store):
     """计划被拒: 回流"修订后再提交"的指引, 不弹升级。"""
-    import server
+    import aulos.server as server
 
     web_session = server.get_or_create_web_session("s-plan-no")
     try:
@@ -357,8 +357,8 @@ def test_web_prompter_plan_rejection_returns_revision_reason(client, isolated_st
 def test_finalize_callback_emits_plan_rejected_marker(client, isolated_store):
     """present_plan 被拒: 终局回调发的 tool_result 带 plan_rejected 标记
     （前端计划卡自己渲染拒绝态, 不再补失败工具卡）, 理由回流给模型。"""
-    import server
-    from models import Message, ToolContentBlock
+    import aulos.server as server
+    from aulos.models import Message, ToolContentBlock
 
     out = []
     server.dispatch.bind(out.append)
@@ -384,7 +384,7 @@ def test_finalize_callback_emits_plan_rejected_marker(client, isolated_store):
 def test_start_turn_wires_upgrade_callback(client, isolated_store, monkeypatch):
     """_start_turn 构造的 prompter 带升级回调: 回调关掉计划开关（WebSession
     +runtime）并广播 mode_changed——生效档位回落基础模式, 基础档不动。"""
-    import server
+    import aulos.server as server
 
     web_session = server.get_or_create_web_session("s-plan-wire")
     try:
@@ -394,7 +394,7 @@ def test_start_turn_wires_upgrade_callback(client, isolated_store, monkeypatch):
             def set_plan_mode(self, active):
                 self.plans.append(active)
             def session(self):
-                from models import Session
+                from aulos.models import Session
                 return Session()
 
         web_session.runtime = _Rt()
@@ -460,10 +460,10 @@ def test_two_sessions_plan_approval_do_not_block_each_other(
     协议中立打桩（整体替换 server.api_client, 返回中立事件）,
     不依赖本机 active provider 是 anthropic 还是 openai。"""
     import json as _json
-    import server
-    from api_client import ApiClient, MessageStopEvent, TextDeltaEvent, ToolUseEvent
-    from models import Message
-    from tools import ToolRegistry
+    import aulos.server as server
+    from aulos.api_client import ApiClient, MessageStopEvent, TextDeltaEvent, ToolUseEvent
+    from aulos.models import Message
+    from aulos.tools import ToolRegistry
 
     class _Scripted(ApiClient):
         """按用户文本区分 A/B: 首次调用回 present_plan 工具块, 批准后

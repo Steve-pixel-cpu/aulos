@@ -20,9 +20,9 @@ import time
 
 import pytest
 
-import multi_agent
-from multi_agent import AgentJob, AgentManifest, AgentOrchestrator
-from runtime import build_assistant_message
+import aulos.multi_agent as multi_agent
+from aulos.multi_agent import AgentJob, AgentManifest, AgentOrchestrator
+from aulos.runtime import build_assistant_message
 
 
 def _wait_terminal(orch: AgentOrchestrator, agent_id: str,
@@ -49,7 +49,7 @@ def _wait_terminal(orch: AgentOrchestrator, agent_id: str,
 def test_build_assistant_message_stop但无内容块_raises():
     """thinking-only 响应被兼容层吞掉后: 有 MessageStop(收束)但零内容块
     → 抛「无消息内容!」——正是 worker 线程里炸掉的那个点。"""
-    from api_client import MessageStopEvent
+    from aulos.api_client import MessageStopEvent
 
     with pytest.raises(RuntimeError, match="无消息内容"):
         build_assistant_message([MessageStopEvent(usage=None)])
@@ -75,7 +75,7 @@ class FlakyRuntime:
         self.calls.append(prompt)
         if len(self.calls) <= self.fail_times:
             raise RuntimeError("无消息内容!")
-        from models import Message, TextContentBlock
+        from aulos.models import Message, TextContentBlock
 
         class _Summary:
             # 用真实 TextContentBlock: final_text_of 按 isinstance 过滤文本块
@@ -141,7 +141,7 @@ def test_worker_无文本且总结轮也失败_回传部分结果(tmp_path, monk
     """L2: 总结轮仍抛错 → 从会话历史提取产物清单, COMPLETED 而非 null。"""
     rt = FlakyRuntime(fail_times=99)  # 怎么兜底都失败
     # 伪造会话历史: 子代理写过文件 + 跑过命令(用真 pydantic 模型, L2 解析走真代码)
-    from models import Message, ToolContentBlock
+    from aulos.models import Message, ToolContentBlock
 
     def _tool_use_msg(name, inp: dict, out: str):
         m = Message(role="assistant", content=[ToolContentBlock(
@@ -199,7 +199,7 @@ def test_build_assistant_message_thinking_only_降级为文本():
     """L3: 有 stop 事件、唯一的 thinking 块 → 降级成 text 块而非抛错。
     GLM 兼容层会把 thinking delta 从 events 里吞掉(api_client 流处理),
     这里验证的是降级机制本身: thinking 文本在场时, 空结果变成有标记文本。"""
-    from api_client import MessageStopEvent, ThinkingEvent
+    from aulos.api_client import MessageStopEvent, ThinkingEvent
 
     msg, usage = build_assistant_message([
         ThinkingEvent(text="我先分析目录结构, 然后写脚本"),
@@ -213,7 +213,7 @@ def test_build_assistant_message_thinking_only_降级为文本():
 
 def test_build_assistant_message_有正文时thinking不进历史():
     """正常路径: text/tool 块在场, thinking 不落历史(不污染上下文重放)。"""
-    from api_client import MessageStopEvent, TextDeltaEvent, ThinkingEvent
+    from aulos.api_client import MessageStopEvent, TextDeltaEvent, ThinkingEvent
 
     msg, _ = build_assistant_message([
         ThinkingEvent(text="内心独白"),

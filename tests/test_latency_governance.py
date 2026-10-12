@@ -9,14 +9,14 @@ import json
 
 import pytest
 
-from api_client import MessageStopEvent, TextDeltaEvent, ToolUseEvent, UsageInfo
-from config import ConfigError, ConfigLoader, RuntimeConfig, RuntimeFeatureConfig
-import call_log
-from main import build_runtime
-from models import Message, Session
-from permissions import ALLOW_MODE, PermissionPolicy
-from runtime import ConversationRuntime
-from tools import ToolRegistry
+from aulos.api_client import MessageStopEvent, TextDeltaEvent, ToolUseEvent, UsageInfo
+from aulos.config import ConfigError, ConfigLoader, RuntimeConfig, RuntimeFeatureConfig
+import aulos.call_log as call_log
+from aulos.main import build_runtime
+from aulos.models import Message, Session
+from aulos.permissions import ALLOW_MODE, PermissionPolicy
+from aulos.runtime import ConversationRuntime
+from aulos.tools import ToolRegistry
 
 
 @pytest.fixture(autouse=True)
@@ -234,7 +234,7 @@ def test_build_runtime_wires_latency_knobs():
 
 def test_call_log_writes_json_line(tmp_path, monkeypatch):
     monkeypatch.setattr(call_log, "LOG_DIR", tmp_path)
-    from runtime import TokenUsage
+    from aulos.runtime import TokenUsage
 
     call_log.log_model_call(
         session="20261009-013553", iteration=3, thinking_level="medium",
@@ -259,7 +259,7 @@ def test_call_log_swallows_errors(tmp_path, monkeypatch):
     blocker = tmp_path / "not-a-dir"
     blocker.write_text("x", encoding="utf-8")
     monkeypatch.setattr(call_log, "LOG_DIR", blocker)
-    from runtime import TokenUsage
+    from aulos.runtime import TokenUsage
 
     call_log.log_model_call(
         session=None, iteration=1, thinking_level="low", duration_s=0.1,
@@ -270,12 +270,12 @@ def test_call_log_records_prefix_fingerprint(tmp_path, monkeypatch):
     # messages 视图传入时记录 prefix_fp: cache_read=0 的归因证据
     # （指纹不变 = 供应商缓存被逐出; 指纹变了 = 我们改了请求视图）
     monkeypatch.setattr(call_log, "LOG_DIR", tmp_path)
-    from models import Message
-    from runtime import TokenUsage
+    from aulos.models import Message
+    from aulos.runtime import TokenUsage
 
     messages = [Message.user_text("first question"),
                 Message(role="assistant",
-                        content=[__import__("models").TextContentBlock(
+                        content=[__import__("aulos.models", fromlist=["x"]).TextContentBlock(
                             type="text", text="answer")]),
                 Message.user_text("tool result tail")]
     call_log.log_model_call(
@@ -302,8 +302,8 @@ def test_call_log_records_prefix_fingerprint(tmp_path, monkeypatch):
 def test_call_log_fingerprint_changes_when_prefix_changes(tmp_path, monkeypatch):
     # 前缀被改写（如压缩换视图/修补历史）→ 指纹必须变, 否则归因失效
     monkeypatch.setattr(call_log, "LOG_DIR", tmp_path)
-    from models import Message
-    from runtime import TokenUsage
+    from aulos.models import Message
+    from aulos.runtime import TokenUsage
 
     def _log(messages):
         call_log.log_model_call(

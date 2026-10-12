@@ -8,8 +8,8 @@
 运行: uv run pytest tests/test_compact_breaker.py -v
 """
 
-from permissions import ALLOW_MODE, PermissionPolicy
-from runtime import ConversationRuntime
+from aulos.permissions import ALLOW_MODE, PermissionPolicy
+from aulos.runtime import ConversationRuntime
 
 from test_llm_summary import NoopExecutor, SummaryFakeClient, make_session
 

@@ -10,11 +10,11 @@
   它能存在，靠的是 ToolExecutor 是 Protocol（结构化鸭子类型，无需继承）。
 """
 
-from api_client import (ApiClient, MessageStopEvent, TextDeltaEvent, ToolUseEvent,
+from aulos.api_client import (ApiClient, MessageStopEvent, TextDeltaEvent, ToolUseEvent,
                         UsageInfo)
-from models import Session, TextContentBlock, ToolContentBlock, ToolResultContentBlock
-from permissions import PermissionMode, PermissionPolicy
-from runtime import (
+from aulos.models import Session, TextContentBlock, ToolContentBlock, ToolResultContentBlock
+from aulos.permissions import PermissionMode, PermissionPolicy
+from aulos.runtime import (
     ConversationRuntime,
     TokenUsage,
     ToolError,
@@ -375,8 +375,8 @@ def test_打断落在长命令执行期_工具取消后在一致点收束():
 
     import pytest
 
-    import tools as _tools
-    from tools import ToolRegistry as _Registry, bash_tool as _bash
+    import aulos.tools as _tools
+    from aulos.tools import ToolRegistry as _Registry, bash_tool as _bash
 
     class _BashExecutor:
         """适配 ToolExecutor 协议（带 tool_use_id）到 ToolRegistry。"""

@@ -6,13 +6,13 @@
 
 import pytest
 
-from api_client import MessageStopEvent, TextDeltaEvent, ToolUseEvent, UsageInfo
-from config import ConfigLoader, RuntimeConfig, RuntimeFeatureConfig
-from main import build_runtime
-from models import Message, Session
-from permissions import ALLOW_MODE, PermissionMode, PermissionPolicy
-from runtime import ConversationRuntime, TokenUsage, build_assistant_message
-from tools import ToolRegistry
+from aulos.api_client import MessageStopEvent, TextDeltaEvent, ToolUseEvent, UsageInfo
+from aulos.config import ConfigLoader, RuntimeConfig, RuntimeFeatureConfig
+from aulos.main import build_runtime
+from aulos.models import Message, Session
+from aulos.permissions import ALLOW_MODE, PermissionMode, PermissionPolicy
+from aulos.runtime import ConversationRuntime, TokenUsage, build_assistant_message
+from aulos.tools import ToolRegistry
 
 
 @pytest.fixture(autouse=True)
@@ -384,8 +384,8 @@ def test_compacted_view_reuses_cached_summary_within_margin():
 # ------------------------------------------------------------
 
 def test_summary_preserves_assistant_findings_verbatim():
-    from compact import CompactionConfig, compact_session
-    from models import TextContentBlock, ToolContentBlock
+    from aulos.compact import CompactionConfig, compact_session
+    from aulos.models import TextContentBlock, ToolContentBlock
 
     conclusion = ("实锤了——bg-user.png 被写进 PyInstaller 的临时解包目录 "
                   "_MEIPASS, 重启即失。")

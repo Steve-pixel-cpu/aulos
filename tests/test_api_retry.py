@@ -3,8 +3,8 @@ import anthropic
 import httpx2 as httpx
 import pytest
 
-from api_client import ClaudeApiClient
-from retry import HttpApiError as RetryHttpApiError
+from aulos.api_client import ClaudeApiClient
+from aulos.retry import HttpApiError as RetryHttpApiError
 
 
 class _NS:

@@ -12,8 +12,8 @@
     uv run pytest tests/test_search_sessions.py -v
 """
 
-from models import Message, ToolResultContentBlock, TextContentBlock
-from storage import SessionStore
+from aulos.models import Message, ToolResultContentBlock, TextContentBlock
+from aulos.storage import SessionStore
 
 
 def _store(tmp_path) -> SessionStore:

@@ -4,9 +4,9 @@ api_client._convert_message image 透传与 file→text; compact 对新块的估
 
 import json
 
-from api_client import _convert_message
-from compact import estimate_message_tokens, summarize_messages
-from models import (
+from aulos.api_client import _convert_message
+from aulos.compact import estimate_message_tokens, summarize_messages
+from aulos.models import (
     AnyContentBlock,
     FileContentBlock,
     ImageContentBlock,

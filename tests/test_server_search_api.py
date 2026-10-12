@@ -7,11 +7,11 @@
     .venv/Scripts/python.exe -m pytest tests/test_server_search_api.py -v
 """
 
-import server
+import aulos.server as server
 import pytest
 from fastapi.testclient import TestClient
-from models import Message
-from storage import SessionStore
+from aulos.models import Message
+from aulos.storage import SessionStore
 
 
 @pytest.fixture()

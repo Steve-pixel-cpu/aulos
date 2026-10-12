@@ -15,8 +15,8 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-import server
-import server_pets
+import aulos.server as server
+import aulos.web.server_pets as server_pets
 
 
 @pytest.fixture()
@@ -91,7 +91,7 @@ def test_pets_dirs_source_mode(monkeypatch):
     dirs = server._pets_dirs()
     # 首候选=用户目录(可写, 打开目录指向它), 其后是仓库开发样例与 Codex
     assert dirs[0] == (Path.home() / ".aulos" / "pets", "user")
-    assert dirs[1] == (Path(server.__file__).resolve().parent / "pets", "install")
+    assert dirs[1] == (Path(server.__file__).resolve().parent.parent / "pets", "install")
     assert dirs[-1][1] == "codex" and dirs[-1][0].name == "pets"
 
 
@@ -183,7 +183,7 @@ def test_list_pets_priority_and_cache(tmp_path, monkeypatch):
 
 def test_builtin_pet_ships():
     """仓库必须带内置宠物(feibi/kunge 两只, 不再多带), 否则开箱无宠物可用。"""
-    root = Path(server.__file__).resolve().parent
+    root = Path(server.__file__).resolve().parent.parent
     for pid, rows in (("feibi", 11), ("kunge", 9)):
         folder = root / "pets" / pid
         assert (folder / "pet.json").exists(), pid
@@ -248,7 +248,7 @@ def test_bundled_pets_pass_contract():
     就 feibi/kunge 两只——精确集合断言, 多带少带都拦。新增或替换
     内置宠物时这里兜底——坏图集在测试期就被拦下, 而不是装到用户
     机器上表现为桌宠白屏。"""
-    repo_pets = Path(server.__file__).resolve().parent / "pets"
+    repo_pets = Path(server.__file__).resolve().parent.parent / "pets"
     bundled = sorted(d for d in repo_pets.iterdir() if d.is_dir())
     assert {d.name for d in bundled} == {"feibi", "kunge"}
     for folder in bundled:

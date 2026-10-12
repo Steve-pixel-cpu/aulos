@@ -10,8 +10,8 @@ from typing import Optional
 
 from pydantic import BaseModel, ValidationError
 
-from fsatomic import read_text_with_retry
-from models import Message, TextContentBlock
+from aulos.fsatomic import read_text_with_retry
+from aulos.models import Message, TextContentBlock
 
 
 class StorageEntry(BaseModel):

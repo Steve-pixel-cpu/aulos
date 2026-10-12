@@ -9,11 +9,11 @@ from pathlib import Path
 
 import pytest
 
-import config as config_mod
-from config import ConfigError, ConfigLoader, McpServerConfig
-from mcp_client import (MCP_TOOL_PREFIX, McpManager, mcp_tool_name)
-from runtime import ToolError
-from tools import ToolRegistry
+import aulos.config as config_mod
+from aulos.config import ConfigError, ConfigLoader, McpServerConfig
+from aulos.mcp_client import (MCP_TOOL_PREFIX, McpManager, mcp_tool_name)
+from aulos.runtime import ToolError
+from aulos.tools import ToolRegistry
 
 TESTS_DIR = Path(__file__).parent
 ECHO_SERVER = TESTS_DIR / "mcp_echo_server.py"
@@ -36,7 +36,7 @@ def manager():
 def _restore_global_tools():
     """build_registry 会把 mcp spec 原地写进全局 TOOLS(与其他用例共享
     同一列表对象)——用例结束后还原, 防跨用例污染。"""
-    from main import TOOLS
+    from aulos.main import TOOLS
     before = list(TOOLS)
     yield
     TOOLS[:] = before
@@ -101,7 +101,7 @@ def test_tool_error_surface(manager):
 
 def test_registry_truncates_mcp_output(manager):
     """MCP 工具输出同样过 registry 的统一截断（保首尾、掐中段）。"""
-    from tools import MAX_TOOL_OUTPUT_CHARS
+    from aulos.tools import MAX_TOOL_OUTPUT_CHARS
     registry = ToolRegistry()
     manager.connect_all([_stdio_server()])
     _register(manager, registry)
@@ -130,7 +130,7 @@ def test_failed_server_does_not_block_others(manager):
 
 def test_call_on_disconnected_raises():
     conn_target = _stdio_server("ghost")
-    from mcp_client import McpConnection
+    from aulos.mcp_client import McpConnection
     conn = McpConnection(conn_target)
     with pytest.raises(ToolError, match="not connected|loop"):
         conn.call_tool("echo", {})
@@ -140,8 +140,8 @@ def test_call_on_disconnected_raises():
 
 def test_reconnect_replaces_tools_in_registry_and_tools_list():
     """重连: 同一 registry 对象换绑, 旧服务器工具被清除, TOOLS 原地同步。"""
-    from main import _attach_mcp_tools
-    from mcp_client import get_mcp_manager
+    from aulos.main import _attach_mcp_tools
+    from aulos.mcp_client import get_mcp_manager
     registry = ToolRegistry()
     tools = [{"name": "bash", "description": "d", "input_schema": {}}]
     try:
@@ -170,9 +170,9 @@ def test_reconnect_replaces_tools_in_registry_and_tools_list():
 def test_build_registry_with_mcp_end_to_end(tmp_path):
     """main.build_registry(mcp_servers=...) 走通: registry 有 mcp 工具,
     TOOLS 列表同步, 内置工具不受影响。"""
-    from main import TOOLS, build_registry, mcp_status_lines
-    from mcp_client import get_mcp_manager
-    from skills import sync_skill_tools
+    from aulos.main import TOOLS, build_registry, mcp_status_lines
+    from aulos.mcp_client import get_mcp_manager
+    from aulos.skills import sync_skill_tools
     sync_skill_tools(TOOLS, [])   # 归零技能 spec: server 导入时可能已同步真实技能
     before_builtin = [t["name"] for t in TOOLS
                       if not t["name"].startswith(MCP_TOOL_PREFIX)]
@@ -193,8 +193,8 @@ def test_build_registry_with_mcp_end_to_end(tmp_path):
 
 
 def test_build_registry_without_mcp_unchanged():
-    from main import TOOLS, build_registry
-    from skills import sync_skill_tools
+    from aulos.main import TOOLS, build_registry
+    from aulos.skills import sync_skill_tools
     sync_skill_tools(TOOLS, [])   # 归零技能 spec: server 导入时可能已同步真实技能
     n_specs = len(TOOLS)
     registry = build_registry()
@@ -224,7 +224,7 @@ def test_config_to_connection(tmp_path, monkeypatch):
 
 def build_registry_lite(servers, registry):
     """test 专用的极简装配（避免 import main 的重依赖）。"""
-    from mcp_client import get_mcp_manager
+    from aulos.mcp_client import get_mcp_manager
     m = get_mcp_manager()
     m.connect_all(servers)
     _register(m, registry)

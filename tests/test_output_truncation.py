@@ -4,13 +4,13 @@
     uv run pytest tests/test_output_truncation.py -v
 """
 
-from tools import (
+from aulos.tools import (
     MAX_TOOL_OUTPUT_CHARS,
     ToolError,
     ToolRegistry,
     truncate_tool_output,
 )
-from prompt import SystemPromptBuilder
+from aulos.prompt import SystemPromptBuilder
 
 
 # ------------------------------------------------------------
@@ -90,8 +90,8 @@ import pytest
 import time as _time
 from pathlib import Path
 
-import tools
-from tools import resumable_spill_path
+import aulos.tools as tools
+from aulos.tools import resumable_spill_path
 
 
 @pytest.fixture

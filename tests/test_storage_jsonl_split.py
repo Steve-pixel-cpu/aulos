@@ -15,8 +15,8 @@ JSON 字符串里出现原始 U+0085 字符。splitlines() 把 U+0085(U+2028/U+2
 
 import json
 
-from models import Message
-from storage import SessionStore
+from aulos.models import Message
+from aulos.storage import SessionStore
 
 
 def _store(tmp_path) -> SessionStore:

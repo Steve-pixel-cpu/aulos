@@ -9,8 +9,8 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-import bilibili as _bili
-import server
+import aulos.radio.bilibili as _bili
+import aulos.server as server
 
 client = TestClient(server.app)
 

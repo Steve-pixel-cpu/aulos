@@ -13,8 +13,8 @@ from typing import Optional
 
 from fastapi import HTTPException
 
-from server_common import app
-from config import (load_command_allowlist, save_command_allowlist,
+from aulos.web.server_common import app
+from aulos.config import (load_command_allowlist, save_command_allowlist,
                     load_additional_directories, save_additional_directories,
                     load_command_denylist, save_command_denylist,
                     load_sensitive_paths, save_sensitive_paths)
@@ -27,7 +27,7 @@ from config import (load_command_allowlist, save_command_allowlist,
 def _apply_allowlist_to_runtimes(rules: list) -> None:
     """白名单热更新: 推给所有已组装的会话 runtime（含 CLI 共享的规则源,
     各 runtime 的策略对象各持一份, 逐一 set）。"""
-    import server
+    import aulos.server as server
     for ws in list(server._sessions.values()):
         if ws.runtime is not None:
             try:
@@ -48,7 +48,7 @@ def _workspace_roots_for(workdir: Optional[str]) -> list:
 def _apply_workspace_roots_to_runtimes() -> None:
     """附加目录增删后热更新所有活跃 runtime 的 workspace 根。
     各会话根不同（含各自 workdir）, 按会话逐个重算。"""
-    import server
+    import aulos.server as server
     for ws in list(server._sessions.values()):
         if ws.runtime is not None:
             try:
@@ -61,7 +61,7 @@ def _apply_policy_list(setter_name: str, value: list) -> None:
     """把一份策略清单(deny 规则/敏感路径)热推给所有活跃 runtime。
     setter 找不到(runtime 未组装等)逐个静默——设置保存已落盘,
     新会话组装时自然带上。"""
-    import server
+    import aulos.server as server
     for ws in list(server._sessions.values()):
         if ws.runtime is not None:
             try:
@@ -105,7 +105,7 @@ async def api_add_session_allow_rule(session_id: str, request: dict):
     """会话级命令白名单（审批卡"本会话允许"）: 只写该会话 runtime 的
     策略对象, 不落盘, 会话结束即失效。runtime 未组装时 409——能弹审批
     卡说明 runtime 已在, 这里只是防御。"""
-    import server
+    import aulos.server as server
     web_session = server._sessions.get(session_id)
     if web_session is None:
         raise HTTPException(status_code=404, detail="会话不存在或未打开")
@@ -226,7 +226,7 @@ async def api_permission_respond(request: dict):
     """按 request_id 批复当前挂起的权限请求。与 WS permission_response
     走同一 prompter.resolve 链路: 请求已被主窗批复/已过期时 resolve 静默
     忽略 stale id（FIFO 消费侧丢弃）, 幂等安全。"""
-    import server
+    import aulos.server as server
     web_session = server._sessions.get(str(request.get("session_id") or ""))
     if web_session is None:
         raise HTTPException(status_code=404, detail="会话不存在或未打开")

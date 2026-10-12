@@ -8,8 +8,8 @@ import subprocess
 
 import pytest
 
-import server
-from skills import discover_skills
+import aulos.server as server
+from aulos.skills import discover_skills
 
 
 @pytest.fixture()
@@ -86,7 +86,7 @@ def test_install_multi_skill_repo(user_dir, client, tmp_path):
     assert {s["name"] for s in got} == {"alpha", "beta"}
     assert all(s["source"] == "user" for s in got)
     # 工具同步: skill_read 进了共享 TOOLS
-    from main import TOOLS
+    from aulos.main import TOOLS
     assert any(t["name"] == "skill_read" for t in TOOLS)
 
 
@@ -140,7 +140,7 @@ def test_delete_user_skill(user_dir, client, tmp_path):
     assert r.status_code == 200
     assert client.get("/api/skills").json()["skills"] == []
     # 卸载后 skill_read 从 TOOLS 摘掉（无技能时不再注册）
-    from main import TOOLS
+    from aulos.main import TOOLS
     assert not any(t["name"] == "skill_read" for t in TOOLS)
 
 
@@ -171,7 +171,7 @@ def test_resync_updates_active_runtime(user_dir, client, tmp_path):
     """热生效: 安装后已开会话的系统提示里出现该技能, 卸载后消失。
     替身必须是 ConversationRuntime 子类——resync 只认真 runtime,
     测试留下的鸭子类型替身一律跳过（同生产容错口径）。"""
-    from runtime import ConversationRuntime
+    from aulos.runtime import ConversationRuntime
 
     class _FakeRuntime(ConversationRuntime):
         def __init__(self):   # 不调父类构造: 只需要 set_system_prompt 可观察

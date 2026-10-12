@@ -257,7 +257,7 @@ def sync_skill_tools(tools_list: list[dict], skills: list[Skill]) -> None:
     cache（最贵 12 倍）。"""
     has = any(t.get("name") == SKILL_TOOL_NAME for t in tools_list)
     if skills and not has:
-        from mcp_client import MCP_TOOL_PREFIX   # 延迟导入防环
+        from aulos.mcp_client import MCP_TOOL_PREFIX   # 延迟导入防环
         insert_at = next((i for i, t in enumerate(tools_list)
                           if str(t.get("name", "")).startswith(MCP_TOOL_PREFIX)),
                          len(tools_list))
@@ -275,7 +275,7 @@ def install_from_repo(repo: str, user_dir: Path,
     根目录就是技能 / subpath 指向单个技能 / skills/<name>/ 一仓多技能。
     同名已存在且未显式 overwrite → SkillError（防误覆盖用户自改内容）。
     返回本次安装的技能列表。"""
-    from main import git_bash_unavailable_reason   # 延迟导入避免环
+    from aulos.main import git_bash_unavailable_reason   # 延迟导入避免环
     reason = git_bash_unavailable_reason()
     if reason:
         raise SkillError(reason)

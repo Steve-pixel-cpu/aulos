@@ -9,17 +9,17 @@ from types import SimpleNamespace
 
 import pytest
 
-from api_client import ClaudeApiClient
-from config import ConfigError, ConfigLoader, RuntimeConfig
-from main import (
+from aulos.api_client import ClaudeApiClient
+from aulos.config import ConfigError, ConfigLoader, RuntimeConfig
+from aulos.main import (
     SlashCommand,
     build_runtime,
     parse_slash_command,
     switch_thinking,
 )
-from models import Session
-from permissions import PermissionMode
-from tools import ToolRegistry, read_tool
+from aulos.models import Session
+from aulos.permissions import PermissionMode
+from aulos.tools import ToolRegistry, read_tool
 
 
 @pytest.fixture(autouse=True)

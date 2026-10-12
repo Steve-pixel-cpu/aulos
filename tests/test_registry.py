@@ -2,8 +2,8 @@
 
 import pytest
 
-from runtime import ToolError
-from tools import ToolRegistry
+from aulos.runtime import ToolError
+from aulos.tools import ToolRegistry
 
 
 def test_unregister_removes_handler():

@@ -1,28 +1,9 @@
-# Build and Release Folders
-bin-debug/
-bin-release/
-[Oo]bj/
-[Bb]in/
-
-# Other files and folders
-.settings/
-
-# Executables
-*.swf
-*.air
-*.ipa
-*.apk
-
-# Project files, i.e. `.project`, `.actionScriptProperties` and `.flexProperties`
-# should NOT be excluded as they contain compiler settings and other important
-# information for Eclipse / Flash Builder.
-
+# IDE / 本地工具目录
 .idea/
 .zcode/
 __pycache__/
 .env
 prompt_dev
-docs
 
 # Electron / Node
 node_modules/
@@ -67,3 +48,6 @@ evals/report.md
 /tauri-build*.log
 /uvicorn_*.log
 demo/video/public/raw/
+
+# 本地会话诊断数据（历史遗留目录, 不入库）
+docs/superpowers/

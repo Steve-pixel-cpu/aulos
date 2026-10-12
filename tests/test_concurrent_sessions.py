@@ -4,10 +4,10 @@ import threading
 import pytest
 from fastapi.testclient import TestClient
 
-import server
-from models import Session
-from permissions import PermissionPolicy
-from storage import SessionStore
+import aulos.server as server
+from aulos.models import Session
+from aulos.permissions import PermissionPolicy
+from aulos.storage import SessionStore
 
 
 @pytest.fixture()
@@ -84,7 +84,7 @@ def test_settings_thinking_level_only_changes_default(client, isolated_store):
 
 def test_runtime_thinking_level_isolation():
     """内核层: runtime 持有自己的等级, 不再读写 api_client 实例状态。"""
-    from runtime import ConversationRuntime
+    from aulos.runtime import ConversationRuntime
 
     class _Client:
         thinking_level = "medium"

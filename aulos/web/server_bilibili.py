@@ -8,9 +8,9 @@ from __future__ import annotations
 from fastapi import Request
 from fastapi.responses import StreamingResponse
 
-from server_common import app
-from server_music import _music_call
-import bilibili as _bili
+from aulos.web.server_common import app
+from aulos.web.server_music import _music_call
+import aulos.radio.bilibili as _bili
 
 # 顺序代理给 <audio> 用。前端 B 站播放与网易云共用一条播放条: 直链走
 # 本地 /api/bili/stream, 不直连 B 站 CDN（防盗链只认 B 站 Referer,

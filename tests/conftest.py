@@ -11,8 +11,8 @@ from contextlib import contextmanager
 
 import pytest
 
-import server
-import multi_agent
+import aulos.server as server
+import aulos.multi_agent as multi_agent
 
 
 @pytest.fixture(autouse=True)
@@ -29,7 +29,7 @@ def _no_user_mcp_in_tools():
     "TOOLS 末尾四位是 agent 四件套"之类结构断言的用例就会假失败
     (本地复现不了、只在配了 MCP 的机器上翻车)。会话内清一次即可:
     server 的模块级装配已完成, 这里只动列表内容, 不碰连接。"""
-    from main import TOOLS
+    from aulos.main import TOOLS
     saved = list(TOOLS)
     TOOLS[:] = [t for t in TOOLS if not t["name"].startswith("mcp__")]
     yield

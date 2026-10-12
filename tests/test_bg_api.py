@@ -10,7 +10,7 @@ import base64
 import pytest
 from fastapi.testclient import TestClient
 
-import server
+import aulos.server as server
 
 # 1x1 PNG（最小合法图片）
 PNG = ("data:image/png;base64,"

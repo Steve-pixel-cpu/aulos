@@ -10,10 +10,10 @@
 运行: uv run pytest tests/test_session_memory.py -v
 """
 
-from compact import SessionMemory
-from models import Message, Session
-from permissions import ALLOW_MODE, PermissionPolicy
-from runtime import ConversationRuntime
+from aulos.compact import SessionMemory
+from aulos.models import Message, Session
+from aulos.permissions import ALLOW_MODE, PermissionPolicy
+from aulos.runtime import ConversationRuntime
 
 from test_llm_summary import NoopExecutor, SummaryFakeClient, make_session
 

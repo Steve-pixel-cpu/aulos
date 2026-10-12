@@ -13,8 +13,8 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-import music as _music_mod
-import server
+import aulos.radio.music as _music_mod
+import aulos.server as server
 
 
 @pytest.fixture()
@@ -396,7 +396,7 @@ def test_music_play_bad_kw_raises(bad):
 
 def test_music_play_bili_source(monkeypatch):
     """source=bili: 搜 B 站视频, 队列项带 bili 标记, qname 是 B站点播。"""
-    import bilibili as _bili_mod
+    import aulos.radio.bilibili as _bili_mod
     videos = [_bili_mod_bili_video("BV1AAAA1111", "科幻短片"),
               _bili_mod_bili_video("BV1BBBB2222", "纪录片")]
     monkeypatch.setattr(_bili_mod, "search_videos",
@@ -417,7 +417,7 @@ def _bili_mod_bili_video(bvid, name):
 
 def test_music_play_bili_no_result(monkeypatch):
     """B 站没搜到: 纯文本回话, 不带 meta。"""
-    import bilibili as _bili_mod
+    import aulos.radio.bilibili as _bili_mod
     monkeypatch.setattr(_bili_mod, "search_videos",
                         lambda kw, limit: {"kw": kw, "videos": []})
     out = _music_mod.music_play_tool({"kw": "xxx", "source": "bili"})
@@ -427,7 +427,7 @@ def test_music_play_bili_no_result(monkeypatch):
 
 def test_music_play_registered_and_read_only():
     """TOOLS 有声明; 权限档登记为 READ_ONLY(1)。"""
-    import main
-    from permissions import READ_ONLY_MODE
+    import aulos.main as main
+    from aulos.permissions import READ_ONLY_MODE
     assert main.TOOL_REQUIREMENTS.get("music_play") == READ_ONLY_MODE
     assert any(t["name"] == "music_play" for t in main.TOOLS)

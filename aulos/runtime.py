@@ -11,11 +11,11 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-import call_log
-from api_client import (AssistantEvent, TextDeltaEvent, ToolUseEvent,
+import aulos.call_log as call_log
+from aulos.api_client import (AssistantEvent, TextDeltaEvent, ToolUseEvent,
                         MessageStopEvent, ThinkingEvent,
                         ApiClient, INTERRUPTED_STOP_REASON, THINKING_LEVELS)
-from compact import (
+from aulos.compact import (
     CompactionConfig,
     SUMMARIZER_SYSTEM_PROMPT,
     SUMMARY_INSTRUCTION,
@@ -26,12 +26,12 @@ from compact import (
     format_compact_summary,
     summarize_messages,
 )
-from hooks import HookRunner, HookResult
-from models import Message, TextContentBlock, AnyContentBlock, ToolContentBlock, ToolResultContentBlock, Session
-from permissions import (PermissionMode, PermissionPolicy, PermissionPrompter,
+from aulos.hooks import HookRunner, HookResult
+from aulos.models import Message, TextContentBlock, AnyContentBlock, ToolContentBlock, ToolResultContentBlock, Session
+from aulos.permissions import (PermissionMode, PermissionPolicy, PermissionPrompter,
                          PermissionDecision, MUTATING_SHELL_TOOLS,
                          READ_ONLY_MODE, shell_command_is_read_only)
-from prompt import PLAN_MODE_SECTION, SYSTEM_PROMPT_DYNAMIC_BOUNDARY
+from aulos.prompt import PLAN_MODE_SECTION, SYSTEM_PROMPT_DYNAMIC_BOUNDARY
 
 DEFAULT_MAX_ITERATIONS = 128
 # auto-compact 触发阈值: 必须明显低于模型真实上下文窗口——一次请求还要
@@ -878,7 +878,7 @@ class ConversationRuntime:
     def _forget_fingerprint(self, tool_input: str) -> None:
         """清 sink 里该 path 的指纹（执行前调用, 保证"执行后 sink 有档"
         等价于"这次执行真的全文成功"）。键 = 模型写的原始 path 串。"""
-        from tools import READ_FILE_FINGERPRINTS
+        from aulos.tools import READ_FILE_FINGERPRINTS
         sink = READ_FILE_FINGERPRINTS.get()
         if sink is None:
             return
@@ -898,7 +898,7 @@ class ConversationRuntime:
         其他工具）、磁盘 mtime/大小与建档时不符（会话外编辑）。"""
         if failed or tool_block.name != "read_file" or not self._reread_dedup_enabled:
             return output
-        from tools import READ_FILE_FINGERPRINTS, REREAD_UNCHANGED_TEXT
+        from aulos.tools import READ_FILE_FINGERPRINTS, REREAD_UNCHANGED_TEXT
         try:
             params = json.loads(tool_block.input) if tool_block.input else {}
         except json.JSONDecodeError:
@@ -1230,7 +1230,7 @@ class ConversationRuntime:
                 continue
             # 占位符带落盘路径（若原文有）: 被清掉的旧结果可经 read_file 找回,
             # 不再是黑洞。延迟导入防环——tools 依赖 runtime 的 ToolError。
-            from tools import resumable_spill_path
+            from aulos.tools import resumable_spill_path
             spill = resumable_spill_path(block.output)
             placeholder = MICROCOMPACT_PLACEHOLDER
             if spill:
@@ -1390,7 +1390,7 @@ class ConversationRuntime:
         # 重读去重指纹 sink: read_tool 经 contextvar 拿到本会话的档案袋。
         # 必须在 turn 线程上 set——并行批次由 copy_context() 快照携带,
         # 在创建线程上 set 池线程看不见。
-        from tools import READ_FILE_FINGERPRINTS
+        from aulos.tools import READ_FILE_FINGERPRINTS
         READ_FILE_FINGERPRINTS.set(self._read_fp_events)
 
         # 附件（图片/文本文件）经 Message.user_input 组装成 image/file 块;
@@ -1398,7 +1398,7 @@ class ConversationRuntime:
         # >300KB 的等比压缩, 原图落盘 tool-outputs/images/——会话 JSONL
         # 与后续每轮请求只带缩后版本。
         if attachments:
-            from imaging import slim_image_attachments
+            from aulos.imaging import slim_image_attachments
             attachments = slim_image_attachments(attachments)
         curr_session.messages.append(
             Message.user_input(user_input, attachments))

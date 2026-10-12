@@ -19,9 +19,9 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-import config
-import server
-from permissions import (
+import aulos.config as config
+import aulos.server as server
+from aulos.permissions import (
     PermissionDecision,
     PermissionMode,
     PermissionPolicy,
@@ -343,7 +343,7 @@ def _e2e_workspace(root: Path) -> Path:
 
 def _e2e_call(policy, tool_name, tool_input, ws, handlers, prompter=None):
     """复刻 runtime._authorize_tool_use 的真实顺序: 先授权, 放行才执行。"""
-    from tools import bash_tool
+    from aulos.tools import bash_tool
     r = policy.authorize(tool_name, tool_input, prompter=prompter)
     if r.decision == PermissionDecision.DENY:
         return "DENIED", r.reason
@@ -354,7 +354,7 @@ def _e2e_call(policy, tool_name, tool_input, ws, handlers, prompter=None):
 def test_dangerous_commands_never_execute_without_approval(tmp_path, monkeypatch):
     """金丝雀证明: 各种权限档位下, 危险命令全部止步于授权层。
     任何一条真的执行了, 金丝雀文件就会变——这个测试直接断言文件内容。"""
-    from tools import bash_tool, write_tool
+    from aulos.tools import bash_tool, write_tool
 
     handlers = {"write": write_tool}
     monkeypatch.chdir(tmp_path)   # 根外目录断言不受 cwd 漂移影响
@@ -386,7 +386,7 @@ def test_dangerous_commands_never_execute_without_approval(tmp_path, monkeypatch
 def test_allowlist_cannot_exempt_sensitive_targets(tmp_path):
     """用户把 rm 加进白名单 + allow 模式: rm .git 仍被 bypass-immune 拦下;
     白名单内且目标不敏感的命令照常放行(不误伤)。"""
-    from tools import bash_tool
+    from aulos.tools import bash_tool
 
     ws = _e2e_workspace(tmp_path / "ws")
     policy = (PermissionPolicy(PermissionMode.ALLOW)
@@ -415,7 +415,7 @@ def TOOL_REQUIREMENTS_FIXTURE():
 # ------------------------------------------------------------
 
 def test_read_tool_refuses_binary_file(tmp_path):
-    from tools import read_tool
+    from aulos.tools import read_tool
     png = tmp_path / "x.png"
     png.write_bytes(b"\x89PNG\r\n\x1a\n\x00\x00" + b"\xff" * 100)
     out = read_tool({"path": str(png)}, str(tmp_path))
@@ -430,8 +430,8 @@ def test_read_tool_refuses_binary_file(tmp_path):
 def test_store_append_survives_hostile_content(tmp_path):
     """工具结果带裸换行/控制字符/代理字符时, JSONL 每条记录仍恰好一行:
     json.dumps 转义控制字符, 代理字符就地转 U+FFFD, 落盘永不吐裸字节。"""
-    from storage import SessionStore
-    from models import Message
+    from aulos.storage import SessionStore
+    from aulos.models import Message
     store = SessionStore(tmp_path)
     hostile = ("line1\nline2\r\n\x00null \x1f ctrl \ufffd replacement "
                "\udc80 surrogate \udcff pair")
@@ -547,7 +547,7 @@ def test_user_sensitive_paths(tmp_path):
 def test_rule_extraction_runner_takes_three_words():
     """P6: 包管理器 run/exec/test 类规则取 3 词, 避免把 'uv run' 连带
     放行成 'uv run python 任意脚本'; 普通命令维持 2 词。"""
-    from main import command_allow_rule
+    from aulos.main import command_allow_rule
     mk = lambda c: json.dumps({"command": c})
     assert command_allow_rule(mk("uv run pytest -q")) == "uv run pytest"
     assert command_allow_rule(mk("npm run dev --host")) == "npm run dev"

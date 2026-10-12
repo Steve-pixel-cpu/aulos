@@ -4,8 +4,8 @@
 "思考中…"胶囊因此只能显示静态文案。本文件钉住透传契约: 内容原样带出、
 顺序保持、不产生多余事件。
 """
-from server_common import _wire_to_frontend
-from api_client import (WireThinkingStart, WireThinkingDelta, WireThinkingEnd,
+from aulos.web.server_common import _wire_to_frontend
+from aulos.api_client import (WireThinkingStart, WireThinkingDelta, WireThinkingEnd,
                         WireTextDelta)
 
 

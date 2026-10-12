@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from multi_agent import (
+from aulos.multi_agent import (
     TOOL_WHITELIST,
     AgentJob,
     AgentManifest,

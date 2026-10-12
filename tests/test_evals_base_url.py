@@ -9,9 +9,9 @@ make_api_client。未设置时行为不变（base_url=None → SDK 默认端点�
 """
 import pytest
 
-import main
+import aulos.main as main
 import evals.harness as harness
-from api_client import normalize_base_url
+from aulos.api_client import normalize_base_url
 
 
 def test_main_cli_helper_reads_and_normalizes_env(monkeypatch):

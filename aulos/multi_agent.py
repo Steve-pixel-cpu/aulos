@@ -12,12 +12,12 @@ from typing import Optional, Callable
 from dotenv import load_dotenv
 from pydantic import BaseModel
 
-from api_client import ClaudeApiClient, make_api_client
-from fsatomic import atomic_write_text, read_text_with_retry
-from models import Session, TextContentBlock
-from permissions import ALLOW_MODE, PermissionPolicy
-from runtime import ConversationRuntime
-from tools import ToolRegistry, bash_tool, read_tool, write_tool, powershell_tool
+from aulos.api_client import ClaudeApiClient, make_api_client
+from aulos.fsatomic import atomic_write_text, read_text_with_retry
+from aulos.models import Session, TextContentBlock
+from aulos.permissions import ALLOW_MODE, PermissionPolicy
+from aulos.runtime import ConversationRuntime
+from aulos.tools import ToolRegistry, bash_tool, read_tool, write_tool, powershell_tool
 
 TOOL_WHITELIST: dict[str, set[str]] = {
     # explore/plan: 调查三件套（read_file + grep + glob）——派出去的
@@ -137,8 +137,8 @@ SUBAGENT_TOOL_HANDLERS: dict[str, Callable] = {
 # 浏览器工具 handler: 懒加载（browser_tools 导入不触发 playwright 依赖),
 # 白名单里出现的名字在 worker 组装 registry 时才解析。
 def _browser_handler(name: str) -> Callable:
-    from browser_tools import BROWSER_TOOL_SPECS  # noqa: F401  (依赖自检)
-    import browser_tools as bt
+    from aulos.browser_tools import BROWSER_TOOL_SPECS  # noqa: F401  (依赖自检)
+    import aulos.browser_tools as bt
     return getattr(bt, f"{name}_tool")
 
 
@@ -177,7 +177,7 @@ def _default_api_config() -> tuple[str, Optional[str], str]:
         raise RuntimeError("API_KEY not set!")
     # 默认模型定义在 main.py（组装点）。延迟导入: main 接线 multi_agent
     # 后模块级 import 会成环，函数内 import 不会。
-    from main import DEFAULT_MODEL
+    from aulos.main import DEFAULT_MODEL
     return api_key, None, os.getenv("CLAUDE_MODEL") or DEFAULT_MODEL
 
 
@@ -194,7 +194,7 @@ def _tool_specs_for(allowed_tools: set[str]) -> list[dict]:
     """白名单 → API 请求的 tools 数组。只把白名单内的规格发给模型:
     执行层拦截（registry 未注册抛 ToolError）是兜底，把不可用的工具
     从请求里剔除才是让模型不误调的根本手段。"""
-    from main import TOOLS
+    from aulos.main import TOOLS
     by_name = {spec["name"]: spec for spec in TOOLS}
     return [by_name[n] for n in sorted(allowed_tools) if n in by_name]
 

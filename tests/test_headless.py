@@ -18,12 +18,12 @@ from types import SimpleNamespace
 
 import pytest
 
-import main as main_mod
-from main import StartupError, _parse_headless_args, run_headless
-from models import Message, Session, TextContentBlock
-from permissions import PermissionMode
-from runtime import TokenUsage, TurnSummary
-from storage import SessionStore
+import aulos.main as main_mod
+from aulos.main import StartupError, _parse_headless_args, run_headless
+from aulos.models import Message, Session, TextContentBlock
+from aulos.permissions import PermissionMode
+from aulos.runtime import TokenUsage, TurnSummary
+from aulos.storage import SessionStore
 
 
 # ------------------------------------------------------------

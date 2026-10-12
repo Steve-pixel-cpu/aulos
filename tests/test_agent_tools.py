@@ -19,8 +19,8 @@ import tempfile
 
 import pytest
 
-import agent_tools
-from agent_tools import (
+import aulos.agent_tools as agent_tools
+from aulos.agent_tools import (
     AGENT_TOOL_SPECS,
     DEFAULT_SESSION,
     agent_list_tool,
@@ -32,8 +32,8 @@ from agent_tools import (
     spawn_agent_tool,
     _session_bindings,
 )
-from main import TOOLS, build_registry
-from multi_agent import (
+from aulos.main import TOOLS, build_registry
+from aulos.multi_agent import (
     TOOL_WHITELIST,
     AgentJob,
     AgentManifest,
@@ -77,7 +77,7 @@ def fake_orchestrator():
 # ------------------------------------------------------------
 
 def test_tools_include_agent_quartet():
-    from skills import sync_skill_tools
+    from aulos.skills import sync_skill_tools
     sync_skill_tools(TOOLS, [])   # 归零技能 spec: server 导入时可能已同步真实技能
     names = [s["name"] for s in TOOLS]
     assert names[-4:] == ["agent_tool", "agent_status", "agent_reap", "agent_list"]
@@ -193,7 +193,7 @@ def test_spawn_carries_session_api_config(monkeypatch):
 
 def test_worker_runtime_uses_job_api_config_over_global(monkeypatch):
     """job 自带连接信息时优先; 全局工厂不被调用（会话模型对子代理生效）。"""
-    import multi_agent as ma
+    import aulos.multi_agent as ma
 
     job = AgentJob(
         manifest=AgentManifest(
@@ -235,7 +235,7 @@ def test_worker_runtime_uses_job_api_config_over_global(monkeypatch):
 
 def test_worker_runtime_none_api_config_falls_back_to_global(monkeypatch):
     """job 未带连接信息（CLI）: 走全局工厂（原行为）。"""
-    import multi_agent as ma
+    import aulos.multi_agent as ma
 
     job = AgentJob(
         manifest=AgentManifest(
@@ -390,7 +390,7 @@ def test_current_session_id_reads_real_dispatch_binding():
     曾经 TurnDispatch 没有 current_session_id 方法, AttributeError 被
     agent_tools 的兜底 except 吞掉恒返回 None——Web 端所有会话的 worker
     都落进 cli 桶, 会话隔离静默失效。"""
-    from server import dispatch
+    from aulos.server import dispatch
     dispatch.bind(emit=lambda p: None, session_id="sess-real")
     try:
         assert agent_tools.current_session_id() == "sess-real"
@@ -484,7 +484,7 @@ def test_reap_ready_ignores_delivered():
 
 def test_set_api_config_provider_overrides():
     set_api_config_provider(lambda: ("k", "http://x", "m-1"))
-    from multi_agent import _api_config_provider
+    from aulos.multi_agent import _api_config_provider
     assert _api_config_provider() == ("k", "http://x", "m-1")
     set_api_config_provider(_default_api_config)   # 还原
 
@@ -492,6 +492,6 @@ def test_set_api_config_provider_overrides():
 def test_default_api_config_tolerates_empty_key(monkeypatch):
     """空串 key（Web 初始化页场景）不抛 RuntimeError, 只有缺失才抛。"""
     monkeypatch.setenv("API_KEY", "")
-    from multi_agent import _default_api_config
+    from aulos.multi_agent import _default_api_config
     key, url, model = _default_api_config()
     assert key == ""

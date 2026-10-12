@@ -14,7 +14,7 @@ import hashlib
 import io
 import time
 
-from config import USER_DIR
+from aulos.config import USER_DIR
 
 IMAGES_DIR = USER_DIR / "tool-outputs" / "images"
 MAX_SIDE_PX = 1568

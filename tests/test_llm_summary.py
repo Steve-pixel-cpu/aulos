@@ -11,10 +11,10 @@ emit_output=False（不在终端回放）、thinking=low（摘要是整理不是
 
 import pytest
 
-from api_client import MessageStopEvent, TextDeltaEvent, UsageInfo
-from models import Message, Session, ToolContentBlock
-from permissions import ALLOW_MODE, PermissionPolicy
-from runtime import ConversationRuntime
+from aulos.api_client import MessageStopEvent, TextDeltaEvent, UsageInfo
+from aulos.models import Message, Session, ToolContentBlock
+from aulos.permissions import ALLOW_MODE, PermissionPolicy
+from aulos.runtime import ConversationRuntime
 
 
 class SummaryFakeClient:

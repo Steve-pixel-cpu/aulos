@@ -2,9 +2,9 @@
 import pytest
 from fastapi.testclient import TestClient
 
-import server
-from models import Message
-from storage import SessionStore
+import aulos.server as server
+from aulos.models import Message
+from aulos.storage import SessionStore
 
 
 @pytest.fixture()

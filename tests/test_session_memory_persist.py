@@ -9,9 +9,9 @@
 
 import pytest
 
-from models import Message
-from runtime import ConversationRuntime
-from storage import SessionStore
+from aulos.models import Message
+from aulos.runtime import ConversationRuntime
+from aulos.storage import SessionStore
 
 from test_llm_summary import SummaryFakeClient, make_session
 from test_session_memory import make_runtime

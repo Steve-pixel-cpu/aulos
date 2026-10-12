@@ -10,7 +10,7 @@
 
 from pathlib import Path
 
-from tools import read_tool
+from aulos.tools import read_tool
 
 
 def _make_file(tmp_path: Path, n: int = 50) -> Path:
@@ -81,7 +81,7 @@ def _make_big_file(tmp_path: Path, n: int = 2000) -> Path:
 
 
 def test_大文件整读返回首页与翻页指令(tmp_path):
-    from tools import MAX_TOOL_OUTPUT_CHARS
+    from aulos.tools import MAX_TOOL_OUTPUT_CHARS
     p = _make_big_file(tmp_path)
     out = read_tool({"path": str(p)}, workdir=str(tmp_path))
     lines = out.splitlines()

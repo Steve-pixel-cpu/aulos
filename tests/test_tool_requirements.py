@@ -5,12 +5,12 @@
 workspace-write 与 prompt 模式行为完全一样。现在只读工具有低档位,
 让"档位"真正有区别; prompt 模式依旧逐工具弹问（与档位正交）。
 """
-from permissions import (
+from aulos.permissions import (
     PermissionDecision,
     PermissionMode,
     PermissionPolicy,
 )
-from main import TOOL_REQUIREMENTS, build_registry
+from aulos.main import TOOL_REQUIREMENTS, build_registry
 
 
 def _policy(mode):

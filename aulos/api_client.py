@@ -63,7 +63,7 @@ def _openai_client(api_key: str, base_url: str | None, timeout,
 from abc import ABC, abstractmethod
 from typing import List, Literal, Dict, final, Optional, Callable
 
-from models import (
+from aulos.models import (
     Message,
     ToolResultContentBlock,
     ToolContentBlock,
@@ -71,8 +71,8 @@ from models import (
     ImageContentBlock,
     FileContentBlock,
 )
-from prompt import SYSTEM_PROMPT_DYNAMIC_BOUNDARY
-from retry import (
+from aulos.prompt import SYSTEM_PROMPT_DYNAMIC_BOUNDARY
+from aulos.retry import (
     ApiError as RetryApiError,
     ConnectionError as RetryConnectionError,
     AuthError as RetryAuthError,

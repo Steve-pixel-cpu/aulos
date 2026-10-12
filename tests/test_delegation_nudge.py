@@ -15,8 +15,8 @@ import json
 
 import pytest
 
-from multi_agent import TOOL_WHITELIST, allowed_tools_for_subagent
-from permissions import (PermissionDecision, PermissionMode, PermissionPolicy,
+from aulos.multi_agent import TOOL_WHITELIST, allowed_tools_for_subagent
+from aulos.permissions import (PermissionDecision, PermissionMode, PermissionPolicy,
                          READ_ONLY_MODE, WORKSPACE_WRITE_MODE)
 
 
@@ -101,7 +101,7 @@ def test_workspace_write_mode_unaffected():
 # ------------------------------------------------------------
 
 def test_checkpoint_text_mentions_delegation():
-    from runtime import CONCLUSION_CHECKPOINT_TEXT
+    from aulos.runtime import CONCLUSION_CHECKPOINT_TEXT
     low = CONCLUSION_CHECKPOINT_TEXT.lower()
     assert "delegate" in low or "subagent" in low
     # 既有语义保留: 对靶自查 + 收敛作答

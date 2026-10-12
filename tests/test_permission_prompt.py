@@ -9,7 +9,7 @@ prompter（无 prompter 时 fail-closed 拒绝）。
 """
 import pytest
 
-from permissions import (
+from aulos.permissions import (
     PermissionDecision,
     PermissionMode,
     PermissionPolicy,

@@ -6,17 +6,17 @@
 
 import pytest
 
-from config import RuntimeConfig
-from main import (
+from aulos.config import RuntimeConfig
+from aulos.main import (
     CliPermissionPrompter,
     CliToolExecutor,
     SlashCommand,
     build_runtime,
     parse_slash_command,
 )
-from models import Session
-from permissions import PermissionDecision, PermissionMode, PermissionRequest
-from tools import ToolRegistry, read_tool
+from aulos.models import Session
+from aulos.permissions import PermissionDecision, PermissionMode, PermissionRequest
+from aulos.tools import ToolRegistry, read_tool
 
 
 # ------------------------------------------------------------
@@ -140,8 +140,8 @@ def test_build_runtime_assembles_and_preserves_session():
 def test_start_reconciles_orphans(monkeypatch, tmp_path):
     from types import SimpleNamespace
 
-    import main as main_mod
-    from storage import SessionStore
+    import aulos.main as main_mod
+    from aulos.storage import SessionStore
 
     order = []
     monkeypatch.setenv("API_KEY", "test-key")
@@ -159,7 +159,7 @@ def test_start_reconciles_orphans(monkeypatch, tmp_path):
 # ------------------------------------------------------------
 
 def test_system_prompt_has_subagent_guidance_in_static_part():
-    from prompt import SYSTEM_PROMPT_DYNAMIC_BOUNDARY, SystemPromptBuilder
+    from aulos.prompt import SYSTEM_PROMPT_DYNAMIC_BOUNDARY, SystemPromptBuilder
 
     sections = SystemPromptBuilder().with_os("Windows", "10").build()
     static = sections[:sections.index(SYSTEM_PROMPT_DYNAMIC_BOUNDARY)]

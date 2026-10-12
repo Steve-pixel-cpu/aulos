@@ -16,8 +16,8 @@ from typing import Optional
 
 from fastapi import HTTPException
 
-from server_common import app
-from config import USER_DIR
+from aulos.web.server_common import app
+from aulos.config import USER_DIR
 
 # 独立定义（不 import call_log 的常量）: 遥测读侧与日志写侧解耦,
 # 测试 monkeypatch 本模块的 LOG_DIR 即可重定向, 不牵连写侧。

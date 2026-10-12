@@ -11,13 +11,13 @@ import time
 
 import pytest
 
-import browser_tools as bt
-from browser_tools import (BROWSER_TOOL_NAMES, BROWSER_TOOL_SPECS,
+import aulos.browser_tools as bt
+from aulos.browser_tools import (BROWSER_TOOL_NAMES, BROWSER_TOOL_SPECS,
                            browser_click_tool, browser_console_tool,
                            browser_close_tool, browser_navigate_tool,
                            browser_snapshot_tool, browser_type_tool,
                            register_browser_tools, _clamp_ms)
-from main import TOOLS, TOOL_REQUIREMENTS, build_registry
+from aulos.main import TOOLS, TOOL_REQUIREMENTS, build_registry
 
 
 # --- spec / registry / 权限档 一致性 ---
@@ -41,7 +41,7 @@ def test_registry_has_all_handlers():
 
 
 def test_permissions_registration():
-    from permissions import READ_ONLY_MODE, WORKSPACE_WRITE_MODE
+    from aulos.permissions import READ_ONLY_MODE, WORKSPACE_WRITE_MODE
     assert TOOL_REQUIREMENTS["browser_navigate"] is READ_ONLY_MODE      # 只读档位
     assert TOOL_REQUIREMENTS["browser_snapshot"] is READ_ONLY_MODE
     assert TOOL_REQUIREMENTS["browser_console"] is READ_ONLY_MODE
@@ -51,7 +51,7 @@ def test_permissions_registration():
 
 
 def test_register_chainable():
-    from tools import ToolRegistry
+    from aulos.tools import ToolRegistry
     r = register_browser_tools(ToolRegistry())
     assert BROWSER_TOOL_NAMES <= set(r._handlers)
 

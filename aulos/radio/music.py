@@ -12,8 +12,8 @@ import urllib.parse
 import urllib.request
 from typing import Any, Optional
 
-import config
-from fsatomic import atomic_write_text
+import aulos.config as config
+from aulos.fsatomic import atomic_write_text
 
 MUSIC_BASE = "https://music.163.com"
 _HEADERS = {
@@ -357,9 +357,9 @@ def song_lyric(song_id: int) -> dict:
 # source 参数: netease（缺省）搜网易云; bili 搜 B 站视频（同队列机制,
 # id 是 BV 号, 前端按来源走不同直链通道）。
 
-from runtime import ToolOutput   # noqa: E402  (工具返回值附 _meta 用)
+from aulos.runtime import ToolOutput   # noqa: E402  (工具返回值附 _meta 用)
 
-import bilibili as _bili   # noqa: E402
+import aulos.radio.bilibili as _bili   # noqa: E402
 
 PLAY_QUEUE_LIMIT = 10
 PLAY_META_KEY = "music"

@@ -26,7 +26,7 @@ NL = chr(10)
 
 # 截图输出目录: 用户级, 与会话存储平级
 def screenshots_dir() -> Path:
-    from config import USER_DIR
+    from aulos.config import USER_DIR
     return USER_DIR / "screenshots"
 
 

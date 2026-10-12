@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-import tools
+import aulos.tools as tools
 
 
 def reset(monkeypatch, tmp_path, env_home=None, which=None, home=None):

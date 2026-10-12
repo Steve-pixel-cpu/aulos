@@ -5,9 +5,9 @@ import pytest
 
 from fastapi.testclient import TestClient
 
-from memory.store import JsonFileStore
-from memory.tools import set_memory_store
-import server  # noqa: E402
+from aulos.memory.store import JsonFileStore
+from aulos.memory.tools import set_memory_store
+import aulos.server as server  # noqa: E402
 
 
 @pytest.fixture()

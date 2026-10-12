@@ -28,8 +28,8 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
-from config import McpServerConfig
-from runtime import ToolError
+from aulos.config import McpServerConfig
+from aulos.runtime import ToolError
 
 # 连接握手超时: stdio 要拉起子进程, http 要建连+initialize, 15s 是宽裕值
 CONNECT_TIMEOUT_S = 15.0

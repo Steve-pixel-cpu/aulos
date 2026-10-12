@@ -3,9 +3,9 @@ from typing import List
 
 from pydantic import BaseModel
 
-from models import (Message, TextContentBlock, ToolContentBlock, ToolResultContentBlock,
+from aulos.models import (Message, TextContentBlock, ToolContentBlock, ToolResultContentBlock,
                     ImageContentBlock, FileContentBlock)
-from prompt import _collapse_blank_lines
+from aulos.prompt import _collapse_blank_lines
 
 
 class CompactionConfig(BaseModel):

@@ -19,18 +19,18 @@ from typing import Optional
 import anthropic
 from fastapi import HTTPException
 
-from server_common import app
-from api_client import (KNOWN_PROTOCOLS, THINKING_LEVELS,
+from aulos.web.server_common import app
+from aulos.api_client import (KNOWN_PROTOCOLS, THINKING_LEVELS,
                         normalize_protocol)
-from config import (SETTINGS_FILE, USER_DIR, ConfigLoader,
+from aulos.config import (SETTINGS_FILE, USER_DIR, ConfigLoader,
                     load_utility_provider, load_utility_provider_setting,
                     save_providers, save_utility_provider_setting)
-from mcp_client import MCP_TOOL_PREFIX, get_mcp_manager
-from permissions import MODE_TO_NAME, NAME_TO_MODE, PermissionMode
-from skills import (SkillError, delete_user_skill, discover_skills,
+from aulos.mcp_client import MCP_TOOL_PREFIX, get_mcp_manager
+from aulos.permissions import MODE_TO_NAME, NAME_TO_MODE, PermissionMode
+from aulos.skills import (SkillError, delete_user_skill, discover_skills,
                     install_from_repo, register_skill_tools, skill_info,
                     sync_skill_tools)
-import server
+import aulos.server as server
 
 
 # ============================================================================
@@ -44,7 +44,7 @@ def _resync_session_prompts() -> None:
     runtime 持有的是 sections 列表副本, 必须显式整体替换（set_system_prompt）,
     改外部变量不会被已组装的 runtime 看到。只认真正的 ConversationRuntime——
     测试里会往 _sessions 塞鸭子类型的替身, 它们没有这套接口。"""
-    from runtime import ConversationRuntime
+    from aulos.runtime import ConversationRuntime
     for ws in list(server._sessions.values()):
         if not isinstance(ws.runtime, ConversationRuntime):
             continue
@@ -121,7 +121,7 @@ async def api_delete_skill(name: str):
 @app.get("/api/memory")
 async def api_get_memory():
     """全部记忆（updated_at 降序）+ 淘汰归档概要。"""
-    from memory.tools import get_memory_store
+    from aulos.memory.tools import get_memory_store
     store = get_memory_store()
     mems = store.list_memories()
     return {"memories": mems,
@@ -131,7 +131,7 @@ async def api_get_memory():
 @app.post("/api/memory")
 async def api_add_memory(request: dict):
     """手动添加（source=user, 永不被自动淘汰）。"""
-    from memory.tools import get_memory_store
+    from aulos.memory.tools import get_memory_store
     content = " ".join(str(request.get("content") or "").split())
     if not content:
         raise HTTPException(status_code=400, detail="content 不能为空")
@@ -144,7 +144,7 @@ async def api_add_memory(request: dict):
 
 @app.patch("/api/memory/{memory_id}")
 async def api_update_memory(memory_id: str, request: dict):
-    from memory.tools import get_memory_store
+    from aulos.memory.tools import get_memory_store
     content = " ".join(str(request.get("content") or "").split())
     if not content:
         raise HTTPException(status_code=400, detail="content 不能为空")
@@ -156,7 +156,7 @@ async def api_update_memory(memory_id: str, request: dict):
 
 @app.delete("/api/memory/{memory_id}")
 async def api_delete_memory(memory_id: str):
-    from memory.tools import get_memory_store
+    from aulos.memory.tools import get_memory_store
     if not get_memory_store().remove(memory_id):
         raise HTTPException(status_code=404, detail=f"记忆不存在: {memory_id}")
     return {"ok": True}

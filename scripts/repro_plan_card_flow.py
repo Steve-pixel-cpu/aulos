@@ -16,15 +16,15 @@ import sys
 sys.path.insert(0, ".")
 sys.path.insert(0, "tests")
 
-import server
+import aulos.server as server
 server.API_TOKEN = ""
 
-from api_client import ApiClient, MessageStopEvent, TextDeltaEvent, ToolUseEvent
+from aulos.api_client import ApiClient, MessageStopEvent, TextDeltaEvent, ToolUseEvent
 from fastapi.testclient import TestClient
-from models import Message
-from permissions import PermissionMode
-from storage import SessionStore
-from tools import ToolRegistry
+from aulos.models import Message
+from aulos.permissions import PermissionMode
+from aulos.storage import SessionStore
+from aulos.tools import ToolRegistry
 import pathlib
 import tempfile
 import threading

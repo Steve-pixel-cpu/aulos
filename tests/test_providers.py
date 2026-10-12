@@ -1,14 +1,14 @@
 """模型供应商配置: 未配置空态 / 保存读回 / 回退语义（读写归口 config.py）"""
 import pytest
 
-from config import load_providers, save_providers, SETTINGS_FILE  # noqa: E402
-from server import _apply_provider_config, _normalize_base_url  # noqa: E402
+from aulos.config import load_providers, save_providers, SETTINGS_FILE  # noqa: E402
+from aulos.server import _apply_provider_config, _normalize_base_url  # noqa: E402
 
 
 @pytest.fixture()
 def providers_file(tmp_path, monkeypatch):
     target = tmp_path / "settings.json"
-    monkeypatch.setattr("config.SETTINGS_FILE", target)
+    monkeypatch.setattr("aulos.config.SETTINGS_FILE", target)
     return target
 
 
@@ -56,7 +56,7 @@ def test_apply_falls_back_when_active_missing(providers_file):
     cfg = {"active": {"provider": "不存在的id", "model": "some-model"}, "providers": []}
     _apply_provider_config(cfg)                          # 不应抛错
     # 未配置回退: 模型/key 清空（无默认值）, 等初始化页接管
-    from server import api_client
+    from aulos.server import api_client
     assert api_client.model == ""
     assert api_client.raw_client.api_key == ""
 
@@ -64,7 +64,7 @@ def test_apply_falls_back_when_active_missing(providers_file):
 def test_apply_switches_model(providers_file):
     cfg = _cfg(active_model="test-model-x")
     _apply_provider_config(cfg)
-    from server import api_client
+    from aulos.server import api_client
     assert api_client.model == "test-model-x"
 
 
@@ -141,8 +141,8 @@ def test_normalize_base_url_anthropic_rules_unchanged():
 
 def test_apply_switches_protocol_rebuilds_client(providers_file):
     """跨协议切换: 工厂重建客户端实例; 切回 anthropic 亦然。"""
-    import server
-    from api_client import OpenAIApiClient, ClaudeApiClient
+    import aulos.server as server
+    from aulos.api_client import OpenAIApiClient, ClaudeApiClient
     original = server.api_client
     try:
         cfg = _cfg()

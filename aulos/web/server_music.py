@@ -10,8 +10,8 @@ from typing import Optional
 
 from fastapi import Body, HTTPException
 
-from server_common import app
-import music as _music
+from aulos.web.server_common import app
+import aulos.radio.music as _music
 
 # 在线部分（搜索/直链/歌词）上游失败转 502; 本地曲库是文件读写:
 # KeyError→404（歌单/收藏不存在）, ValueError→400（参数非法）,

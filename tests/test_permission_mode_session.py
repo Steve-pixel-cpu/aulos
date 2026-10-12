@@ -8,8 +8,8 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-import server
-from storage import PermissionModeRecord, SessionStore
+import aulos.server as server
+from aulos.storage import PermissionModeRecord, SessionStore
 
 
 # ------------------------------------------------------------
@@ -70,7 +70,7 @@ def clean_web_sessions():
 
 def test_sessions_list_includes_permission_mode(client, isolated_store, monkeypatch):
     """存活会话回显运行值（基础模式 + plan 开关）; 切换后列表跟着变。"""
-    from permissions import PermissionMode
+    from aulos.permissions import PermissionMode
     monkeypatch.setattr(server.app_state, "_mode", PermissionMode.WORKSPACE_WRITE)
     monkeypatch.setattr(server.app_state, "plan_active", False)   # 隔离其他用例污染的全局默认
     ws = server.get_or_create_web_session("s-mode")   # 构造时固化默认值
@@ -104,7 +104,7 @@ def test_pet_session_pins_danger_full_access(client, isolated_store, monkeypatch
 
     背景: 桌宠是无人值守挂件（点歌/闲聊）, 权限弹卡没人批就是死锁——
     曾因继承全局默认 prompt+plan 导致播放音乐都要审批。"""
-    from permissions import PermissionMode
+    from aulos.permissions import PermissionMode
     monkeypatch.setattr(server.app_state, "_mode", PermissionMode.PROMPT)
     monkeypatch.setattr(server.app_state, "plan_active", True)   # 最坏全局默认
 
@@ -122,7 +122,7 @@ def test_pet_session_pins_danger_full_access(client, isolated_store, monkeypatch
 
 def test_regular_session_still_inherits_global_default(client, isolated_store, monkeypatch):
     """非桌宠会话行为不变: 无权限记录 → 回落全局默认。"""
-    from permissions import PermissionMode
+    from aulos.permissions import PermissionMode
     monkeypatch.setattr(server.app_state, "_mode", PermissionMode.PROMPT)
     monkeypatch.setattr(server.app_state, "plan_active", True)
 
@@ -140,8 +140,8 @@ def test_regular_session_still_inherits_global_default(client, isolated_store, m
 # ------------------------------------------------------------
 
 def test_summary_sanitizes_replacement_chars_and_newlines():
-    from compact import summarize_messages
-    from models import Message, ToolResultContentBlock
+    from aulos.compact import summarize_messages
+    from aulos.models import Message, ToolResultContentBlock
 
     messy = "default icon \ufffd\ufffd\ufffd 256\nx\n256, ok"
     msg = Message(

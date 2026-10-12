@@ -5,7 +5,7 @@
 运行: uv run pytest tests/test_tool_feedback.py -v
 """
 
-from tools import glob_tool, grep_tool
+from aulos.tools import glob_tool, grep_tool
 
 
 def test_grep空结果附思路引导(tmp_path):

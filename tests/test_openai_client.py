@@ -12,8 +12,8 @@ import openai
 import pytest
 from types import SimpleNamespace as NS
 
-import api_client
-from api_client import (
+import aulos.api_client as api_client
+from aulos.api_client import (
     OpenAIApiClient,
     ClaudeApiClient,
     make_api_client,
@@ -25,10 +25,10 @@ from api_client import (
     WireUsage,
     WireStop,
 )
-from models import (Message, TextContentBlock, ToolContentBlock,
+from aulos.models import (Message, TextContentBlock, ToolContentBlock,
                     ToolResultContentBlock, ImageContentBlock)
-import retry as retry_module
-from retry import (ApiError as RetryApiError,
+import aulos.retry as retry_module
+from aulos.retry import (ApiError as RetryApiError,
                    AuthError as RetryAuthError,
                    ConnectionError as RetryConnectionError,
                    HttpApiError as RetryHttpApiError)

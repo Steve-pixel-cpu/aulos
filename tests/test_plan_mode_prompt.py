@@ -6,7 +6,7 @@
 "计划"不是并列模式而是叠加开关: set_plan(bool) 控制注入, 基础模式独立。"""
 import pytest
 
-from permissions import (
+from aulos.permissions import (
     PermissionDecision,
     PermissionMode,
     PermissionPolicy,
@@ -14,13 +14,13 @@ from permissions import (
     READ_ONLY_MODE,
     WORKSPACE_WRITE_MODE,
 )
-from prompt import PLAN_MODE_SECTION, SYSTEM_PROMPT_DYNAMIC_BOUNDARY
-from runtime import ConversationRuntime
+from aulos.prompt import PLAN_MODE_SECTION, SYSTEM_PROMPT_DYNAMIC_BOUNDARY
+from aulos.runtime import ConversationRuntime
 
 
 def _make_runtime(mode: PermissionMode, plan: bool = False) -> ConversationRuntime:
     return ConversationRuntime(
-        session=__import__("models").Session(),
+        session=__import__("aulos.models", fromlist=["x"]).Session(),
         api_client=_FakeClient(),
         tool_executor=lambda **kw: None,
         permission_policy=PermissionPolicy(active_mode=mode).set_plan(plan),
@@ -71,7 +71,7 @@ def test_plan_switch_toggles_section_and_keeps_static_prefix():
 
 def test_plan_mode_without_boundary_appends_section():
     rt = ConversationRuntime(
-        session=__import__("models").Session(),
+        session=__import__("aulos.models", fromlist=["x"]).Session(),
         api_client=_FakeClient(),
         tool_executor=lambda **kw: None,
         permission_policy=PermissionPolicy(active_mode=WORKSPACE_WRITE_MODE)

@@ -1,5 +1,5 @@
 # 记忆注入到系统提示词的接线测试: 静态指引 / 动态 section / 无记忆省略
-from prompt import (SystemPromptBuilder, SYSTEM_PROMPT_DYNAMIC_BOUNDARY,
+from aulos.prompt import (SystemPromptBuilder, SYSTEM_PROMPT_DYNAMIC_BOUNDARY,
                     ProjectContext)
 from pathlib import Path
 

@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from skills import Skill, expand_skill_command, match_skill_command
+from aulos.skills import Skill, expand_skill_command, match_skill_command
 
 
 def _skill(name: str, desc: str = "") -> Skill:

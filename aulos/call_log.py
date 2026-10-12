@@ -11,7 +11,7 @@ import json
 from datetime import datetime
 from typing import Optional
 
-from config import USER_DIR
+from aulos.config import USER_DIR
 
 LOG_DIR = USER_DIR / "logs"
 

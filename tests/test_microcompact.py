@@ -11,9 +11,9 @@
 运行: uv run pytest tests/test_microcompact.py -v
 """
 
-from models import Message, Session
-from permissions import ALLOW_MODE, PermissionPolicy
-from runtime import ConversationRuntime, MICROCOMPACT_PLACEHOLDER
+from aulos.models import Message, Session
+from aulos.permissions import ALLOW_MODE, PermissionPolicy
+from aulos.runtime import ConversationRuntime, MICROCOMPACT_PLACEHOLDER
 
 
 class ScriptedClient:

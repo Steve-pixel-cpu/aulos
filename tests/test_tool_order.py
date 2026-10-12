@@ -14,8 +14,8 @@ cache 才保得住（中段变动打穿该点之后全部缓存, 最贵 12 倍�
 
 import pytest
 
-from mcp_client import McpManager
-from skills import SKILL_TOOL_NAME, sync_skill_tools
+from aulos.mcp_client import McpManager
+from aulos.skills import SKILL_TOOL_NAME, sync_skill_tools
 
 
 def _builtin(name):

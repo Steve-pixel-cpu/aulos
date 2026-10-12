@@ -7,8 +7,8 @@ import shutil
 
 import pytest
 
-import tools
-from tools import bash_tool, git_bash_unavailable_reason
+import aulos.tools as tools
+from aulos.tools import bash_tool, git_bash_unavailable_reason
 
 
 def _mock_posix(monkeypatch, system="Linux", bash=None, sh=None):

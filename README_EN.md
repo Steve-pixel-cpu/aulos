@@ -1,510 +1,246 @@
 # Aulos
 
-[中文文档](README.md) | **English**
+[中文](README.md) | **English**
 
-> Language switch: the Chinese README is the canonical, most up-to-date version; this translation may lag slightly behind.
+> Note: the Chinese README is the canonical, most up-to-date version; this translation may lag slightly behind.
 
-A Claude Code–style AI coding agent, built from scratch as a complete open-source
-project: terminal REPL + desktop app, with an agentic tool loop, context
-engineering (three-tier compaction + main-context slimming), MCP support,
-a three-level permission system, multi-agent orchestration, an agent-level eval
-harness, and session persistence.
+A Claude Code–style AI coding agent, fully open source and built from
+scratch: terminal REPL + desktop app, with a built-in tool loop, three-tier
+context compaction, MCP integration, a three-level permission system,
+multi-agent orchestration, an agent-level eval framework, and session
+persistence.
 
-> Python 3.14 + FastAPI + Tauri 2. Works with any model service exposing an
-> Anthropic- or OpenAI-compatible API (custom base URL, key, and model).
+> Python 3.14 + FastAPI + Tauri 2, compatible with any Anthropic /
+> OpenAI API–shaped model service (base URL, key, and model all configurable).
 >
-> Built on top of [MiniCC](https://github.com/Louisym/MiniCC) with substantial
-> extensions — see [Acknowledgments](#acknowledgments).
+> Based on [MiniCC](https://github.com/Louisym/MiniCC), extended on its agent
+> architecture — see [Acknowledgements](#acknowledgements).
 
 ## Features
 
-### Agent Core
+**Agent core**
 
-- **Tool loop**: the model decides which tools to call → executes → feeds results
-  back, looping until done; SSE/WS streaming, thinking blocks, loop-level token
-  and iteration budgets, and soft budget exhaustion (the stop reason is written
-  back into history so the next turn continues instead of re-investigating)
-- **Headless mode**: `main.py -p "task" --output-format json` runs a single task
-  and emits structured output (exit code / result / usage) — the foundation for
-  the eval harness and scripted invocation
-- **Multi-agent orchestration**: the leader spawns subagents via `agent_tool` /
-  `agent_status` / `agent_reap` / `agent_list` to work in parallel, with a
-  whitelist against recursion and orphan reconciliation on startup
+- Tool loop: the model calls tools → executes → feeds results back, with
+  SSE/WS streaming, thinking blocks, token & iteration budgets, soft
+  convergence when over budget
+- Headless mode: `main.py -p "task" --output-format json` — the base for
+  the eval framework and scripted calls
+- Multi-agent orchestration: a Leader spawns subagents to work in parallel;
+  whitelist prevents recursion, orphan agents reconciled at startup
 
-### Context Engineering
+**Context engineering**
 
-- **Three-tier compaction**:
-  **MicroCompact** (when the estimate exceeds a threshold, high-yield
-  reproducible tool results outside the keep-window are replaced with
-  placeholders — zero LLM calls) →
-  **Session Memory** (a background worker maintains a rolling summary while the
-  session is idle; used directly when compaction activates — zero on-the-spot
-  calls) →
-  **Full Compact** (above the compaction threshold, a side-call generates a
-  structured summary with a rule-based fallback — one large call)
-- **Main-context slimming** (four pieces, for "too much stuff entering the
-  context"):
-  - `read_file` / `grep` line budgets: oversized output spills to
-    `~/.aulos/tool-outputs/`, the session keeps only the head plus a
-    spill marker that can be read back later
-  - Same-file re-read dedup: unchanged files answer a one-line `unchanged`;
-    writes advance a mutation epoch, external modifications and `force=true`
-    return full content
-  - Image downscaling: oversized screenshots are proportionally resized, the
-    original is spilled to disk, and only the shrunk version enters the session
-  - Subagent delegation guidance: broad research tasks are steered toward
-    subagents at the system-prompt level to keep the main context lean
-- **Repeated-read guard**: the same read-only call (read_file/grep/glob, with
-  path-normalized bookkeeping) is warned on the 2nd attempt and denied from the
-  3rd — taming model spin loops; plus per-turn conclusion checkpoints
-- **Prompt-cache friendly**: the system prompt has a dynamic boundary separating
-  the stable prefix (OS info / CLAUDE.md / skill list) from the dynamic tail,
-  so cache hits are preserved
+- Three-layer compaction: MicroCompact (placeholder swap, zero LLM calls) →
+  Session Memory (background rolling summary) → Full Compact (side-call
+  structured summary with rule-based fallback)
+- Main-context slimming: tool-output line budgets spilled to disk, re-read
+  dedup of unchanged files, screenshot downsampling, wide-research nudged
+  toward subagent delegation; repeated read-only calls rejected on the 3rd
+- Prompt-cache friendly: stable prefix separated from dynamic tail
 
-### Tools & Ecosystem
+**Tools & ecosystem**
 
-- **Built-in tools**: `bash` / `powershell` (Windows routes through Git Bash —
-  clean UTF-8, no mojibake), `read_file` / `write_file` / `edit_file`
-  (read-before-write + staleness check), `grep` / `glob` (pure Python, no
-  shell), background tasks (`task_output` / `task_stop`), task list (`todo`),
-  plan card (`present_plan`), web access (`web_fetch` / `web_search`)
-- **Live browser testing**: `browser_navigate` / `browser_snapshot` /
-  `browser_click` / `browser_type` / `browser_console` etc. (Playwright
-  headless Chromium) — actually drive a web app to verify behavior
-- **MCP client**: connect external MCP servers over `stdio` / `http` / `sse`;
-  tools register as `mcp__<server>__<tool>`. The official SDK is asyncio-based
-  while the tool loop is a synchronous thread model — each server gets a daemon
-  thread owning its own event loop, bridged via `run_coroutine_threadsafe`. A
-  failed connection only marks that server failed (warning, never blocks
-  startup); unregistered external tools fall back to the conservative
-  approval default. See [MCP Setup](#mcp-setup)
-- **Skills**: Claude Code–compatible `SKILL.md` packages (YAML frontmatter +
-  instructions + arbitrary helper files), user-level and project-level scopes;
-  progressive disclosure — only name + description enter the system prompt, the
-  body is read on demand via `skill_read`, so a dozen skills never bloat the
-  context
-- **Cross-session memory**: tell the model to remember things mid-conversation,
-  or add manually with `/memory add`; structured JSON storage with
-  capacity-based eviction (hits-weighted + recency, `source:user` entries are
-  never auto-evicted, evicted entries are archived)
+- Built-ins: `bash`/`powershell`/`read_file`/`write_file`/`edit_file`/`grep`/
+  `glob`/background tasks/`todo`/`web_search`/`web_fetch`; a Playwright
+  headless-Chromium browser tool group for real web testing
+- MCP client: `stdio`/`http`/`sse` transports, tools registered as
+  `mcp__<server>__<tool>` — see [MCP configuration](#mcp-configuration)
+- Skills: Claude Code–compatible `SKILL.md` packages with progressive
+  disclosure — ten skills don't blow up the context
+- Cross-session memory: ask the model to remember or use `/memory add`;
+  capacity-triggered eviction with hits/recency weighting
 
-### Reliability & Observability
+**Reliability & observability**
 
-- **Three-level permissions**: `plan` (read-only) → `workspace-write` (writable
-  inside the working directory) → `danger-full-access` (everything); violations
-  trigger approval (CLI y/N panel / web approval card). **Sensitive paths**
-  (`.git/`, `~/.aulos/`, `~/.ssh/`, shell config files) force human judgment in
-  *every* mode including full-access — guarding against irreversible damage
-  like `rm -rf .git` and model self-escape
-- **Rate-limit retry**: exponential backoff for connection jitter plus a
-  dedicated long-backoff curve for 429s, with live progress reporting in the UI
-- **max_tokens self-heal**: on truncation, a resume prompt is injected and the
-  loop continues
-- **Long-turn latency governance**: automatic in-turn thinking downshift
-  (request parameter only — user settings untouched), soft convergence nudges,
-  and one JSON line per model call (duration / usage) under `~/.aulos/logs/`
-  ("which turn got slow, and why" — just read the log)
-- **Session persistence**: incremental JSONL (atomic writes), resume (`-c` /
-  `--resume`), auto-naming, concurrent-session isolation
+- Three permission levels `plan` → `workspace-write` → `danger-full-access`;
+  overreach triggers approval. Sensitive paths (`.git/`, `~/.ssh/`, …) force
+  a human decision **in every mode including full access**
+- Exponential-backoff retry for rate limits, max_tokens truncation
+  self-healing, per-call latency/usage logged to disk
+- Session persistence: atomic incremental JSONL, resume (`-c`/`--resume`),
+  concurrent session isolation
 
-### Interface
+**UI**
 
-- **CLI REPL**: slash commands, syntax highlighting, streaming rendering
-- **Desktop app** (Tauri 2 primary shell, Electron fallback): custom title bar,
-  plan cards, settings page, instant provider switching, bubble/flow reply styles
-- **Music radio**: built-in online radio (NetEase Music + Bilibili video-to-audio,
-  charts + streaming + lyrics)
-- **Desktop pet**: standalone floating window that can also drive background sessions
+- CLI REPL (slash commands, syntax highlighting, streaming) and Tauri 2
+  desktop app (settings page, multi-provider switching, plan cards);
+  built-in internet radio (NetEase Music / Bilibili) and desktop pets
 
 ## Architecture
 
 ```
-┌─────────────┐   ┌──────────────────────────────────┐
-│  CLI (main) │   │  Desktop: Tauri 2 shell + WebView│
-└──────┬──────┘   │  (Electron fallback) static/ UI  │
-       │          └──────────────┬───────────────────┘
-       │            WebSocket/REST (token gate)
-       │          ┌──────────────┴───────────────────┐
-       └──────────►   server.py (FastAPI backend)     │
-                  │     ├─ server_common  shared core │
-                  │     ├─ server_music   radio API   │
-                  │     ├─ server_bilibili Bili proxy │
-                  │     └─ server_pets    pet API     │
-                  └──────────────┬───────────────────┘
-                                 │
-        ┌────────────────────────┴───────────────────────┐
-        │ runtime.py  Agent tool loop (thread-pool exec)  │
-        ├────────────────────────────────────────────────┤
-        │ api_client  streaming+retry   tools  toolset    │
-        │ mcp_client  MCP integration   skills skill pkgs │
-        │ permissions permission/approval hooks lifecycle│
-        │ multi_agent orchestration     compact compaction│
-        │ memory      cross-session    call_log call log │
-        │ config      layered config   storage sessions  │
-        └────────────────────────────────────────────────┘
-                    Data directory: ~/.aulos/
+CLI (main.py) ──┐
+                ├─► aulos/server.py (FastAPI facade) ─► aulos/web/ package
+Desktop shell (src-tauri) ─► WebSocket/REST              (server_common base +
+                │                             music/bilibili/pets/stats/
+                │     aulos/radio/ package    settings/policy REST domains)
+                ▼
+        aulos/runtime.py agent tool loop ─► aulos/api_client / tools /
+        permissions / compact / multi_agent / skills / memory /
+        mcp_client / config / storage …    data dir: ~/.aulos/
 ```
 
-| Module | Responsibility |
-|---|---|
-| `main.py` | CLI entry: REPL, slash commands, headless, tool specs, assembly (shared by CLI & Web) |
-| `server.py` | FastAPI backend: WebSocket streaming, permission approval bridge, session/settings/MCP/memory REST API |
-| `server_common.py` | Web shared core: store/api_client/app singletons, event dispatch, browser mirror, token gate |
-| `server_music.py` / `server_bilibili.py` | Music radio REST: local library & NetEase proxy / Bilibili audio local proxy |
-| `server_pets.py` | Desktop pet REST: spritesheet contract, sheet serving, periodic quip side-call |
-| `runtime.py` | Agent main loop: event stream, parallel tool execution, interrupts, budgets, guards & checkpoints |
-| `api_client.py` | Anthropic / OpenAI streaming clients, thinking levels, backoff retry |
-| `tools.py` | Built-in tools & registry (background tasks, line-budget spill, cancel checkpoints) |
-| `mcp_client.py` | MCP client: three transports, sync-async bridging, prefixed tool registration |
-| `skills.py` | SKILL.md discovery & progressive-disclosure injection |
-| `memory/` | Cross-session memory: storage, eviction, injection rendering, tool wiring |
-| `permissions.py` | Permission modes, policy, sensitive-path enforcement, CLI/Web approvers |
-| `multi_agent.py` / `agent_tools.py` | Multi-agent orchestration core / tool wiring |
-| `compact.py` | Three-tier compaction: MicroCompact, Session Memory, LLM summary & continuation |
-| `config.py` | Three-tier config discovery & merge, MCP/provider config |
-| `storage.py` / `fsatomic.py` | Session store (JSONL) / atomic file writes on Windows |
-| `call_log.py` | Per-call duration/usage log |
-| `hooks.py` / `retry.py` / `prompt.py` | Pre/PostToolUse hooks / backoff curves / system prompt builder |
-| `static/` | Web frontend (vanilla JS, no framework) |
-| `src-tauri/` / > **The Electron shell is deprecated (2026-10)**: the `electron/` directory is
-> kept for reference only and no longer ships with releases. All desktop
-> capabilities (native notifications, single instance, auto-update,
-> multi-window/pet) are covered by the Tauri shell with a smaller footprint
-> (shared system WebView2 runtime). `npm start` still works, but new features
-> land on the Tauri side only — do not invest further in electron/.
+All Python implementation lives in the **`aulos/`** package; the repo root
+keeps only two launch shims, `main.py` / `server.py` (paths hardcoded by
+evals, the Tauri/Electron shells and packaging scripts — do not delete).
 
-## Getting Started
+| Location | Responsibility |
+|---|---|
+| `main.py` / `server.py` (root) | Launch shims forwarding to `aulos.main` / `aulos.server` |
+| `aulos/main.py` / `aulos/server.py` | CLI entry / web backend facade (re-exports domain names) |
+| `aulos/runtime.py` | Agent main loop: event stream, parallel tool execution, interruption, budgets, guards |
+| `aulos/api_client.py` `tools.py` `permissions.py` `compact.py` … | Streaming client+retry / built-in tools / permissions / three-layer compaction (core modules) |
+| `aulos/web/` | Backend domain package: `server_common` base + radio/pets/telemetry/settings/policy REST |
+| `aulos/radio/` | Internet-radio library: NetEase Music & Bilibili fetching/parsing |
+| `aulos/memory/` `skills.py` `mcp_client.py` `multi_agent.py` | Cross-session memory / skills / MCP / multi-agent |
+| `aulos/config.py` `storage.py` | Three-tier config merge / JSONL session store |
+| `static/` `src-tauri/` | Web frontend (vanilla JS, split by domain) / Tauri 2 shell (Electron shell deprecated) |
+
+## Quick start
 
 ### Requirements
 
-- **Python ≥ 3.14**; [uv](https://docs.astral.sh/uv/) recommended
-- **Git for Windows** (required on Windows) — the command executor relies on
-  Git Bash (MSYS2 coreutils pass UTF-8 bytes through; PowerShell transcodes via
-  GBK and garbles output). Startup refuses without it.
-- Packaging the desktop app additionally requires the Rust toolchain (cargo)
-  and Node.js
+- **Python ≥ 3.14**, [uv](https://docs.astral.sh/uv/) recommended
+- **Git for Windows** (required on Windows) — the command runner relies on
+  Git Bash (MSYS2 passes UTF-8 through; PowerShell transcodes as GBK and
+  garbles output). Refuses to start if not detected
+- Rust toolchain (cargo) and Node.js are additionally needed to build the
+  desktop app
 
-### Install
+### Install & configure
 
 ```bash
 uv sync
 ```
 
-### Configure a model provider
+The CLI reads `API_KEY=sk-xxx` from `.env` at the repo root. The web backend
+does not read `.env`: on first launch it shows an init page — fill in API
+key, base URL and model there; saved to `~/.aulos/settings.json`, with
+multi-provider switching supported.
 
-Create a `.env` in the project root (read by the CLI):
-
-```ini
-API_KEY=sk-xxx        # key used by the CLI
-```
-
-The web app does not read `.env`: first launch shows an initialization page
-where you enter the API key, base URL, and model. Configuration is saved to
-`~/.aulos/settings.json` with support for multiple providers.
-
-### Run the CLI
+### Run
 
 ```bash
-uv run python main.py            # new session
-uv run python main.py -c         # continue the most recent session
-uv run python main.py --resume <id>   # resume a specific session
-uv run python main.py --list     # list all sessions
+uv run python main.py                    # new CLI session (-c resume last / --resume <id> / --list)
+uv run python main.py -p "task" --output-format json   # headless one-shot
+uv run python server.py                  # web backend, default http://127.0.0.1:8000
 ```
 
-Slash commands: `/help` `/status` `/compact` `/mode` `/thinking` `/rename`
-`/skills` `/memory` `/exit`
+CLI slash commands: `/help` `/status` `/compact` `/mode` `/thinking`
+`/rename` `/skills` `/memory` `/exit`. The web UI shares sessions and the
+tool registry with the CLI; for a graphical experience (custom titlebar,
+plan cards, radio, pets) use the packaged desktop app.
 
-### Headless / scripted use
+## MCP configuration
 
-```bash
-uv run python main.py -p "Count top-level functions into count.txt" --output-format json
-```
-
-`--output-format json` emits structured output (exit code, final reply, usage);
-`--model` and `--permission-mode` override config for one run. The eval harness
-is built on this entry point.
-
-### Run the web app
-
-```bash
-uv run python server.py          # default 127.0.0.1:8000
-uv run python server.py --port 8020
-```
-
-The web app shares sessions and tools with the CLI; for the full GUI (custom
-title bar, plan cards, settings, music radio, desktop pet) use the desktop build.
-
-## MCP Setup
-
-Add an `mcpServers` block at any config tier (see [Configuration](#configuration)):
+Add `mcpServers` to any config tier:
 
 ```json
 {
   "mcpServers": {
-    "filesystem": {
-      "type": "stdio",
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-filesystem", "D:/tmp"]
-    },
-    "remote-tools": {
-      "type": "http",
-      "url": "https://example.com/mcp",
-      "headers": { "Authorization": "Bearer <token>" },
-      "timeout": 30
-    }
+    "filesystem": { "type": "stdio", "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "D:/tmp"] },
+    "remote-tools": { "type": "http", "url": "https://example.com/mcp",
+      "headers": { "Authorization": "Bearer <token>" }, "timeout": 30 }
   }
 }
 ```
 
-- `type` accepts `stdio` (local subprocess) / `http` / `sse`; `stdio` accepts
-  `args`, `env`, and `cwd`
-- Tools register as `mcp__<server>__<tool>` and never collide with built-ins
-- A single failing server is marked failed with a warning; startup proceeds and
-  other servers work normally
-- MCP tools reuse the built-in permission, hook, and truncation pipelines;
-  tools absent from the permission table require approval as "arbitrary
-  command" tier (the conservative default for unknown capabilities)
+- `type` supports `stdio` (local subprocess, with `args`/`env`/`cwd`),
+  `http`, `sse`
+- Tools register as `mcp__<server>__<tool>`, never colliding with built-ins;
+  one failed server only warns and doesn't block startup
+- Permissions, hooks and output truncation reuse the built-in pipeline;
+  unregistered external tools fall back to conservative approval
 - The desktop settings page manages MCP servers visually
 
-## Agent Evals (evals/)
+## Agent evals (evals/)
 
-An agent-level eval harness: runs task fixtures against the real
-`main.py -p` entry, scores them with deterministic checks plus LLM judging, and
-produces a comparable regression baseline. After changing a prompt, tuning
-compaction parameters, or shipping a feature, run it once to see whether things
-got better or worse overall.
+Runs real `main.py -p` against task fixtures with deterministic assertions +
+LLM judging, producing a comparable regression baseline:
 
 ```bash
-uv run python evals/run_evals.py                        # full run, compares against baseline if present
-uv run python evals/run_evals.py --only fix-failing-test  # run one task
-uv run python evals/run_evals.py --save-baseline        # save this run as the baseline
-uv run python evals/run_evals.py --list                 # list tasks without running
+uv run python evals/run_evals.py                    # all; compares to baseline if present
+uv run python evals/run_evals.py --only fix-failing-test --save-baseline
 ```
 
-- Bundled tasks: `count-functions` / `fix-failing-test` / `implement-function` /
-  `rename-across-files` / `review-buggy-code` / `delegate-subagent`
-- Exit code 0 when all pass / 1 otherwise — usable directly as a CI gate; the
-  baseline `evals/baseline.json` travels with the repo
-- The agent under test runs as a subprocess (via the real entry point); the
-  harness never imports the code under test — it measures what users actually
-  get. `--agent-cmd` swaps in a stub agent so the framework can self-test
-  without burning tokens
-- Adding a task: create `evals/tasks/<name>/` with `task.txt` (the prompt) +
-  `project/` (fixture project, copied to a fresh temp workspace each run) +
-  optional `checks.py` (deterministic assertions) and `judge.txt` (LLM judging
-  criteria)
-- Real runs cost money (each task is a full agent session); use `--only` to
-  pick tasks and start small
+- Built-in tasks: count-functions / fix-failing-test / implement-function /
+  rename-across-files / review-buggy-code / delegate-subagent
+- Add a task: put `task.txt` + `project/` (fixture) + optional `checks.py` /
+  `judge.txt` under `evals/tasks/<name>/`; real runs cost tokens — start with
+  `--only`
+- CI: nightly full run + stub-agent smoke
+  (`.github/workflows/evals.yml`)
 
-## Configuration
+## Configuration & permissions
 
-Configs deep-merge from low to high priority:
+Configs deep-merge by increasing precedence: `~/.aulos/settings.json`
+(user-global) → `<project>/.claude/settings.json` (project) →
+`.claude/settings.local.json` (local). Keys are Claude Code compatible:
+`model` / `thinkingLevel` / `permissionMode` / `timeout` / `maxIterations` /
+`tokenBudget` / `turnTokenBudget` / `contextWindow` / `mcpServers` / `hooks`;
+overridable via `CLAUDE_MODEL` etc. env vars. If a proxy trims the window,
+lower `contextWindow` (compaction thresholds derive from it).
 
-| Location | Scope |
+| Permission mode | Behavior |
 |---|---|
-| `~/.aulos/settings.json` (and `.claude.json`) | user global |
-| `<project>/.claude/settings.json` (and `.claude.json`) | project |
-| `<project>/.claude/settings.local.json` | local personal |
+| `plan` | Read-only: reads/searches allowed, writes hard-rejected (guides toward approval or mode switch) |
+| `workspace-write` | Writable inside the working dir, may spawn subagents; executing commands still requires approval |
+| `danger-full-access` | Everything allowed (incl. arbitrary commands) |
 
-Configurable keys (Claude Code–compatible):
+Overreach triggers approval (CLI y/N panel / web approval card); writes or
+deletes to sensitive paths force a human decision in **every mode** —
+preventing irreversible damage and the model tampering with its own
+permission config.
 
-```json
-{
-  "model": "glm-5.3-flash",
-  "thinkingLevel": "high",
-  "permissionMode": "workspace-write",
-  "timeout": 30,
-  "maxIterations": 128,
-  "tokenBudget": 100000,
-  "turnTokenBudget": 65536,
-  "contextWindow": 1000000,
-  "mcpServers": {},
-  "hooks": {
-    "PreToolUse": ["python check.py"],
-    "PostToolUse": []
-  }
-}
-```
+Telemetry: every model call is logged to `~/.aulos/logs/runtime-YYYYMMDD.log`;
+open `/stats.html` for the panel (which round was slow, where tokens went,
+cache hit rate).
 
-- `contextWindow` drives the auto-compact threshold (default 75% of the 1M
-  window). If a third-party proxy truncates the window, lower it accordingly.
-- Environment overrides: `CLAUDE_MODEL`, `CLAUDE_TIMEOUT`,
-  `CLAUDE_MAX_ITERATIONS`, `CLAUDE_TOKEN_BUDGET`, `CLAUDE_TURN_TOKEN_BUDGET`,
-  `CLAUDE_THINKING_LEVEL`, `CLAUDE_CONTEXT_WINDOW`
-
-## Permission Modes
-
-| Mode | Description |
-|---|---|
-| `plan` | Plan mode: read/search tools allowed; writes are hard-denied (with guidance to switch modes or approve the plan) |
-| `workspace-write` | Writable inside the working directory; subagent spawning allowed; command execution still requires approval |
-| `danger-full-access` | Everything allowed (including arbitrary command execution) |
-
-Tools register their required tier ("read-only / local write / arbitrary
-command"); violations trigger approval — a yellow y/N panel on the CLI
-(Ctrl+C always refuses toward the safe side) and an approval card on the web.
-
-**Sensitive-path enforcement**: writing/deleting `.git/`, `~/.aulos/`,
-`~/.ssh/`, or shell config files forces human confirmation in *every* mode
-(including `danger-full-access`). Command allowlists cannot bypass it —
-preventing the model from editing its own permission config or causing
-irreversible damage.
-
-## Desktop Packaging
-
-One-command packaging (PyInstaller freeze → cargo tauri build):
+## Desktop build & release
 
 ```cmd
-build-exe.cmd
+build-exe.cmd          :: Windows one-click: PyInstaller freeze → cargo tauri build
 ```
 
-Output lands in `dist\` (NSIS installer, Tauri 2 + WebView2). See
-[PACKAGING.md](PACKAGING.md) for details: automatic port avoidance (falls back
-to 8010–8019 when 8000 is taken), parent-child process watchdog, token gate.
+macOS/Linux: `build-mac.sh` / `scripts/build-linux-tauri.sh`. Release:
+`git tag v5.1.6 && git push origin v5.1.6` — GitHub Actions builds and
+publishes all three platforms (Windows `.exe` / macOS `.dmg` /
+Linux `.AppImage`), all with auto-update. See [PACKAGING.md](PACKAGING.md)
+and [docs/desktop-release-notes.md](docs/desktop-release-notes.md) (Linux
+dependencies, Wayland/VMware workarounds, signing keys).
 
-`build-mac.sh` and `scripts/build-linux-tauri.sh` cover macOS / Linux; the
-`electron/` directory is a fallback desktop shell (Electron +
-electron-builder, cross-platform dmg/NSIS/portable).
-
-## Releases
-
-All three platform artifacts are built and published automatically by GitHub
-Actions on tag push (`.github/workflows/release.yml`):
+## Tests
 
 ```bash
-git tag v4.2.0
-git push origin v4.2.0
-# Wait for the Release workflow (~15-25 min); artifacts attach to the GitHub Release
+uv run pytest          # 1070 cases; CI: .github/workflows/ci.yml
 ```
 
-| Platform | Artifact | Auto-update |
-|---|---|---|
-| Windows | `aulos_<ver>_x64-setup.exe` | ✅ (NSIS + update signature) |
-| macOS (Apple Silicon) | `aulos_<ver>_aarch64.dmg` + `.app.tar.gz` | ✅ (minisign-signed) |
-| Linux | `aulos_<ver>_amd64.AppImage` | ✅ |
+Covers the runtime tool loop, permissions & sensitive paths, multi-agent,
+three-layer compaction, MCP, memory, skills, the eval harness, retry, atomic
+writes, concurrent sessions, context slimming, etc. Frontend regression:
+`npm run test:web` (jsdom) + `tests/web/e2e.py` (Playwright).
 
-- `latest.json` carries all three update entries; installed users receive new
-  versions via auto-update
-- Manual trigger (Actions → Run workflow): builds artifacts without publishing
-- Signing keys live in repo Secrets (`TAURI_SIGNING_PRIVATE_KEY` /
-  `_PASSWORD`); when missing, builds succeed without `.sig` and cannot be
-  auto-update targets
-- macOS is not notarized: right-click → Open on first launch, or
-  `xattr -cr /Applications/aulos.app`
-- Linux runtime deps (without GStreamer plugins the window/tools work but web
-  audio is silent):
+## Further reading
 
-  ```bash
-  sudo apt install libwebkit2gtk-4.1-0 gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-libav
-  ```
+- [guides/](guides/): 13 implementation notes, one per module (source-reading companion)
+- [docs/refactoring-roadmap.md](docs/refactoring-roadmap.md): module-splitting roadmap (backend/frontend)
+- [docs/naming-history.md](docs/naming-history.md): display-name vs identifier conventions, rename history
+- [docs/optimization-backlog.md](docs/optimization-backlog.md): backlog vs Claude Code reference design
 
-  In AppImage form, bundled GStreamer plugins are absent — the radio probes the
-  pipeline before playing and disables itself gracefully when unavailable.
-- Wayland sessions (default on Ubuntu 22.04/24.04): the Wayland protocol
-  forbids client-side always-on-top/programmatic moves, so the desktop pet gets
-  occluded and cannot be dragged. The app detects Wayland + XWayland and sets
-  `GDK_BACKEND=x11` automatically (decision recorded in `~/.aulos/boot.log`).
-  To force native Wayland: `export AULOS_GDK_BACKEND=wayland` before launching,
-  at the cost of the pet possibly being occluded.
-- On VMs without 3D acceleration (e.g. VMware): the app sets
-  `WEBKIT_DISABLE_DMABUF_RENDERER=1` automatically to fall back to WebKitGTK's
-  non-accelerated path — otherwise the window can stick to stale/blank frames.
+## Acknowledgements
 
-## Naming Conventions & Rename History
-
-The project was renamed `x-code → aulos` (completed in v5.0.0), leaving two
-standing conventions:
-
-**Display names vs. identifiers** — everything user-facing uses capitalized
-**Aulos** (window titles, shortcuts, CLI banner, README titles, installer
-names); technical identifiers are lowercase `aulos` and **must not change** —
-renaming them breaks mechanisms or loses data:
-
-| Identifier | Why it must not change |
-|---|---|
-| `APP_NAME = "aulos"` in `config.py` | Determines the data directory `~/.aulos`; renaming = all sessions/config/memory "vanish" |
-| `x-aulos-token` header / `aulos_token` cookie | Handshake contract between shell and backend; both sides must match |
-| `app: "aulos"` returned by `/api/ping` | The shell uses it to verify "this is the aulos backend" (port 8000 may be taken by print services) |
-| `com.aulos.desktop` / `aulos-server.exe` | Packaging identifiers and sidecar filename; the release pipeline assembles around them |
-
-**Single-source artifact names** — installer/update-manifest filenames
-(`Aulos_<ver>_x64-setup.exe` etc.) derive from `productName` in
-`src-tauri/tauri.conf.json`: JS scripts read the conf directly, cmd batches
-extract it with `findstr`. Renaming touches the conf only; missing any one
-script would point `latest.json` at a nonexistent file and silently break
-auto-update.
-
-`LEGACY_APP_NAME = "x-code"` and the one-shot migration in `config.py` are
-the seamless-upgrade path for old users (first launch moves `~/.xcode` →
-`~/.aulos`). Do not reference it in new code; do not delete it until upgrades
-from pre-v4 are officially unsupported.
-
-## Code Organization & Split Roadmap
-
-The two historical monolith files are being split incrementally by domain
-(mechanical moves + facade for compatibility; no big-bang rewrite):
-
-- **`server.py` (backend facade)**: assembly singletons & event routing moved
-  up to `server_common.py`; the three low-coupling REST domains (radio /
-  Bilibili / pet) are now `server_music.py` / `server_bilibili.py` /
-  `server_pets.py` (routes register on import). Every existing `import server`
-  call site and test keeps working via re-exports. Next candidates: WS
-  routing, settings/provider runtime state, Skills/memory management.
-- **`static/app.js` (frontend, classic global-scope script)**: the split is
-  complete — 6946 → **2205 lines** (-68%) across 9 domain files loaded in
-  dependency order via defer (no module system, shared global scope):
-  `ui-dialogs` → `tooltip` → `notify` → app (core: state/WS connect/send/
-  session switch/boot) → `settings-extras` → `desktop` → `bubbles` →
-  `msg-extras` → `ws-handlers` (dispatch + all on* handlers) → `sidebar`
-  → `settings-page` → `music`/`pet`.
-  Contract: earlier files only define functions; later files may bind at
-  top level; domains called BY the core (bubbles/sidebar/ws-handlers)
-  resolve at call time, so order is naturally safe.
-  Regression net: `npm run test:web` (19 jsdom assertions over the real
-  sources + real index.html skeleton) and `tests/web/e2e.py` (Playwright
-  x3: streaming reply / queue-promote broadcast / reconnect).
-  The remainder of app.js is the densely-coupled core — further splitting
-  needs an event-bus refactor, deferred until the test net thickens.
-  No ES-module conversion for now: every file is under 2300 lines.
-
-## Testing
-
-```bash
-uv run pytest
-```
-
-70+ test files (800+ cases), CI runs on GitHub Actions (`ci.yml`). Coverage:
-runtime tool loop, permission modes & sensitive paths, multi-agent, three-tier
-compaction (MicroCompact / Session Memory / auto-compact), MCP client &
-config, memory, skills, the eval harness (stub-agent end-to-end), rate-limit
-retry, atomic persistence, concurrent sessions, background tasks, attachments,
-context slimming, latency governance, Windows shell selection, and more.
-
-## Further Reading
-
-[guides/](guides/) contains 13 module-by-module implementation notes (models /
-tools / api_client / config / permissions / hooks / retry / prompt / compact /
-storage / multi_agent / runtime / main) — a good order for reading the source.
-[docs/optimization-backlog.md](docs/optimization-backlog.md) tracks the
-optimization backlog evaluated against the Claude Code reference design, with
-landing status.
-
-## Acknowledgments
-
-This project is built on [Louisym/MiniCC](https://github.com/Louisym/MiniCC)
-with substantial extensions, including MCP integration, the three-tier
-compaction system, context slimming, the eval harness, the three-level
-permission system, multi-agent orchestration, skills, cross-session memory,
-multiple desktop shells, and the music radio.
-
-Thanks to the original MiniCC author; contributions, discussions, and PRs are
-welcome.
+Built on [Louisym/MiniCC](https://github.com/Louisym/MiniCC), extended with
+MCP integration, three-layer compaction, context slimming, the eval
+framework, three-level permissions, multi-agent orchestration, skills,
+cross-session memory, the desktop app and the built-in radio. Thanks to the
+original author; feedback and PRs welcome.
 
 ## Disclaimer
 
-This project exists to explore agent architecture. In `danger-full-access`
-mode the model can execute arbitrary commands — use it in a trusted
-environment.
+This project exists for learning agent architecture design. In
+`danger-full-access` mode the model can execute arbitrary commands — use it
+in trusted environments only.
 
 ## License
 

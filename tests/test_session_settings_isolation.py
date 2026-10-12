@@ -13,8 +13,8 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-import server
-from storage import SessionStore
+import aulos.server as server
+from aulos.storage import SessionStore
 from conftest import ws_connect
 
 
@@ -51,7 +51,7 @@ class FakeStream:
 
 
 def make_anthropic_client(model="global-model"):
-    from api_client import ClaudeApiClient
+    from aulos.api_client import ClaudeApiClient
     client = ClaudeApiClient(api_key="test", model=model, thinking_level="low")
     captured = {}
 
@@ -86,7 +86,7 @@ def test_anthropic_stream_default_uses_instance_model():
 
 def test_openai_stream_per_call_model_overrides():
     from types import SimpleNamespace
-    from api_client import OpenAIApiClient
+    from aulos.api_client import OpenAIApiClient
     client = OpenAIApiClient(api_key="test", model="global-model")
     captured = {}
 
@@ -118,11 +118,11 @@ class LevelClient:
 
 
 def make_runtime():
-    from config import RuntimeConfig
-    from main import build_registry, build_runtime
-    from models import Session
-    from permissions import PermissionMode
-    from tools import ToolRegistry, read_tool
+    from aulos.config import RuntimeConfig
+    from aulos.main import build_registry, build_runtime
+    from aulos.models import Session
+    from aulos.permissions import PermissionMode
+    from aulos.tools import ToolRegistry, read_tool
     return build_runtime(
         session=Session(),
         api_client=LevelClient(),
@@ -217,7 +217,7 @@ def test_post_settings_thinking_persists_and_seeds_new_sessions(
     1) 落盘 settings.json（重启不丢）;
     2) 新建 WebSession 初值取运行中的全局默认——不是启动磁盘快照
        （runtime_config 可能仍是 medium）。"""
-    import server as _srv
+    import aulos.server as _srv
     # 隔离落盘路径 + 模拟"启动快照还是旧档": 全局默认已 high, 快照仍 medium
     settings_file = tmp_path / "settings.json"
     settings_file.write_text("{}", encoding="utf-8")

@@ -7,7 +7,7 @@
 （个别慢供应商深度思考期间长期不吐事件, 调大即解）。"""
 import pytest
 
-import api_client
+import aulos.api_client as api_client
 
 
 def test_default_idle_timeout_is_90s(monkeypatch):

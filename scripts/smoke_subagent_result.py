@@ -20,8 +20,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-import multi_agent
-from multi_agent import AgentOrchestrator
+import aulos.multi_agent as multi_agent
+from aulos.multi_agent import AgentOrchestrator
 
 # CLI 形态没有会话级 api_config, 全局 provider 缺省返回 3 元组(CLI 旧契约),
 # 而 build_subagent_runtime 按 4 元组解包(Web 契约)。这里显式装 4 元组。

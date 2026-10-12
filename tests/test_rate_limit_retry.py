@@ -7,11 +7,11 @@ import time
 
 import pytest
 
-import retry
-from api_client import ClaudeApiClient
-import retry
-from retry import HttpApiError, RetriesExhausted, RetryAborted, send_with_retry
-from api_client import ClaudeApiClient, StreamInterrupted
+import aulos.retry as retry
+from aulos.api_client import ClaudeApiClient
+import aulos.retry as retry
+from aulos.retry import HttpApiError, RetriesExhausted, RetryAborted, send_with_retry
+from aulos.api_client import ClaudeApiClient, StreamInterrupted
 
 
 @pytest.fixture
@@ -83,7 +83,7 @@ def test_curve_follows_latest_error(sleeps):
 
 def test_connection_error_unaffected(sleeps):
     with pytest.raises(RetriesExhausted) as ei:
-        from retry import ConnectionError as RetryConnectionError
+        from aulos.retry import ConnectionError as RetryConnectionError
         send_with_retry(_always(RetryConnectionError("down")))
     assert ei.value.attempts == 3
     assert sleeps == [0.2, 0.2, 0.2]
@@ -91,7 +91,7 @@ def test_connection_error_unaffected(sleeps):
 
 def test_claude_client_passes_on_retry_through(monkeypatch):
     """客户端把 on_retry 透传给 send_with_retry（Web 端镜像的接缝）。"""
-    import api_client as api_mod
+    import aulos.api_client as api_mod
     captured = {}
     def fake_send(fn, on_retry=None, should_stop=None):
         captured["on_retry"] = on_retry
@@ -210,7 +210,7 @@ def test_stream_breaks_midway_and_synthesizes_interrupted_stop(monkeypatch):
     """流式输出中翻转 should_stop: 消费循环在检查点 break, 返回已流出
     部分 + 合成 stop_reason="interrupted", 后续事件不再消费, 也不抛
     异常（已流出内容保留进历史）。"""
-    from api_client import INTERRUPTED_STOP_REASON, MessageStopEvent, TextDeltaEvent
+    from aulos.api_client import INTERRUPTED_STOP_REASON, MessageStopEvent, TextDeltaEvent
 
     text1 = {"type": "content_block_start", "index": 0,
              "content_block": {"type": "text", "text": ""}}
@@ -255,7 +255,7 @@ def test_stream_breaks_midway_and_synthesizes_interrupted_stop(monkeypatch):
 def test_stream_normal_stop_not_duplicated_when_interrupted_after_stop():
     """打断落在 message_stop 之后（收尾阶段）: 正常 stop 已入列,
     不补第二条合成 stop（Anthropic 路径按已有 MessageStopEvent 判重）。"""
-    from api_client import MessageStopEvent
+    from aulos.api_client import MessageStopEvent
 
     flag = {"on": False}
 

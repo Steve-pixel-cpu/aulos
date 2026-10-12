@@ -12,8 +12,8 @@ import time
 
 import pytest
 
-import retry
-from retry import HttpApiError, RetriesExhausted, send_with_retry
+import aulos.retry as retry
+from aulos.retry import HttpApiError, RetriesExhausted, send_with_retry
 
 
 @pytest.fixture

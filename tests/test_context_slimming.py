@@ -11,16 +11,16 @@ import json
 
 import pytest
 
-from api_client import MessageStopEvent, ToolUseEvent, UsageInfo
-from config import ConfigError, ConfigLoader, RuntimeFeatureConfig, RuntimeConfig
-import imaging
-import tools
-from tools import ToolRegistry, read_tool, truncate_tool_output
-from main import build_runtime
-from models import Message, Session
-from permissions import ALLOW_MODE, PermissionPolicy
-from prompt import SystemPromptBuilder
-from runtime import ConversationRuntime, TURN_CONVERGENCE_NUDGE_NOTICE
+from aulos.api_client import MessageStopEvent, ToolUseEvent, UsageInfo
+from aulos.config import ConfigError, ConfigLoader, RuntimeFeatureConfig, RuntimeConfig
+import aulos.imaging as imaging
+import aulos.tools as tools
+from aulos.tools import ToolRegistry, read_tool, truncate_tool_output
+from aulos.main import build_runtime
+from aulos.models import Message, Session
+from aulos.permissions import ALLOW_MODE, PermissionPolicy
+from aulos.prompt import SystemPromptBuilder
+from aulos.runtime import ConversationRuntime, TURN_CONVERGENCE_NUDGE_NOTICE
 
 
 # ------------------------------------------------------------
@@ -29,7 +29,7 @@ from runtime import ConversationRuntime, TURN_CONVERGENCE_NUDGE_NOTICE
 
 def make_events(text: str, out_tokens: int = 10) -> list:
     return [
-        __import__("api_client").TextDeltaEvent(text=text),
+        __import__("aulos.api_client", fromlist=["x"]).TextDeltaEvent(text=text),
         MessageStopEvent(usage=UsageInfo(input_tokens=1_000, output_tokens=out_tokens)),
     ]
 

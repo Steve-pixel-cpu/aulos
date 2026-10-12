@@ -12,8 +12,8 @@ from datetime import datetime
 import pytest
 from fastapi.testclient import TestClient
 
-import server
-import server_stats
+import aulos.server as server
+import aulos.web.server_stats as server_stats
 
 
 @pytest.fixture()

@@ -1,8 +1,8 @@
 # 记忆 Agent 工具测试: 行为 / 反馈文本 / 错误文本 / 截断 / 单例注入
 import pytest
 
-from memory.store import JsonFileStore
-from memory.tools import (memory_write_tool, memory_update_tool,
+from aulos.memory.store import JsonFileStore
+from aulos.memory.tools import (memory_write_tool, memory_update_tool,
                           memory_delete_tool, set_memory_store,
                           get_memory_store, MEMORY_CONTENT_MAX_CHARS)
 

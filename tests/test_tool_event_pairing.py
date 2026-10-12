@@ -8,12 +8,12 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-import server
-from permissions import ALLOW_MODE, PermissionPolicy
-from server import EmittingToolRegistry
-from storage import SessionStore
+import aulos.server as server
+from aulos.permissions import ALLOW_MODE, PermissionPolicy
+from aulos.server import EmittingToolRegistry
+from aulos.storage import SessionStore
 from conftest import ws_connect
-from tools import ToolRegistry
+from aulos.tools import ToolRegistry
 
 
 class _NS:
@@ -200,7 +200,7 @@ def anthropic_protocol(monkeypatch):
     .messages 属性 → 整个文件 setup 即 AttributeError。显式换成与全局
     单例同接线的 ClaudeApiClient（镜像/限流退避/打断钩子原样平移）,
     用例不再随机器 provider 漂移。"""
-    from api_client import ClaudeApiClient
+    from aulos.api_client import ClaudeApiClient
     monkeypatch.setattr(server, "api_client", ClaudeApiClient(
         api_key="", model="test-model", tools=[], emit_output=False,
         on_retry=server._mirror_rate_limit_retry,
@@ -244,7 +244,7 @@ def test_single_turn_parallel_tools_pairing(client, isolated_store, monkeypatch)
 def test_two_concurrent_sessions_no_cross_talk(client, isolated_store, monkeypatch):
     """两并发会话: 各自的 tool_use/tool_result 不串线（id 前缀区分）。
     假流按请求自带的消息历史自识别会话（A/B）, 与线程交错顺序无关。"""
-    from tools import ToolRegistry
+    from aulos.tools import ToolRegistry
 
     class PerSessionMessages:
         def stream(self, **kwargs):
@@ -298,7 +298,7 @@ def test_policy_denied_tool_still_pairs(client, isolated_store, monkeypatch):
     """权限不足直接拒绝（不弹问）: 卡片也必须闭合, 否则前端永远"运行中"。
     READ_ONLY 档（计划覆盖生效的等效档）下未注册要求的工具默认 DANGER 级
     → 越两级, 走"直接拒绝"分支。"""
-    from permissions import READ_ONLY_MODE
+    from aulos.permissions import READ_ONLY_MODE
     _install(monkeypatch,
              script=[_tool_turn(("d-1", "echo_test", "{}")), _text_turn()],
              tool_results={})
@@ -318,7 +318,7 @@ def test_policy_denied_tool_still_pairs(client, isolated_store, monkeypatch):
 
 def test_prompter_denied_tool_pairs_with_explicit_id(client, isolated_store, monkeypatch):
     """prompt 模式: 弹审批卡, 用户点拒绝 → 结果带显式 id 闭合卡片。"""
-    from permissions import PROMPT_MODE
+    from aulos.permissions import PROMPT_MODE
     _install(monkeypatch,
              script=[_tool_turn(("p-1", "echo_test", "{}")), _text_turn()],
              tool_results={})
@@ -347,7 +347,7 @@ def test_mixed_batch_denied_and_executed_all_pair(client, isolated_store, monkey
 
     READ_ONLY 档: echo_test 显式注册为 READ_ONLY 级（放行执行）;
     need_danger 不注册 → 默认 DANGER 级 → 越两级直接拒绝。"""
-    from permissions import READ_ONLY_MODE
+    from aulos.permissions import READ_ONLY_MODE
     _install(monkeypatch,
              script=[
                  _tool_turn(("m-denied", "need_danger", "{}"),

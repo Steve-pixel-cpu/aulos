@@ -18,11 +18,11 @@ messages 为 [续接摘要] + 保留区; **会话历史本身不被改写**—�
 运行: uv run pytest tests/test_auto_compact_signal.py -v
 """
 
-from api_client import MessageStopEvent, TextDeltaEvent, ToolUseEvent, UsageInfo
-from models import Message, Session
-from permissions import ALLOW_MODE, PermissionPolicy
-from runtime import ConversationRuntime
-from tools import ToolRegistry
+from aulos.api_client import MessageStopEvent, TextDeltaEvent, ToolUseEvent, UsageInfo
+from aulos.models import Message, Session
+from aulos.permissions import ALLOW_MODE, PermissionPolicy
+from aulos.runtime import ConversationRuntime
+from aulos.tools import ToolRegistry
 
 
 def make_events(text: str, out_tokens: int, in_tokens: int) -> list:

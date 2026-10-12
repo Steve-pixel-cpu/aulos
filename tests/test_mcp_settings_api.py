@@ -9,21 +9,21 @@ import json
 
 import pytest
 
-from config import SETTINGS_FILE  # noqa: E402
-import server  # noqa: E402
+from aulos.config import SETTINGS_FILE  # noqa: E402
+import aulos.server as server  # noqa: E402
 
 
 @pytest.fixture()
 def settings_file(tmp_path, monkeypatch):
     target = tmp_path / "home" / "settings.json"   # 与 discover 的用户级路径一致
     home = target.parent
-    monkeypatch.setattr("config.SETTINGS_FILE", target)
-    monkeypatch.setattr("server.SETTINGS_FILE", target)
-    monkeypatch.setattr("server.USER_DIR", home)   # reload 的 config_home
+    monkeypatch.setattr("aulos.config.SETTINGS_FILE", target)
+    monkeypatch.setattr("aulos.server.SETTINGS_FILE", target)
+    monkeypatch.setattr("aulos.server.USER_DIR", home)   # reload 的 config_home
     monkeypatch.setattr(server, "API_TOKEN", "")   # 关门禁（同 test_server 口径）
     # 热应用会用 manager 换绑, 用例结束清干净, 防污染其他用例
     yield target
-    from mcp_client import get_mcp_manager
+    from aulos.mcp_client import get_mcp_manager
     get_mcp_manager().disconnect_all()
 
 
@@ -31,7 +31,7 @@ def settings_file(tmp_path, monkeypatch):
 def _isolated_mcp_manager():
     """模块内用例共享全局 manager 单例: 前后各清一次, 防跨用例泄漏
     （test_get_empty 断言 status == [], 若前面的用例留了连接就会假失败）。"""
-    from mcp_client import get_mcp_manager
+    from aulos.mcp_client import get_mcp_manager
     get_mcp_manager().disconnect_all()
     yield
     get_mcp_manager().disconnect_all()

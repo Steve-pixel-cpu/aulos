@@ -5,8 +5,8 @@ tool_result 之间——悬空 tool_result 会让下一轮请求被 API 400 掉�
     uv run pytest tests/test_compact.py -v
 """
 
-from compact import CompactionConfig, compact_session
-from models import Message, ToolContentBlock
+from aulos.compact import CompactionConfig, compact_session
+from aulos.models import Message, ToolContentBlock
 
 
 def _assistant_tool_use(tool_id: str) -> Message:

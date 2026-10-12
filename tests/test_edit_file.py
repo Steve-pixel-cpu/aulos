@@ -13,13 +13,13 @@ import json
 
 import pytest
 
-from tools import edit_file_tool, read_tool, write_tool
+from aulos.tools import edit_file_tool, read_tool, write_tool
 
 
 @pytest.fixture(autouse=True)
 def clean_file_state():
     """FileStateCache 是模块级跨测试共享的, 每个用例前清空。"""
-    from tools import _FILE_STATE
+    from aulos.tools import _FILE_STATE
     _FILE_STATE.clear()
     yield
     _FILE_STATE.clear()

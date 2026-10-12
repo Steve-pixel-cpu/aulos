@@ -9,7 +9,7 @@ store 用模块级单例: CLI 命令、Web API、Agent 工具三方共用同一�
 """
 from typing import Optional
 
-from memory.store import JsonFileStore
+from aulos.memory.store import JsonFileStore
 
 # 单条 content 上限: 超长记忆挤占注入预算, 写入侧先截断（工具描述同步注明）
 MEMORY_CONTENT_MAX_CHARS = 500
@@ -23,7 +23,7 @@ def get_memory_store() -> JsonFileStore:
     """进程级单例。路径来自 config.MEMORY_FILE（惰性导入, 免测试期副作用）。"""
     global _store
     if _store is None:
-        import config
+        import aulos.config as config
         _store = JsonFileStore(config.MEMORY_FILE)
     return _store
 

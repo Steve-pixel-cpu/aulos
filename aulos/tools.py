@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Callable, List, Optional, Self
 from pydantic import BaseModel
 
-from runtime import ToolError, ToolOutput
+from aulos.runtime import ToolError, ToolOutput
 
 NL = chr(10)   # LF: splitlines/endswith 的换行判定用, 避免源码里写裸转义
 
@@ -870,7 +870,7 @@ def todo_tool(params: dict, workdir: Optional[str] = None,
     action = str(params.get("action") or "read")
     if session_id is None:
         try:
-            from agent_tools import current_session_id
+            from aulos.agent_tools import current_session_id
             session_id = current_session_id() or "cli"
         except Exception:
             session_id = "cli"

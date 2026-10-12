@@ -15,12 +15,12 @@ import time
 import pytest
 from fastapi.testclient import TestClient
 
-import server
-import tools
-from models import Message, ImageContentBlock
-from permissions import PermissionDecision, PermissionRequest, PermissionMode
-from runtime import TurnInterrupted
-from storage import SessionStore
+import aulos.server as server
+import aulos.tools as tools
+from aulos.models import Message, ImageContentBlock
+from aulos.permissions import PermissionDecision, PermissionRequest, PermissionMode
+from aulos.runtime import TurnInterrupted
+from aulos.storage import SessionStore
 from conftest import ws_connect
 
 
@@ -58,7 +58,7 @@ def test_settings_roundtrip_and_validation(client):
     import re as _re
     from pathlib import Path as _Path
     expected = _re.search(r'^version\s*=\s*"([^"]+)"',
-                          (_Path(server.__file__).parent / "pyproject.toml").read_text(encoding="utf-8"),
+                          (_Path(server.__file__).resolve().parent.parent / "pyproject.toml").read_text(encoding="utf-8"),
                           _re.M).group(1)
     assert server._app_version() == expected
     assert client.get("/api/settings").json()["app_version"] == expected
@@ -227,7 +227,7 @@ def test_prompter_emits_request_before_blocking():
 @pytest.fixture()
 def isolated_store(tmp_path, monkeypatch):
     """把全局 store 换到 tmp 目录，测试互不串扰、不写真实会话目录。"""
-    from storage import SessionStore
+    from aulos.storage import SessionStore
     fake = SessionStore(storage_dir=tmp_path)
     monkeypatch.setattr(server, "store", fake)
     server._pending_sessions.clear()
@@ -369,7 +369,7 @@ def test_ws_empty_user_message_is_ignored(client, isolated_store):
 # ------------------------------------------------------------
 
 def test_message_to_dict_blocks():
-    from models import Message
+    from aulos.models import Message
     msg = Message.tool_result(
         id="t1", name="bash", output="boom", is_error=True)
     d = server._message_to_dict(msg)
@@ -723,7 +723,7 @@ def test_ws_user_with_attachments_persists_blocks(client, isolated_store):
 
         @property
         def usage(self):
-            from runtime import UsageTracker
+            from aulos.runtime import UsageTracker
             return UsageTracker().cumulative_usage()
 
         auto_compacted = False
@@ -911,7 +911,7 @@ def test_history_api_returns_attachment_blocks(client, isolated_store):
 @pytest.fixture()
 def settings_file(tmp_path, monkeypatch):
     target = tmp_path / "settings.json"
-    monkeypatch.setattr("config.SETTINGS_FILE", target)
+    monkeypatch.setattr("aulos.config.SETTINGS_FILE", target)
     # server 模块是 from config import SETTINGS_FILE 拿到的引用, 两处都要指过去
     monkeypatch.setattr(server, "SETTINGS_FILE", target)
     return target
@@ -957,7 +957,7 @@ def test_settings_permission_mode_invalid_not_persisted(settings_file):
 def test_settings_permission_mode_unwritable_degrades(settings_file, monkeypatch):
     """盘写失败只降级为不持久化, 设置请求本身仍成功（内存已生效）。"""
     import json as _json
-    import config
+    import aulos.config as config
     monkeypatch.setattr(server, "SETTINGS_FILE", settings_file)
     real_write_text = config.Path.write_text
 
@@ -1086,7 +1086,7 @@ def test_settings_permission_mode_only_changes_default(client, isolated_store):
     web_session.permission_mode = server.PermissionMode.PROMPT
     try:
         settings_file = None
-        import config as _config
+        import aulos.config as _config
         import pathlib
         settings_file = pathlib.Path(_config.__file__).parent  # 仅占位; 真隔离靠 monkeypatch 的用例
         tc = TestClient(server.app)
@@ -1196,7 +1196,7 @@ def test_worker为轮次绑定取消检查(client, isolated_store, monkeypatch):
     循环轮询, 经 copy_context 传入工具池线程）。"""
     import types
 
-    import tools
+    import aulos.tools as tools
 
     web_session = server.get_or_create_web_session("s-cancel")
     web_session.titled = True                  # 跳过 AI 命名（不发网络请求）
@@ -1286,7 +1286,7 @@ def test_列表接口回填历史未命名会话(client, isolated_store):
     assert isolated_store.get_title(sid) == "修复登录页的白屏问题"[:30]
 
     # 幂等: 二次读取不再改写（标题记录数不增）
-    import storage as storage_mod
+    import aulos.storage as storage_mod
     before = sum(1 for e in storage_mod.SessionStore._read_entries(
         isolated_store, isolated_store._session_path(sid))
         if type(e).__name__ == "TitleRecord")

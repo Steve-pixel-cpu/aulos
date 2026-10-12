@@ -17,12 +17,12 @@ from typing import Optional
 from fastapi import Body, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
 
-from api_client import make_api_client, normalize_base_url as _normalize_base_url, \
+from aulos.api_client import make_api_client, normalize_base_url as _normalize_base_url, \
     normalize_protocol
-from config import USER_DIR
+from aulos.config import USER_DIR
 # TOOLS 经 server_common 转出（它已 from main import TOOLS 并保留在命名空间）:
 # 拆分约定是功能域只依赖 server_common, 不反向 import 内核 main
-from server_common import TOOLS, api_client, app
+from aulos.web.server_common import TOOLS, api_client, app
 
 # Codex 图集契约: 固定 1536 宽、8 列; v1 高 1872(9 行), v2 高 2288(11 行,
 # 末两行是环视——本次也接受, 前端只播 0-8 行)。单格 192×208。
@@ -56,7 +56,7 @@ def _pets_dirs() -> list[tuple[Path, str]]:
                 (server_dir.parent / "pets", "install"),          # Electron: resources/pets
                 codex]
     return [user,
-            (Path(__file__).resolve().parent / "pets", "install"),  # 开发样例
+            (Path(__file__).resolve().parent.parent.parent / "pets", "install"),  # 开发样例
             codex]
 
 
@@ -327,7 +327,7 @@ def _pet_api_client(provider_id: Optional[str], model_id: Optional[str]):
     global _pet_client
     # 延迟 import: 供应商运行态归 server 主模块所有（_apply_provider_config
     # 维护 _provider_cfg）, common 不能反向依赖它
-    from server import _provider_cfg   # noqa: PLC0415
+    from aulos.server import _provider_cfg   # noqa: PLC0415
     active = _provider_cfg.get("active") or {}
     if not provider_id or provider_id == active.get("provider"):
         return api_client

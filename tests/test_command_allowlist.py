@@ -14,10 +14,10 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-import config
-import permissions
-import server
-from permissions import (
+import aulos.config as config
+import aulos.permissions as permissions
+import aulos.server as server
+from aulos.permissions import (
     NAME_TO_MODE,
     PermissionDecision,
     PermissionMode,
@@ -285,7 +285,7 @@ def _bash_request() -> PermissionRequest:
 
 
 def test_cli_prompter_always_adds_global_rule(monkeypatch):
-    from main import CliPermissionPrompter
+    from aulos.main import CliPermissionPrompter
     seen: dict = {}
     prompter = CliPermissionPrompter(
         on_always=lambda rule: seen.setdefault("always", rule),
@@ -298,7 +298,7 @@ def test_cli_prompter_always_adds_global_rule(monkeypatch):
 
 
 def test_cli_prompter_session_option(monkeypatch):
-    from main import CliPermissionPrompter
+    from aulos.main import CliPermissionPrompter
     seen: dict = {}
     prompter = CliPermissionPrompter(
         on_always=lambda rule: seen.setdefault("always", rule),
@@ -311,7 +311,7 @@ def test_cli_prompter_session_option(monkeypatch):
 
 
 def test_cli_prompter_default_and_non_shell(monkeypatch):
-    from main import CliPermissionPrompter
+    from aulos.main import CliPermissionPrompter
     prompter = CliPermissionPrompter()
     # 回车 = 拒绝（朝安全侧）
     monkeypatch.setattr("builtins.input", lambda *a: "")

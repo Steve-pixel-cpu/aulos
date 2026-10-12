@@ -6,12 +6,12 @@ import json
 
 import pytest
 
-import skills
-from skills import (Skill, SkillError, delete_user_skill, discover_skills,
+import aulos.skills as skills
+from aulos.skills import (Skill, SkillError, delete_user_skill, discover_skills,
                     parse_skill_md, register_skill_tools, render_skills_section,
                     sanitize_name, skill_info, sync_skill_tools,
                     _make_skill_read_handler)
-from tools import ToolRegistry, ToolError
+from aulos.tools import ToolRegistry, ToolError
 
 
 def make_skill(tmp_path, name="demo", source="user", body="Do the thing.",

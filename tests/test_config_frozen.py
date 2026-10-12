@@ -7,7 +7,7 @@
 import pytest
 from pydantic import ValidationError
 
-from config import ConfigEntry, ConfigSource
+from aulos.config import ConfigEntry, ConfigSource
 
 
 def test_config_entry_model_config_uses_lowercase_frozen():
