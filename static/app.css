@@ -896,7 +896,7 @@
   .tool-group.collapsed .tg-body .tool-row:not([data-state="run"]),
   .tool-group.collapsed .tg-body .think-row,
   .tool-group.collapsed .td-wrap,
-  .tool-group.collapsed .to-wrap,
+  .tool-group.collapsed .to-term,
   .tool-group.collapsed .todo-list { display: none; }
   .tool-row .t-ico { flex: none; display: inline-flex; }
   .tool-row .tname2 { flex: none; color: var(--text-2); }
@@ -929,46 +929,47 @@
   }
   /* 分组内: 面板对齐到组内行缩进, 而非独立行时的 38px 列缩进 */
   .tool-group .td-wrap { margin: -4px 0 6px 9px; }
-  /* 输出面板: 工具/命令输出, 与 diff 面板同构（错误时自动展开）。
-   * 分组折叠时随组一起收起——展开组才见输出, 否则折叠态下
-   * 几十条"输出"头会堆成一堵墙。 */
-  /* to-wrap 输出面板: 扁平文本风(与工具行/思考行同语言) ——
-   * 头部无底无框一行带过; 内容区不用全框卡片, 用左竖线 + 缩进表达从属,
-   * 底色保留 code-bg 但降透明度, 长输出仍需可读衬底 */
-  .to-wrap {
-    margin: -6px 0 10px 38px;
-    border: none;
-    border-left: 2px solid var(--border);
-    border-radius: 0;
-    overflow: hidden;
-    background: color-mix(in srgb, var(--code-bg) 45%, transparent);
-    animation: msg-in .22s ease;
-  }
-  .tool-group .to-wrap { margin: -4px 0 6px 9px; }
-  .to-head {
-    display: flex; align-items: center; gap: 8px;
-    width: 100%; padding: 4px 8px;
-    background: none; border: none; cursor: pointer;
-    font-size: calc(11.5px * var(--fs-ui));
-    color: var(--text-3);
-    text-align: left;
-    transition: background .15s;
-  }
-  .to-head:hover { background: color-mix(in srgb, var(--text) 4%, transparent); }
-  .to-caret { flex: none; font-size: 10px; color: var(--text-3); }
-  .to-body { border-top: none; }
-  .to-pre {
-    max-height: 260px; overflow: auto;
-    padding: 2px 10px 8px;
+  /* 输出面板: 行内展开——点工具行本身开关（不再另设折叠头行）。
+   * 终端块是深色一体化代码块: 命令($ 提示符)与输出同块、整块滚动。
+   * 分组折叠时随组一起收起——否则折叠态下一堆终端块堆成一堵墙。 */
+  .to-term {
+    max-height: 300px; overflow: auto;
+    margin: -2px 0 calc(8px * var(--density)) 38px;
+    padding: 8px 10px;
+    background: var(--code-bg);
+    border-radius: var(--r-sm);
     font-family: var(--font-mono);
     font-size: calc(11.5px * var(--fs-ui));
     line-height: 1.5;
     white-space: pre-wrap;
     word-break: break-word;
-    color: var(--text-2);
+    animation: msg-in .22s ease;
   }
-  .to-wrap.has-err .to-sum { color: var(--err); }
-  .to-wrap.has-err .to-pre { color: color-mix(in srgb, var(--err) 80%, var(--text-2)); }
+  .tool-group .to-term { margin: -2px 0 6px 9px; }
+  .to-term.closed { display: none; }
+  .to-term .tt-cmd { color: var(--text); }
+  .to-term .tt-prompt { color: var(--text-3); user-select: none; }
+  .to-term .tt-out { color: var(--text-2); margin-top: 2px; }
+  .to-term .tt-none { color: var(--text-3); margin-top: 2px; }
+  .to-term .to-pre { color: var(--text-2); }
+  .tool-row.is-err .to-term .tt-out,
+  .tool-row.is-err .to-term .to-pre { color: color-mix(in srgb, var(--err) 80%, var(--text-2)); }
+  /* 可展开的工具行: 点行即开合; 展开态用中性左竖条标示（不抢主题色） */
+  .tool-row.expandable { cursor: pointer; }
+  .tool-row.expandable:hover { background: color-mix(in srgb, var(--text) 4%, transparent); }
+  .tool-row.open {
+    border-left: 2px solid var(--border-strong);
+    padding-left: 7px;
+    border-radius: var(--r-sm) 0 0 var(--r-sm);
+  }
+  /* 行尾元信息: 截断/行数小字, 收起态也可见 */
+  .t-meta { flex: none; display: inline-flex; gap: 8px; align-items: center; }
+  .t-meta .t-cut { font-size: calc(10.5px * var(--fs-ui)); color: var(--warn); }
+  .t-meta .t-loc {
+    font-family: var(--font-mono);
+    font-size: calc(10.5px * var(--fs-ui));
+    color: var(--text-3); opacity: .85;
+  }
   .td-head {
     display: flex; align-items: center; gap: 8px;
     width: 100%; padding: 5px 10px;

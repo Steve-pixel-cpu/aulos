@@ -476,11 +476,7 @@ function addToolCard({ id, name, input, result }, col) {
   row.querySelector(".tdesc").textContent = describeInput(input, name);
   row.dataset.tool = name;
   row.dataset.input = input || "";
-  row._t0 = Date.now();   // 结果到达时在 setToolState 里折算耗时小字
-  // 悬停给完整入参（压平空白, 截 2000 字防巨体）——摘要 90 字截断曾把
-  // 命令尾部的 `| xargs sh -c …` 藏掉, 只读白名单拒绝看起来像误拒
-  const hover = String(input || "").replace(/\s+/g, " ").trim();
-  if (hover.length > 90) row.title = hover.slice(0, 2000);
+  row._t0 = Date.now();   // 结果在 setToolState 里折算耗时小字
   // 落进工具分组（连续调用折叠为一组）, 不再逐条平铺在消息列
   groupForNewToolRow(col || msgCol()).querySelector(".tg-body").appendChild(row);
   if (result) {
@@ -573,45 +569,106 @@ function completeToolCard(row, { is_error, denied, result_meta, output }) {
   } else {
     // 命令/工具输出面板: 输出非空即渲染（此前 output 只进历史, 界面上
     // 无处可看——点卡片没有任何反应）。出错自动展开, 成功默认收起。
+    if (is_error && !denied) row.classList.add("is-err");
     renderOutputPanel(row, output, !!is_error && !denied);
   }
 }
 
 /* ---------- 输出展示: 工具卡的统一输出面板 ----------
  * tool_result 的 output（命令 stdout/stderr、工具摘要）此前只进模型历史,
- * 界面无处可看。面板插在工具行下方（与 diff 面板同构）, 默认折叠;
+ * 界面无处可看。终端工具行本身即展开开关（行内展开, 不另设折叠头行）;
  * is_error 自动展开——出错时用户最关心的就是输出。纯 textContent,
  * 不走 markdown 渲染, 超长截断（完整输出在会话历史里）。 */
 const OUTPUT_PANEL_MAX = 20000;
+const TERMINAL_TOOLS = new Set(["bash", "powershell"]);
+// 后端截断标记（tools.py 的落盘/掐中段话术）: 命中即在工具行尾标注,
+// 收起态也能看出"这份输出不完整"
+const OUT_TRUNCATED_RE = /output truncated|\[truncated|已截断/;
+
+/* 从工具行取终端命令全文（入参 JSON 的 command 字段; 历史回放同路径可用） */
+function terminalCommand(row) {
+  if (!TERMINAL_TOOLS.has(row.dataset.tool)) return "";
+  try {
+    const data = JSON.parse(row.dataset.input || "{}");
+    if (typeof data.command === "string" && data.command.trim()) return data.command;
+  } catch (e) { /* 旧数据无 input 或非 JSON */ }
+  return "";
+}
+
 function renderOutputPanel(row, outputText, autoOpen) {
-  if (!outputText || !String(outputText).trim()) return;
-  if (row.querySelector(".to-wrap")) return;
-  let text = String(outputText);
+  if (row.querySelector(".to-term")) return;
+  const raw = outputText ? String(outputText) : "";
+  const hasOut = !!raw.trim();
+  const cmd = terminalCommand(row);
+  if (!hasOut && !cmd) return;   // 终端命令即使无输出也渲染: 完整命令是可见性兜底
+  let text = raw;
+  let cut = false;
   if (text.length > OUTPUT_PANEL_MAX) {
     text = text.slice(0, OUTPUT_PANEL_MAX) +
       "\n\n[... 已截断, 共 " + text.length + " 字符; 完整输出见上下文]";
+    cut = true;
   }
-  const wrap = document.createElement("div");
-  wrap.className = "to-wrap" + (autoOpen ? " has-err" : "");
-  const head = document.createElement("button");
-  head.type = "button";
-  head.className = "to-head";
-  head.innerHTML = '<span class="to-caret">▸</span><span class="to-sum">输出</span>';
-  const body = document.createElement("div");
-  body.className = "to-body";
-  body.hidden = !autoOpen;
-  head.querySelector(".to-caret").textContent = body.hidden ? "▸" : "▾";
-  const pre = document.createElement("div");
-  pre.className = "to-pre";
-  pre.textContent = text;
-  body.appendChild(pre);
-  head.onclick = () => {
-    body.hidden = !body.hidden;
-    head.querySelector(".to-caret").textContent = body.hidden ? "▸" : "▾";
-  };
-  wrap.appendChild(head);
-  wrap.appendChild(body);
-  row.insertAdjacentElement("afterend", wrap);
+  if (!cut && OUT_TRUNCATED_RE.test(raw)) cut = true;
+  const lineCount = hasOut ? text.split(/\r?\n/).length : 0;
+  // 行尾元信息（截断/行数）并进工具行——不再另设面板头行
+  const meta = document.createElement("span");
+  meta.className = "t-meta";
+  if (cut) {
+    const c = document.createElement("span");
+    c.className = "t-cut";
+    c.textContent = "已截断";
+    meta.appendChild(c);
+  }
+  if (lineCount > 15) {
+    const l = document.createElement("span");
+    l.className = "t-loc";
+    l.textContent = lineCount + " 行";
+    meta.appendChild(l);
+  }
+  if (meta.childNodes.length) row.appendChild(meta);
+  // 终端类: 深色一体化终端块——命令($ 提示符)与输出同块呈现,
+  // 整块滚动（一个滚动条滚全部）, 展开即读作一段真实终端会话
+  const term = document.createElement("div");
+  term.className = "to-term" + (autoOpen ? "" : " closed");
+  if (cmd) {
+    const cmdLines = cmd.split(/\r?\n/);
+    const cmdEl = document.createElement("div");
+    cmdEl.className = "tt-cmd";
+    const prompt = document.createElement("span");
+    prompt.className = "tt-prompt";
+    prompt.textContent = "$";
+    cmdEl.appendChild(prompt);
+    // 多行命令（heredoc/续行）按原文续行, 提示符只标在首行——与真实终端一致
+    cmdEl.appendChild(document.createTextNode(
+      " " + cmdLines[0] +
+      (cmdLines.length > 1 ? "\n" + cmdLines.slice(1).join("\n") : "")));
+    term.appendChild(cmdEl);
+    const outEl = document.createElement("div");
+    outEl.className = hasOut ? "tt-out" : "tt-none";
+    outEl.textContent = hasOut ? text : "（无输出）";
+    term.appendChild(outEl);
+  } else {
+    const pre = document.createElement("div");
+    pre.className = "to-pre";
+    pre.textContent = text;
+    term.appendChild(pre);
+  }
+  row.insertAdjacentElement("afterend", term);
+  // 行内展开: 点工具行本身开关（运行中的行等结果, 不响应点击）
+  if (!row._termToggle) {
+    row._termToggle = true;
+    row.classList.add("expandable");
+    row.addEventListener("click", () => {
+      if (row.dataset.state === "run") return;
+      const t = row.nextElementSibling;
+      if (!t || !t.classList.contains("to-term")) return;
+      t.classList.toggle("closed");
+      row.classList.toggle("open");
+    });
+  }
+  if (autoOpen) {
+    row.classList.add("open");
+  }
 }
 
 /* todo 卡: 工具行下方渲染任务清单本体（取代裸文本结果）。数据取自
