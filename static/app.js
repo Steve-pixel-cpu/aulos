@@ -57,7 +57,7 @@ function runOf(id) {
       activeToolCard: null,   // 当前流式中的工具卡片（配对 tool_result）
       liveToolCards: {},      // 流式中全部待完成工具卡: tool_use id → 卡片（防乱序/丢事件漏配）
       curBubble: null,        // 当前流式中的正文气泡
-      curThinking: null,      // 当前流式中的思考行 { el, t0 }
+      curThinking: null,      // 当前流式中的思考行 { el, t0, raw?, live? }（raw/live: 实时思考文本累计与滚动容器）
       toolResultIndex: {},    // 历史回放: tool_use id → 卡片（等结果块配对）
       reconnectTimer: null,   // WS 断线重连定时器
       reconnectAttempts: 0,   // 连续重连次数（成功后归零）

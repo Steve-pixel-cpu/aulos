@@ -71,6 +71,7 @@ function handleServerMessage(msg, sid) {
   if (sid !== state.sessionId) {
     if (msg.type === "text_delta") onTextDelta(msg, sid);
     else if (msg.type === "thinking_start") onThinkingStart(msg, sid);
+    else if (msg.type === "thinking_delta") onThinkingDelta(msg, sid);
     else if (msg.type === "thinking_end") onThinkingEnd(msg, sid);
     else if (msg.type === "tool_use_started") onToolUseStarted(msg, sid);
     else if (msg.type === "tool_use") onToolUse(msg, sid);
@@ -114,6 +115,7 @@ function handleServerMessage(msg, sid) {
     case "tool_use":           onToolUse(msg, sid); break;
     case "tool_result":        onToolResult(msg, sid); break;
     case "thinking_start":     onThinkingStart(msg, sid); break;
+    case "thinking_delta":     onThinkingDelta(msg, sid); break;
     case "thinking_end":       onThinkingEnd(msg, sid); break;
     case "turn_queued":        onTurnQueued(msg); break;
     case "turn_started":       onTurnStarted(msg, sid); break;
@@ -220,6 +222,36 @@ function onThinkingStart(msg, sid) {
   run.curThinking = { el: div, t0: Date.now() };
   run.lastThinkRow = div;   // 本轮思考行引用: 打断时「已停止」挂在这里
   if (active) scrollToBottom();
+}
+
+/* 思考增量 → "思考中…"胶囊后的实时滚动文本。
+ * 单行 nowrap, .t-live 容器 overflow:hidden + JS scrollLeft 贴尾, 视觉上
+ * 文字向左流走; 左侧 CSS mask 渐隐, 入口自然。只保留尾部窗口文本, 长
+ * 思考不吃内存。收口（onThinkingEnd）整行重建 innerHTML, .t-live 随之
+ * 消失——思考内容不入库、不回放, 纯实时镜像。 */
+const THINK_LIVE_MAX = 20000;   // 累计上限: 超出裁头, 窗口只滚尾
+const THINK_LIVE_TAIL = 4000;   // 裁剪后保留的尾部长
+function onThinkingDelta(msg, sid) {
+  const run = runOf(sid);
+  const active = sid === state.sessionId;
+  let cur = run.curThinking;
+  if (!cur) {
+    // OpenAI 线（reasoning_content）只有 delta 没有 start: 懒建思考行兜底
+    if (run.curBubble) return;   // 正文已在流: 不该再冒思考文本
+    onThinkingStart({}, sid);
+    cur = run.curThinking;
+    if (!cur) return;
+  }
+  cur.raw = ((cur.raw || "") + (msg.text || "")).slice(-THINK_LIVE_MAX);
+  if (!cur.live) {
+    cur.live = document.createElement("span");
+    cur.live.className = "t-live";
+    cur.el.appendChild(cur.live);
+    if (active) scrollToBottom();   // 胶囊变宽撑高由 flex 消化, 首现时贴底一次
+  }
+  const txt = cur.raw;
+  cur.live.textContent = txt.length > THINK_LIVE_TAIL ? txt.slice(-THINK_LIVE_TAIL) : txt;
+  cur.live.scrollLeft = cur.live.scrollWidth;   // 贴尾: 新字从右缘入场, 旧字向左滚走
 }
 
 function onThinkingEnd(msg, sid) {

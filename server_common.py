@@ -29,8 +29,8 @@ from fastapi.staticfiles import StaticFiles
 
 from api_client import (ClaudeApiClient, WireEvent, WireTextDelta,
                         WireToolStart, WireToolEnd, WireThinkingStart,
-                        WireThinkingEnd, WireObserver, make_api_client,
-                        normalize_protocol)
+                        WireThinkingDelta, WireThinkingEnd, WireObserver,
+                        make_api_client, normalize_protocol)
 from config import USER_DIR, ConfigLoader, RuntimeConfig
 from main import TOOLS, setup_console
 from prompt import SystemPromptBuilder
@@ -206,6 +206,11 @@ def _wire_to_frontend(event: WireEvent, sink: Callable[[dict], None],
     elif etype is WireThinkingStart:
         state["thinking_t0"] = time.monotonic()
         sink({"type": "thinking_start"})
+    elif etype is WireThinkingDelta:
+        # 思考增量透传给前端实时展示（"思考中…"胶囊后的滚动文本）。
+        # 纯镜像: 不进会话历史（历史由 api_client 的 events 列表决定,
+        # 思考 delta 本就不 append 进 events）, 断线重连后不回放。
+        sink({"type": "thinking_delta", "text": event.text})
     elif etype is WireThinkingEnd:
         t0 = state.pop("thinking_t0", None)
         if t0 is not None:
