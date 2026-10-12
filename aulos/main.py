@@ -1218,6 +1218,7 @@ TOOL_REQUIREMENTS = {
     "read_file": READ_ONLY_MODE,        # 读文件无副作用
     "agent_status": READ_ONLY_MODE,     # 看 subagent 状态
     "agent_list": READ_ONLY_MODE,       # 列 subagent
+    "agent_reap": READ_ONLY_MODE,       # 收割 subagent 结果（写 agents 状态目录的 delivered 标记, 与 todo/memory 同口径）
     "task_output": READ_ONLY_MODE,      # 读后台任务日志, 只读
     "grep": READ_ONLY_MODE,             # 纯只读搜索
     "glob": READ_ONLY_MODE,             # 纯只读列文件

@@ -24,7 +24,8 @@ def test_registered_requirements_cover_all_registry_tools_except_shell():
     registry = build_registry()
     names = set(registry._handlers)
     assert {"read_file", "write_file", "bash", "powershell",
-            "agent_tool", "agent_status", "agent_list"} <= names
+            "agent_tool", "agent_status", "agent_reap",
+            "agent_list"} <= names
     registered = set(TOOL_REQUIREMENTS)
     assert "bash" not in registered and "powershell" not in registered   # 保持默认 DANGER
     assert registered <= names   # 登记的工具都真实存在（拼写错误早暴露）

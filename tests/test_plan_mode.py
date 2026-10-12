@@ -103,6 +103,25 @@ def test_plan_overlay_works_over_every_base_mode():
         assert p.active_mode == base
 
 
+def test_plan_mode_allows_agent_reap():
+    """回归: agent_reap 收割已产出报告（读结果 + 翻 delivered 标记,
+    写 ~/.aulos/agents/ 元数据）, 属 READ_ONLY 档——此前未登记,
+    fallback 到 DANGER 档导致计划模式下收割被拒, 模型按提示词指引
+    "收尾前 agent_reap" 撞墙。agent_status/agent_list 同档同理。"""
+    p = _plan_policy()
+    assert p.authorize("agent_reap", "{}", None).decision == \
+        PermissionDecision.ALLOW
+    assert p.authorize("agent_status",
+                       json.dumps({"agent_id": "x"}), None).decision == \
+        PermissionDecision.ALLOW
+    # 派生可写 worker 仍然被拦: agent_tool 在 WORKSPACE_WRITE 档,
+    # 只读豁免仅覆盖 explore/plan 型（delegation nudge 侧钉住）
+    r = p.authorize("agent_tool", json.dumps({
+        "description": "d", "prompt": "p",
+        "subagent_type": "general"}), None)
+    assert r.decision == PermissionDecision.DENY
+
+
 def test_plan_mode_denies_shell_even_with_prompter():
     """bash 默认 required=DANGER, 计划生效(1) 走不了"相邻升级"弹问:
     与 workspace-write(2)→DANGER(3) 不同, 1→3 差两档, 设计上直接拒绝。
