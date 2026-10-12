@@ -4,107 +4,194 @@
 
 > Note: the Chinese README is the canonical, most up-to-date version; this translation may lag slightly behind.
 
-A Claude Code–style AI coding agent, fully open source and built from
-scratch: terminal REPL + desktop app, with a built-in tool loop, three-tier
-context compaction, MCP integration, a three-level permission system,
-multi-agent orchestration, an agent-level eval framework, and session
-persistence.
+<div align="center">
 
-> Python 3.14 + FastAPI + Tauri 2, compatible with any Anthropic /
-> OpenAI API–shaped model service (base URL, key, and model all configurable).
+<img src="static/icon-default.png" alt="Aulos" width="128" />
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/Python-%E2%89%A53.14-blue?logo=python&logoColor=white)](https://www.python.org/)
+[![Release](https://img.shields.io/github/v/release/Steve-pixel-cpu/aulos)](https://github.com/Steve-pixel-cpu/aulos/releases)
+[![CI](https://github.com/Steve-pixel-cpu/aulos/actions/workflows/ci.yml/badge.svg)](https://github.com/Steve-pixel-cpu/aulos/actions/workflows/ci.yml)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](#acknowledgements)
+
+A Claude Code–style AI coding assistant, fully open source. You describe a
+task in natural language; it reads files, edits code, runs commands and
+looks things up on its own until the job is done. Two frontends (terminal +
+desktop app), with a built-in permission system, automatic compaction of
+long conversations, external tool integration via MCP, multi-agent
+parallelism, automated evals, and session save/resume.
+
+</div>
+
+<details>
+<summary><b>Table of contents</b></summary>
+
+- [Features](#features)
+- [Architecture](#architecture)
+- [Quick start](#quick-start)
+- [MCP configuration](#mcp-configuration)
+- [Agent evals (evals/)](#agent-evals-evals)
+- [Configuration & permissions](#configuration--permissions)
+- [Desktop build & release](#desktop-build--release)
+- [Tests](#tests)
+- [Further reading](#further-reading)
+- [Acknowledgements](#acknowledgements)
+- [Disclaimer](#disclaimer)
+- [License](#license)
+
+</details>
+
+> Python 3.14 + FastAPI + Tauri 2. Not tied to any official API: works with
+> any Anthropic / OpenAI-compatible model service (base URL, key and model
+> are all configurable).
 >
-> Based on [MiniCC](https://github.com/Louisym/MiniCC), extended on its agent
-> architecture — see [Acknowledgements](#acknowledgements).
+> Based on [MiniCC](https://github.com/Louisym/MiniCC), extended on its
+> agent architecture — see [Acknowledgements](#acknowledgements).
+
+<table>
+  <tr>
+    <td width="50%"><img src=".screenshots/light.png" alt="Aulos desktop (light theme)"></td>
+    <td width="50%"><img src=".screenshots/dark.png" alt="Aulos desktop (dark theme)"></td>
+  </tr>
+  <tr>
+    <td align="center">Light theme</td>
+    <td align="center">Dark theme</td>
+  </tr>
+</table>
 
 ## Features
 
 **Agent core**
 
-- Tool loop: the model calls tools → executes → feeds results back, with
-  SSE/WS streaming, thinking blocks, token & iteration budgets, soft
-  convergence when over budget
-- Headless mode: `main.py -p "task" --output-format json` — the base for
-  the eval framework and scripted calls
-- Multi-agent orchestration: a Leader spawns subagents to work in parallel;
-  whitelist prevents recursion, orphan agents reconciled at startup
+- Tool loop: the model decides which tools to call (read files, edit code,
+  run commands…); results are fed back so it keeps working until the task
+  is done. Replies stream token by token, and the model's reasoning
+  (thinking blocks) is shown live. Each run has token and iteration
+  budgets; when close to the limit the model is nudged to wrap up and
+  deliver a result instead of burning budget
+- Headless mode: `main.py -p "task" --output-format json` runs one task
+  non-interactively and prints JSON — handy for scripts, and the foundation
+  of the eval framework
+- Multi-agent orchestration: the main agent (Leader) can spawn subagents to
+  work in parallel, ideal for independent sub-tasks. Subagents cannot spawn
+  further subagents (whitelist-controlled, no infinite nesting), and on
+  restart any subagents left "running" by a dead process are reconciled to
+  failed — no ghost agents
 
-**Context engineering**
+**Long conversations without blowing the context window**
 
-- Three-layer compaction: MicroCompact (placeholder swap, zero LLM calls) →
-  Session Memory (background rolling summary) → Full Compact (side-call
-  structured summary with rule-based fallback)
-- Main-context slimming: tool-output line budgets spilled to disk, re-read
-  dedup of unchanged files, screenshot downsampling, wide-research nudged
-  toward subagent delegation; repeated read-only calls rejected on the 3rd
-- Prompt-cache friendly: stable prefix separated from dynamic tail
+The longer the conversation, the more content goes to the model — eventually
+exceeding its context window. Three layers of compaction slim it down
+automatically:
+
+1. **MicroCompact**: replaces old, bulky tool output with a placeholder
+   ("200 lines of file content were here") — pure string surgery, no model
+   call, zero cost
+2. **Session Memory**: a background thread continuously rolls the
+   conversation into a running summary
+3. **Full Compact**: when the above isn't enough, one dedicated model call
+   compresses the whole conversation into a structured summary (with a
+   rule-based truncation fallback, so compaction can never fail)
+
+Plus context-slimming details: oversized tool output keeps only its head,
+with the full text spilled to disk for on-demand retrieval; re-reads of
+unchanged files are deduped; pasted screenshots are downsampled; broad
+research is nudged toward subagent delegation so only conclusions come
+back; a read-only call repeated a 3rd time is rejected outright — stopping
+"read the same file forever" loops.
+
+Prompts are laid out cache-friendly: static parts (system prompt, tool
+definitions) stay at the front, changing conversation at the tail, so the
+provider's prompt cache hits as often as possible — saving money and time.
 
 **Tools & ecosystem**
 
-- Built-ins: `bash`/`powershell`/`read_file`/`write_file`/`edit_file`/`grep`/
-  `glob`/background tasks/`todo`/`web_search`/`web_fetch`; a Playwright
-  headless-Chromium browser tool group for real web testing
-- MCP client: `stdio`/`http`/`sse` transports, tools registered as
-  `mcp__<server>__<tool>` — see [MCP configuration](#mcp-configuration)
-- Skills: Claude Code–compatible `SKILL.md` packages with progressive
-  disclosure — ten skills don't blow up the context
-- Cross-session memory: ask the model to remember or use `/memory add`;
-  capacity-triggered eviction with hits/recency weighting
+- Built-in tools: `bash`/`powershell` (run commands), `read_file`/
+  `write_file`/`edit_file` (file access), `grep`/`glob` (search),
+  background tasks, `todo` (task checklist), `web_search`/`web_fetch`
+  (web search & page fetching); plus a Playwright browser tool group that
+  drives a real headless browser — click, type, and verify web flows
+- MCP client: MCP is the standard protocol for plugging external tools into
+  AI agents. `stdio` (local subprocess), `http` and `sse` transports are
+  supported; tools register as `mcp__<server>__<tool>` — see
+  [MCP configuration](#mcp-configuration)
+- Skills: Claude Code–compatible `SKILL.md` packages. The model normally
+  sees only a one-line description per skill and reads the full text on
+  demand (progressive disclosure) — dozens of skills won't bloat the context
+- Cross-session memory: ask the model to remember something, or use
+  `/memory add`; memories carry into new sessions automatically. When full,
+  old entries are evicted by usage frequency and recency
 
 **Reliability & observability**
 
-- Three permission levels `plan` → `workspace-write` → `danger-full-access`;
-  overreach triggers approval. Sensitive paths (`.git/`, `~/.ssh/`, …) force
-  a human decision **in every mode including full access**
-- Exponential-backoff retry for rate limits, max_tokens truncation
-  self-healing, per-call latency/usage logged to disk
-- Session persistence: atomic incremental JSONL, resume (`-c`/`--resume`),
-  concurrent session isolation
+- Three permission levels, strictest to loosest: `plan` (read-only) →
+  `workspace-write` (writable inside the working dir) →
+  `danger-full-access` (everything). Operations beyond the current level
+  pop an approval prompt first; writes/deletes to sensitive paths (`.git/`,
+  `~/.ssh/`, …) **require human confirmation in every mode**, preventing
+  irreversible damage and the model tampering with its own permissions
+- Automatic retry on API rate limits with doubling wait times (exponential
+  backoff); replies truncated by the length cap are auto-continued;
+  latency and token usage of every call are logged
+- Session persistence: the conversation is appended to a JSONL file
+  incrementally as it happens (atomic writes — a crash can't corrupt it).
+  Resume with `-c`, restore a specific session with `--resume <id>`, list
+  history with `--list`; concurrent processes don't interfere
 
 **UI**
 
-- CLI REPL (slash commands, syntax highlighting, streaming) and Tauri 2
-  desktop app (settings page, multi-provider switching, plan cards);
-  built-in internet radio (NetEase Music / Bilibili) and desktop pets
+- Terminal REPL (slash commands, syntax highlighting, streaming) and a
+  Tauri 2 desktop app (settings page, multi-provider switching, plan
+  cards); bonus built-in internet radio (NetEase Music / Bilibili) and
+  desktop pets
 
 ## Architecture
 
 ```
-CLI (main.py) ──┐
-                ├─► aulos/server.py (FastAPI facade) ─► aulos/web/ package
-Desktop shell (src-tauri) ─► WebSocket/REST              (server_common base +
-                │                             music/bilibili/pets/stats/
-                │     aulos/radio/ package    settings/policy REST domains)
-                ▼
-        aulos/runtime.py agent tool loop ─► aulos/api_client / tools /
-        permissions / compact / multi_agent / skills / memory /
-        mcp_client / config / storage …    data dir: ~/.aulos/
+CLI (main.py)                          # terminal REPL / headless mode
+Desktop shell (src-tauri)              # talks WebSocket / REST
+  |
+  +-> aulos/server.py                  # FastAPI backend facade
+  |     +-> aulos/web/                 #   REST endpoints per feature domain
+  |     +-> aulos/radio/               #   music sources (NetEase / Bilibili)
+  |
+  +-> aulos/runtime.py                 # agent tool loop (core)
+        +-> api_client / tools         #   model client / built-in tools
+        +-> permissions / compact      #   approval / three-layer compaction
+        +-> multi_agent / skills       #   subagents / SKILL.md packages
+        +-> memory / mcp_client        #   cross-session memory / MCP
+        +-> config / storage           #   config merge / session store
+                                       # data dir: ~/.aulos/
 ```
 
 All Python implementation lives in the **`aulos/`** package; the repo root
-keeps only two launch shims, `main.py` / `server.py` (paths hardcoded by
-evals, the Tauri/Electron shells and packaging scripts — do not delete).
+keeps only two launch entries, `main.py` / `server.py` (a few lines each,
+forwarding into the package; evals, the desktop shells and packaging
+scripts hardcode these paths — do not delete).
 
 | Location | Responsibility |
 |---|---|
-| `main.py` / `server.py` (root) | Launch shims forwarding to `aulos.main` / `aulos.server` |
-| `aulos/main.py` / `aulos/server.py` | CLI entry / web backend facade (re-exports domain names) |
-| `aulos/runtime.py` | Agent main loop: event stream, parallel tool execution, interruption, budgets, guards |
-| `aulos/api_client.py` `tools.py` `permissions.py` `compact.py` … | Streaming client+retry / built-in tools / permissions / three-layer compaction (core modules) |
-| `aulos/web/` | Backend domain package: `server_common` base + radio/pets/telemetry/settings/policy REST |
+| `main.py` / `server.py` (root) | Launch entries forwarding to `aulos.main` / `aulos.server` |
+| `aulos/main.py` / `aulos/server.py` | CLI entry / web backend facade (re-exports each module's public API) |
+| `aulos/runtime.py` | Agent main loop: event stream, parallel tool execution, interruption, budgets, anti-loop guards |
+| `aulos/api_client.py` `tools.py` `permissions.py` `compact.py` … | Model client + auto-retry / built-in tools / permission approval / three-layer compaction (core modules) |
+| `aulos/web/` | Backend feature domains: shared base + REST for radio/pets/telemetry/settings/permission policy |
 | `aulos/radio/` | Internet-radio library: NetEase Music & Bilibili fetching/parsing |
 | `aulos/memory/` `skills.py` `mcp_client.py` `multi_agent.py` | Cross-session memory / skills / MCP / multi-agent |
-| `aulos/config.py` `storage.py` | Three-tier config merge / JSONL session store |
-| `static/` `src-tauri/` | Web frontend (vanilla JS, split by domain) / Tauri 2 shell (Electron shell deprecated) |
+| `aulos/config.py` `storage.py` | Three-tier config discovery & merge / JSONL session store |
+| `static/` `src-tauri/` | Web frontend (vanilla JS, split by feature domain) / Tauri 2 desktop shell (Electron shell deprecated) |
 
 ## Quick start
 
 ### Requirements
 
-- **Python ≥ 3.14**, [uv](https://docs.astral.sh/uv/) recommended
-- **Git for Windows** (required on Windows) — the command runner relies on
-  Git Bash (MSYS2 passes UTF-8 through; PowerShell transcodes as GBK and
-  garbles output). Refuses to start if not detected
-- Rust toolchain (cargo) and Node.js are additionally needed to build the
+- **Python ≥ 3.14**, [uv](https://docs.astral.sh/uv/) recommended for
+  dependency management
+- **Git for Windows** (required on Windows) — command execution relies on
+  Git Bash: it passes UTF-8 output through untouched, while PowerShell
+  transcodes as GBK and garbles it. The app refuses to start without
+  Git Bash
+- The Rust toolchain (cargo) and Node.js are needed only to build the
   desktop app
 
 ### Install & configure
@@ -113,10 +200,10 @@ evals, the Tauri/Electron shells and packaging scripts — do not delete).
 uv sync
 ```
 
-The CLI reads `API_KEY=sk-xxx` from `.env` at the repo root. The web backend
-does not read `.env`: on first launch it shows an init page — fill in API
-key, base URL and model there; saved to `~/.aulos/settings.json`, with
-multi-provider switching supported.
+The CLI reads `.env` at the repo root — one line: `API_KEY=sk-xxx`.
+The web/desktop side does not read `.env`: first launch shows an init page
+where you fill in the API key, base URL and model; settings go to
+`~/.aulos/settings.json`, with multi-provider switching supported.
 
 ### Run
 
@@ -128,12 +215,13 @@ uv run python server.py                  # web backend, default http://127.0.0.1
 
 CLI slash commands: `/help` `/status` `/compact` `/mode` `/thinking`
 `/rename` `/skills` `/memory` `/exit`. The web UI shares sessions and the
-tool registry with the CLI; for a graphical experience (custom titlebar,
-plan cards, radio, pets) use the packaged desktop app.
+tool registry with the CLI; for the full graphical experience (custom
+titlebar, plan cards, radio, pets) use the packaged desktop app.
 
 ## MCP configuration
 
-Add `mcpServers` to any config tier:
+Add `mcpServers` to any config tier (see
+[Configuration & permissions](#configuration--permissions)):
 
 ```json
 {
@@ -146,87 +234,103 @@ Add `mcpServers` to any config tier:
 }
 ```
 
-- `type` supports `stdio` (local subprocess, with `args`/`env`/`cwd`),
-  `http`, `sse`
+- `type` supports `stdio` (spawns the MCP server as a local subprocess,
+  with `args`/`env`/`cwd`), `http` and `sse` (connect to remote servers)
 - Tools register as `mcp__<server>__<tool>`, never colliding with built-ins;
-  one failed server only warns and doesn't block startup
-- Permissions, hooks and output truncation reuse the built-in pipeline;
-  unregistered external tools fall back to conservative approval
+  an unreachable server only warns and doesn't block startup
+- External tools go through the same permission approval, hooks and output
+  truncation pipeline as built-ins; tools without explicit permission
+  config default to conservative — you're asked before every use
 - The desktop settings page manages MCP servers visually
 
 ## Agent evals (evals/)
 
-Runs real `main.py -p` against task fixtures with deterministic assertions +
-LLM judging, producing a comparable regression baseline:
+Gives the real agent (not a mock) preset tasks and scores it automatically,
+catching capability regressions after changes. Each task ships with a small
+sample project (fixture); the agent runs it via `main.py -p`, then scripted
+checks verify mechanically ("did the test pass?") and a second model scores
+against written criteria. Results are saved as a baseline and compared
+automatically on the next run.
 
 ```bash
-uv run python evals/run_evals.py                    # all; compares to baseline if present
+uv run python evals/run_evals.py                    # all tasks; compares to baseline if present
 uv run python evals/run_evals.py --only fix-failing-test --save-baseline
 ```
 
-- Built-in tasks: count-functions / fix-failing-test / implement-function /
-  rename-across-files / review-buggy-code / delegate-subagent
-- Add a task: put `task.txt` + `project/` (fixture) + optional `checks.py` /
-  `judge.txt` under `evals/tasks/<name>/`; real runs cost tokens — start with
-  `--only`
-- CI: nightly full run + stub-agent smoke
-  (`.github/workflows/evals.yml`)
+- Built-in tasks: count functions / fix a failing test / implement a
+  function / rename across files / review buggy code / delegate to a
+  subagent (count-functions, fix-failing-test, implement-function,
+  rename-across-files, review-buggy-code, delegate-subagent)
+- Add a task: put `task.txt` (the prompt) + `project/` (the fixture) +
+  optional `checks.py` (mechanical checks) / `judge.txt` (scoring criteria
+  for the judge model) under `evals/tasks/<name>/`. Real runs cost tokens —
+  start with `--only` on a small task
+- CI: nightly full run + a stub agent (no real model calls) smoke test on
+  every push (`.github/workflows/evals.yml`)
 
 ## Configuration & permissions
 
-Configs deep-merge by increasing precedence: `~/.aulos/settings.json`
-(user-global) → `<project>/.claude/settings.json` (project) →
-`.claude/settings.local.json` (local). Keys are Claude Code compatible:
-`model` / `thinkingLevel` / `permissionMode` / `timeout` / `maxIterations` /
-`tokenBudget` / `turnTokenBudget` / `contextWindow` / `mcpServers` / `hooks`;
-overridable via `CLAUDE_MODEL` etc. env vars. If a proxy trims the window,
-lower `contextWindow` (compaction thresholds derive from it).
+Configs live in three tiers, deep-merged by increasing precedence (later
+tiers override same-named keys): `~/.aulos/settings.json` (user-global) →
+`<project>/.claude/settings.json` (project-level, committable and shareable
+with the team) → `.claude/settings.local.json` (personal, not committed).
+
+Keys are Claude Code compatible: `model` / `thinkingLevel` /
+`permissionMode` / `timeout` / `maxIterations` / `tokenBudget` /
+`turnTokenBudget` / `contextWindow` / `mcpServers` / `hooks`; env vars like
+`CLAUDE_MODEL` override file config.
+
+> Heads-up: third-party API proxies often offer a smaller real context
+> window than the official one — lower `contextWindow` accordingly.
+> Compaction thresholds derive from it (default: 75% of a 1M window);
+> leaving it wrong leads to over-limit errors.
 
 | Permission mode | Behavior |
 |---|---|
-| `plan` | Read-only: reads/searches allowed, writes hard-rejected (guides toward approval or mode switch) |
-| `workspace-write` | Writable inside the working dir, may spawn subagents; executing commands still requires approval |
-| `danger-full-access` | Everything allowed (incl. arbitrary commands) |
+| `plan` | Read-only: reads and searches allowed; any write is hard-rejected (guides you to switch mode or approve a plan first) |
+| `workspace-write` | Writable inside the working dir, may spawn subagents; executing commands still needs per-command approval |
+| `danger-full-access` | Everything allowed, including arbitrary commands |
 
-Overreach triggers approval (CLI y/N panel / web approval card); writes or
-deletes to sensitive paths force a human decision in **every mode** —
-preventing irreversible damage and the model tampering with its own
-permission config.
+Operations beyond the current mode pop an approval (y/N panel in the CLI,
+approval card on the web) — you can allow them one at a time. Writes and
+deletes to sensitive paths (`.git/`, `~/.ssh/`, …) force human confirmation
+in **every mode**, full access included — preventing irreversible damage
+and the model editing its own permission config to "self-escalate".
 
-Telemetry: every model call is logged to `~/.aulos/logs/runtime-YYYYMMDD.log`;
-open `/stats.html` for the panel (which round was slow, where tokens went,
-cache hit rate).
+Telemetry: latency and usage of every model call are logged to
+`~/.aulos/logs/runtime-YYYYMMDD.log`; open `/stats.html` in a browser for
+the panel — which round was slow, where tokens went, cache hit rate.
 
 ## Desktop build & release
 
 ```cmd
-build-exe.cmd          :: Windows one-click: PyInstaller freeze → cargo tauri build
+build-exe.cmd          :: Windows one-click: freeze the Python backend into an exe, then cargo tauri build
 ```
 
-macOS/Linux: `build-mac.sh` / `scripts/build-linux-tauri.sh`. Release:
-`git tag v5.1.6 && git push origin v5.1.6` — GitHub Actions builds and
-publishes all three platforms (Windows `.exe` / macOS `.dmg` /
-Linux `.AppImage`), all with auto-update. See [PACKAGING.md](PACKAGING.md)
-and [docs/desktop-release-notes.md](docs/desktop-release-notes.md) (Linux
-dependencies, Wayland/VMware workarounds, signing keys).
+macOS/Linux: `build-mac.sh` / `scripts/build-linux-tauri.sh`. Releasing is
+just a tag: `git tag vX.Y.Z && git push origin vX.Y.Z` — GitHub Actions
+builds and publishes installers for all three platforms (Windows `.exe` /
+macOS `.dmg` / Linux `.AppImage`), all with auto-update. See
+[PACKAGING.md](PACKAGING.md) and
+[docs/desktop-release-notes.md](docs/desktop-release-notes.md) (Linux
+dependencies, Wayland/VMware display troubleshooting, signing keys).
 
 ## Tests
 
 ```bash
-uv run pytest          # 1070 cases; CI: .github/workflows/ci.yml
+uv run pytest          # 1070+ cases; CI: .github/workflows/ci.yml
 ```
 
-Covers the runtime tool loop, permissions & sensitive paths, multi-agent,
-three-layer compaction, MCP, memory, skills, the eval harness, retry, atomic
-writes, concurrent sessions, context slimming, etc. Frontend regression:
-`npm run test:web` (jsdom) + `tests/web/e2e.py` (Playwright).
+Covers the agent main loop, permissions & sensitive paths, multi-agent,
+three-layer compaction, MCP, memory, skills, the eval harness, auto-retry,
+atomic writes, concurrent sessions, context slimming, and more. Frontend
+regression: `npm run test:web` (jsdom) + `tests/web/e2e.py` (Playwright,
+real browser).
 
 ## Further reading
 
-- [guides/](guides/): 13 implementation notes, one per module (source-reading companion)
-- [docs/refactoring-roadmap.md](docs/refactoring-roadmap.md): module-splitting roadmap (backend/frontend)
-- [docs/naming-history.md](docs/naming-history.md): display-name vs identifier conventions, rename history
-- [docs/optimization-backlog.md](docs/optimization-backlog.md): backlog vs Claude Code reference design
+- [guides/](guides/): 13 implementation notes, one per module (a
+  source-reading companion)
 
 ## Acknowledgements
 
