@@ -822,15 +822,22 @@
     -webkit-text-fill-color: transparent; color: transparent;
     animation: shine 1.8s linear infinite;
   }
-  /* 思考实时文本: "思考中…"后单行滚动。overflow:hidden + JS scrollLeft 贴尾
-   * = 新字右缘入场、旧字向左流走; 左侧 mask 渐隐, 滚出的字淡出而非硬切。
-   * max-width 保证胶囊整体不超列宽 (fit-content 会被子项撑破)。 */
-  .think-row .t-live {
-    max-width: min(46vw, 480px);
+  /* 思考实时文本: 与"思考中…"胶囊同一行——首个增量把胶囊就地包进
+   * .think-live-wrap(flex 行): 胶囊占左格不伸缩, 文本吃掉剩余整行宽度
+   * (排在胶囊框外)。单行 nowrap + overflow:hidden + JS scrollLeft 贴尾 =
+   * 新字右缘入场、旧字向左流走。 */
+  .think-live-wrap {
+    display: flex; align-items: center; gap: 10px;
+    width: 100%;
+    margin: 2px 0 calc(12px * var(--density)) 38px;
+    animation: msg-in .22s ease;
+  }
+  .think-live-wrap .think-row { margin: 0; }
+  .think-live {
+    flex: 1; min-width: 0;
     overflow: hidden; white-space: nowrap;
-    color: var(--text-2); opacity: .85;
-    -webkit-mask-image: linear-gradient(to right, transparent, #000 2.2em);
-    mask-image: linear-gradient(to right, transparent, #000 2.2em);
+    font-size: calc(12.5px * var(--fs-ui)); line-height: 1.5;
+    color: var(--text-2); opacity: .8;
   }
   @keyframes shine { from { background-position: 200% 0; } to { background-position: -200% 0; } }
 

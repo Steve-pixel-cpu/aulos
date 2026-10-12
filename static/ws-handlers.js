@@ -224,11 +224,12 @@ function onThinkingStart(msg, sid) {
   if (active) scrollToBottom();
 }
 
-/* 思考增量 → "思考中…"胶囊后的实时滚动文本。
- * 单行 nowrap, .t-live 容器 overflow:hidden + JS scrollLeft 贴尾, 视觉上
- * 文字向左流走; 左侧 CSS mask 渐隐, 入口自然。只保留尾部窗口文本, 长
- * 思考不吃内存。收口（onThinkingEnd）整行重建 innerHTML, .t-live 随之
- * 消失——思考内容不入库、不回放, 纯实时镜像。 */
+/* 思考增量 → 与"思考中…"胶囊同一行、排在胶囊框外右侧的实时滚动文本。
+ * 首个增量到来时把胶囊就地包进 flex 行（.think-live-wrap）: 胶囊不伸缩,
+ * 文本吃掉整行剩余宽度; 单行 nowrap + overflow:hidden + JS scrollLeft 贴尾
+ * = 新字右缘入场、旧字向左流走。只保留尾部窗口文本, 长思考不吃内存。
+ * 收口/撤胶囊时胶囊从包装行归位、文本消失——思考内容不入库、不回放,
+ * 纯实时镜像。 */
 const THINK_LIVE_MAX = 20000;   // 累计上限: 超出裁头, 窗口只滚尾
 const THINK_LIVE_TAIL = 4000;   // 裁剪后保留的尾部长
 function onThinkingDelta(msg, sid) {
@@ -244,14 +245,33 @@ function onThinkingDelta(msg, sid) {
   }
   cur.raw = ((cur.raw || "") + (msg.text || "")).slice(-THINK_LIVE_MAX);
   if (!cur.live) {
-    cur.live = document.createElement("span");
-    cur.live.className = "t-live";
-    cur.el.appendChild(cur.live);
-    if (active) scrollToBottom();   // 胶囊变宽撑高由 flex 消化, 首现时贴底一次
+    const wrap = document.createElement("div");
+    wrap.className = "think-live-wrap";
+    cur.el.parentNode.insertBefore(wrap, cur.el);   // 就地包装: 位置不变
+    cur.live = document.createElement("div");
+    cur.live.className = "think-live";
+    wrap.appendChild(cur.el);                        // 胶囊进左格
+    wrap.appendChild(cur.live);                      // 文本进右格（框外）
+    cur.wrap = wrap;
+    if (active) scrollToBottom();   // 行高不变, 但宽度顶满: 首现时贴底一次
   }
   const txt = cur.raw;
   cur.live.textContent = txt.length > THINK_LIVE_TAIL ? txt.slice(-THINK_LIVE_TAIL) : txt;
   cur.live.scrollLeft = cur.live.scrollWidth;   // 贴尾: 新字从右缘入场, 旧字向左滚走
+}
+
+/* 撤实时思考文本并把胶囊从包装行归位（收口 / 撤乐观胶囊共用）。
+ * 无包装行（还没收到过 delta）时是 no-op。 */
+function dropThinkingLive(cur) {
+  if (!cur || !cur.live) return;
+  if (cur.wrap && cur.wrap.parentNode) {
+    cur.wrap.parentNode.insertBefore(cur.el, cur.wrap);   // 胶囊回到原位置
+    cur.wrap.remove();                                    // 文本随包装行一起消失
+  } else {
+    cur.live.remove();
+  }
+  cur.wrap = null;
+  cur.live = null;
 }
 
 function onThinkingEnd(msg, sid) {
@@ -269,6 +289,7 @@ function onThinkingEnd(msg, sid) {
   const rlMs = run.rlDelayMs || 0;
   run.rlDelayMs = 0;
   const suffix = rlMs > 0 ? '（含限流重试 ' + fmtDuration(rlMs) + '）' : '';
+  dropThinkingLive(cur);   // 实时滚动行随思考结束一起撤下
   cur.el.classList.remove("thinking");
   cur.el.innerHTML = '<span class="t-ico">' + ICON_MIND + '</span>' +
     '<span>思考 · 持续了 ' + fmtDuration(ms) + suffix + '</span>';
@@ -314,6 +335,7 @@ function beginOptimisticThinking(run, sid, col) {
 function dropOptimisticThinking(run) {
   const cur = run.curThinking;
   if (!cur || !cur.optimistic) return;   // 只撤尚未被 thinking_start 接管的
+  dropThinkingLive(cur);   // 胶囊下方挂着的实时思考行一起撤
   cur.el.remove();
   if (run.lastThinkRow === cur.el) run.lastThinkRow = null;
   run.curThinking = null;
