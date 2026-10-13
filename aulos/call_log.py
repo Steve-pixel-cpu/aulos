@@ -37,6 +37,13 @@ def _prefix_fingerprint(messages) -> Optional[str]:
         return None
 
 
+def _append_log(record: dict) -> None:
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    path = LOG_DIR / f"runtime-{datetime.now():%Y%m%d}.log"
+    with path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+
 def log_model_call(session: Optional[str], iteration: int,
                    thinking_level: Optional[str], duration_s: float,
                    usage, messages=None) -> None:
@@ -58,9 +65,43 @@ def log_model_call(session: Optional[str], iteration: int,
         }
         if messages is not None:
             record["prefix_fp"] = _prefix_fingerprint(messages)
-        LOG_DIR.mkdir(parents=True, exist_ok=True)
-        path = LOG_DIR / f"runtime-{datetime.now():%Y%m%d}.log"
-        with path.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+        _append_log(record)
+    except Exception:
+        pass
+
+
+def log_model_error(session: Optional[str], iteration: int,
+                    thinking_level: Optional[str], duration_s: float,
+                    events, error: BaseException) -> None:
+    """失败轮留痕: build_assistant_message 拒收响应时记一行再抛。
+
+    "这轮为什么炸"此前无迹可查——失败调用走不到 log_model_call 的记账
+    点, 会话 jsonl 里也不留 assistant 条目, 只能靠相邻时间戳反推
+    (20261012「无消息内容!」排查实录)。对定位兼容层线序缺陷最关键的
+    是响应形状: 流里到底到了哪些事件、有没有 thinking 快照、stop_reason
+    是什么——events 传 api_client.stream() 的返回列表, 这里记类型计数。
+    best-effort 同 log_model_call。"""
+    try:
+        counts: dict = {}
+        stop_reason = None
+        thinking_chars = 0
+        for e in events or []:
+            name = type(e).__name__
+            counts[name] = counts.get(name, 0) + 1
+            if name == "ThinkingEvent":
+                thinking_chars += len(getattr(e, "text", "") or "")
+            elif name == "MessageStopEvent":
+                stop_reason = getattr(e, "stop_reason", None)
+        _append_log({
+            "ts": datetime.now().isoformat(timespec="milliseconds"),
+            "session": session,
+            "iter": iteration,
+            "thinking": thinking_level,
+            "duration_s": round(duration_s, 3),
+            "error": str(error),
+            "event_counts": counts,
+            "thinking_chars": thinking_chars,
+            "stop_reason": stop_reason,
+        })
     except Exception:
         pass

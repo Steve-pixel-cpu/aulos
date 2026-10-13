@@ -751,6 +751,13 @@ class ClaudeApiClient(ApiClient):
                 raise StreamInterrupted() from None
             blocks = {}
             stopped = False
+            # 流级 thinking 累积: 不依赖 content_block_stop。块级快照
+            # (content_block_stop 分支)要求兼容层把块收尾事件发全, 而 GLM
+            # 兼容层偶发整条流不闭合 thinking 块——增量照常到前端, 收尾
+            # 事件缺失, 快照落空, build_assistant_message 只好抛「无消息
+            # 内容!」整轮报废(20261012 实测)。这里并行累一份全文, 循环
+            # 结束后补快照用。
+            thinking_acc = ""
             for event in stream:
                 if event.type == 'content_block_start':
                     cb = event.content_block
@@ -792,6 +799,7 @@ class ClaudeApiClient(ApiClient):
                         echo.on_thinking(event.delta.thinking)
                         if wire is not None:
                             wire(WireThinkingDelta(text=event.delta.thinking))
+                        thinking_acc += event.delta.thinking
                         info = blocks.get(event.index)
                         if info is not None and "json" in info:
                             info["json"] += event.delta.thinking
@@ -871,6 +879,18 @@ class ClaudeApiClient(ApiClient):
                 ))
         finally:
             stack.close()
+
+        # 收尾补快照: 块级 ThinkingEvent 依赖 content_block_stop, 兼容层
+        # 偶发不发块收尾(见循环前 thinking_acc 注释)→ 快照落空。这里用
+        # 流级累积补上, 插在 stop 事件之前保持"stop 恰为末事件"的形状。
+        # 正常路径 ThinkingEvent 已在(块正常闭合)→ 跳过; 正文/工具块在场
+        # 时 runtime 照旧丢弃快照, 历史行为不变——只有"零内容块"的废响应
+        # 才会真的用到它(build_assistant_message 的 L3 降级)。
+        if thinking_acc.strip() and not any(
+                isinstance(e, ThinkingEvent) for e in events):
+            stop_idx = next((i for i, e in enumerate(events)
+                             if isinstance(e, MessageStopEvent)), len(events))
+            events.insert(stop_idx, ThinkingEvent(text=thinking_acc))
 
         return  events
 
@@ -1135,6 +1155,12 @@ class OpenAIApiClient(ApiClient):
         # 工具块拼装中: index → {id, name, args, announced}
         pending_tools: dict[int, dict] = {}
         stopped = False
+        # 流级 reasoning 累积: OpenAI 协议没有"块收尾"概念, reasoning 增量
+        # 从前只驱动指示器/线级观察, 会话事件里不留痕——推理-only 响应
+        # (DeepSeek 系/GLM 兼容端点偶发)零内容块直达「无消息内容!」。
+        # 与 anthropic 版同一兜底: 循环结束补 ThinkingEvent 快照, 仅供
+        # build_assistant_message 零内容块时降级, 正常路径照旧丢弃。
+        reasoning_acc = ""
 
         def _emit_wire(ev: WireEvent) -> None:
             if wire is not None:
@@ -1234,6 +1260,7 @@ class OpenAIApiClient(ApiClient):
                 if reasoning:
                     echo.on_thinking(reasoning)
                     _emit_wire(WireThinkingDelta(text=reasoning))
+                    reasoning_acc += reasoning
                 for tc in (getattr(delta, "tool_calls", None) or []):
                     info = pending_tools.get(tc.index)
                     fn = getattr(tc, "function", None)
@@ -1267,6 +1294,11 @@ class OpenAIApiClient(ApiClient):
         if usage_acc:
             _emit_wire(WireUsage(**usage_acc))
         _emit_wire(WireStop(stop_reason=stop_reason))
+        # 收尾补快照(与 anthropic 版同一兜底, 见 stream 前部 reasoning_acc
+        # 注释): OpenAI 路径循环内从不产生 ThinkingEvent, 有累积即补,
+        # 插在 stop 事件之前保持"stop 恰为末事件"的形状。
+        if reasoning_acc.strip():
+            events.append(ThinkingEvent(text=reasoning_acc))
         events.append(MessageStopEvent(
             usage=UsageInfo(**usage_acc) if usage_acc else None,
             stop_reason=stop_reason,

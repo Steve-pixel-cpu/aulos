@@ -596,17 +596,45 @@ async function loadSessionHistory(id) {
     run.curThinking = null;
     run.activeToolCard = null;
     run.liveToolCards = {};
-    pinnedCol = col; pinnedRun = run;
-    col.innerHTML = "";
-    for (const m of data.messages) renderHistoryMessage(m);
+    // 时间分片回放: 长会话几百条历史一次同步渲染会阻塞主线程数秒——
+    // 界面冻结、切不了别的会话。每渲染一条查一次耗时, 超过阈值就主动
+    // 让出主线程。分片渲染写进游离列 buf（不在文档树: 不排版不绘制,
+    // 加载中占位保持可见）, 渲染完一次性换入真列再同步滚到底——
+    // 用户只经历"加载中→最新内容", 没有逐条刷出和滚动跳动。
+    // pinned 只在同步渲染片段内置好、让出前置回 null: 分片间隙的 WS
+    // 事件仍按 state.sessionId 路由到可见列(占位符后追加, 换入时保留)。
+    const buf = document.createElement("div");
+    buf.className = "msg-col";
+    const placeholder = col.firstElementChild;   // "加载中…"占位
+    const CHUNK_MS = 50;
+    let t0 = performance.now();
+    for (const m of data.messages) {
+      pinnedCol = buf; pinnedRun = run;
+      renderHistoryMessage(m);
+      if (performance.now() - t0 > CHUNK_MS) {
+        pinnedCol = null; pinnedRun = null;
+        await new Promise(res => setTimeout(res, 0));
+        t0 = performance.now();
+      }
+    }
+    pinnedCol = null; pinnedRun = null;
     // 悬空 tool_use 收口: 轮次早已结束的, 结果永远来不了;
     // 仍在跑的轮次保留"运行中", 等活动流的 tool_result 按 id 配对闭合
     if (!run.busy) {
-      col.querySelectorAll('.tool-row[data-state="run"]').forEach(el => setToolState(el, "stopped"));
+      buf.querySelectorAll('.tool-row[data-state="run"]').forEach(el => setToolState(el, "stopped"));
     }
-    collapseFinishedToolGroups(col);   // 历史回放: 已结束的分组回到默认折叠
-    pinnedCol = null; pinnedRun = null;
+    collapseFinishedToolGroups(buf);   // 历史回放: 已结束的分组回到默认折叠
+    // 一次性换入: 摘掉占位符, 历史整体进真列; 加载中间隙实时追加的
+    // 流式节点(在占位符之后)挪到历史尾部——时序天然更晚, 且
+    // run.curBubble 等指针指向的仍是原节点, 清空重绘会丢在途轮次
+    const live = Array.from(col.childNodes).filter(n => n !== placeholder);
+    col.textContent = "";
+    while (buf.firstChild) col.appendChild(buf.firstChild);
+    for (const n of live) col.appendChild(n);
     run.loaded = true;
+    // selectSession 不再 await 本函数: 滚动到底在这里补——同一任务内
+    // 先滚后绘制, 观感即"加载中"直接跳到最新, 无滚动过程
+    if (state.sessionId === id) scrollToBottom(true);
   } catch (e) {
     col.innerHTML = "";
     pinnedCol = col; pinnedRun = run;
@@ -633,10 +661,13 @@ async function selectSession(id) {
   connectWs(id);                // 已有连接则复用; 旧会话的 WS 原样保留, 后台继续跑
   colOf(id);   // 确保该会话的消息列已创建（惰性建列）
   showCol(id);
+  run.unread = 0;               // 打开即已读: 不等历史加载完（否则徽标挂几秒）
   // 历史只在首次切入时拉一次; 之后切换不再重拉——流式 DOM 一直活着,
-  // 后台轮次的内容就写在本列里, 切回即所见
-  if (!run.loaded && !run.loading) await loadSessionHistory(id);
-  run.unread = 0;               // 回到前台看完了, 未读清零
+  // 后台轮次的内容就写在本列里, 切回即所见。
+  // 不 await: 长会话首次切入要拉全量历史并分片渲染, 挂起会让本次切换
+  // 的收尾（输入框/下拉回显）迟迟不做, 且快速连点两个会话时两次
+  // selectSession 在 await 边界交错、状态写到错误的会话上。
+  if (!run.loaded && !run.loading) loadSessionHistory(id);
   renderSessionList();
   refreshWorkdirTag();
   setBusyUi(run.busy);

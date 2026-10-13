@@ -266,6 +266,39 @@ def test_call_log_swallows_errors(tmp_path, monkeypatch):
         usage=TokenUsage(input_tokens=1, output_tokens=1))
 
 
+def test_call_log_error_records_event_shape(tmp_path, monkeypatch):
+    """失败轮留痕: 记错误文本与事件形状——零内容块归因的关键证据。"""
+    from aulos.api_client import MessageStopEvent, ThinkingEvent
+
+    monkeypatch.setattr(call_log, "LOG_DIR", tmp_path)
+    call_log.log_model_error(
+        session="20261012-123926", iteration=59, thinking_level="low",
+        duration_s=50.1,
+        events=[ThinkingEvent(text="只有半截思考"), MessageStopEvent(usage=None)],
+        error=RuntimeError("无消息内容!"))
+
+    record = json.loads(
+        list(tmp_path.glob("runtime-*.log"))[0].read_text(
+            encoding="utf-8").splitlines()[0])
+    assert record["session"] == "20261012-123926"
+    assert record["iter"] == 59
+    assert record["error"] == "无消息内容!"
+    assert record["event_counts"] == {"ThinkingEvent": 1, "MessageStopEvent": 1}
+    assert record["thinking_chars"] == len("只有半截思考")
+    assert record["stop_reason"] is None
+
+
+def test_call_log_error_swallows_errors(tmp_path, monkeypatch):
+    """留痕与调用日志同一纪律: best-effort, 绝不影响主流程。"""
+    blocker = tmp_path / "not-a-dir"
+    blocker.write_text("x", encoding="utf-8")
+    monkeypatch.setattr(call_log, "LOG_DIR", blocker)
+
+    call_log.log_model_error(
+        session=None, iteration=1, thinking_level="low", duration_s=0.1,
+        events=[], error=RuntimeError("消息无法结束!"))
+
+
 def test_call_log_records_prefix_fingerprint(tmp_path, monkeypatch):
     # messages 视图传入时记录 prefix_fp: cache_read=0 的归因证据
     # （指纹不变 = 供应商缓存被逐出; 指纹变了 = 我们改了请求视图）

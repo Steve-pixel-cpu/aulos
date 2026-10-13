@@ -24,6 +24,8 @@ from aulos.api_client import (
     WireToolEnd,
     WireUsage,
     WireStop,
+    ThinkingEvent,
+    TextDeltaEvent,
 )
 from aulos.models import (Message, TextContentBlock, ToolContentBlock,
                     ToolResultContentBlock, ImageContentBlock)
@@ -32,6 +34,7 @@ from aulos.retry import (ApiError as RetryApiError,
                    AuthError as RetryAuthError,
                    ConnectionError as RetryConnectionError,
                    HttpApiError as RetryHttpApiError)
+from aulos.runtime import build_assistant_message
 
 
 # ---------------------------------------------------------------------------
@@ -187,7 +190,9 @@ def test_stream_tool_call_reassembly_across_fragments():
 
 
 def test_stream_reasoning_content_drives_thinking_only():
-    """思考增量只进 wire 与指示器, 不进返回事件（不得污染会话历史）。"""
+    """思考增量进 wire; 会话事件里只以 ThinkingEvent 快照留痕——
+    正文在场时 build_assistant_message 照旧丢弃快照(历史不污染),
+    快照仅供"零内容块"废响应时降级兜底(与 anthropic 版对齐)。"""
     c = _client()
     chunks = [
         _chunk(delta=NS(reasoning_content="想一下")),
@@ -199,8 +204,31 @@ def test_stream_reasoning_content_drives_thinking_only():
                                  lambda **kw: iter(chunks))
     events = c.stream(system_prompt=[], messages=[Message.user_text("hi")],
                       on_event=wire.append)
-    assert [e.text for e in events if hasattr(e, "text")] == ["答案"]   # 思考未入
+    assert [e.text for e in events if isinstance(e, TextDeltaEvent)] == ["答案"]
+    # 兜底快照在场: reasoning 增量到过, 循环收尾补 ThinkingEvent
+    thinking = [e for e in events if isinstance(e, ThinkingEvent)]
+    assert len(thinking) == 1 and thinking[0].text == "想一下"
     assert any(isinstance(e, WireThinkingDelta) and e.text == "想一下" for e in wire)
+    # 降级路径走真代码: 正文在场 → 快照被丢弃, 历史只有正文
+    msg, _ = build_assistant_message(events)
+    assert [b.text for b in msg.content] == ["答案"]
+
+
+def test_stream_reasoning_only_降级而非无消息内容():
+    """纯思考流(零正文零工具): 收尾补快照 → build 走 L3 降级——
+    该路径从前连快照都没有, 直达「无消息内容!」整轮报废。"""
+    c = _client()
+    chunks = [
+        _chunk(delta=NS(reasoning_content="推演中")),
+        _chunk(finish="stop"),
+    ]
+    pytest.MonkeyPatch().setattr(c.raw_client.chat.completions, "create",
+                                 lambda **kw: iter(chunks))
+    events = c.stream(system_prompt=[], messages=[Message.user_text("hi")])
+    msg, _ = build_assistant_message(events)
+    assert len(msg.content) == 1
+    assert "推演中" in msg.content[0].text
+    assert "thinking 兜底" in msg.content[0].text
 
 
 def test_stream_kwargs_system_and_tools():

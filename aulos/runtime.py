@@ -1485,7 +1485,19 @@ class ConversationRuntime:
                     self.usage().record(usage=_token_usage_from(stop_usage))
                 self._notify_iterate()   # 一致点: 用户消息已落定, 无需修补
                 raise TurnInterrupted()
-            message, token_usage = build_assistant_message(events)
+            try:
+                message, token_usage = build_assistant_message(events)
+            except RuntimeError as exc:
+                # 失败轮留痕: 「无消息内容!」/「消息无法结束!」此前不落任何
+                # 日志, 排查只能靠时间戳反推。记下事件形状后原样抛出,
+                # 收束语义与从前一致（TurnInterrupted 不是 RuntimeError,
+                # 打断路径不经过这里, 不会被误记成模型错误）。
+                call_log.log_model_error(
+                    session=self._log_tag, iteration=iterations,
+                    thinking_level=effective_level,
+                    duration_s=time.perf_counter() - _call_started,
+                    events=events, error=exc)
+                raise
             truncated = any(
                 isinstance(e, MessageStopEvent) and e.stop_reason == "max_tokens"
                 for e in events)

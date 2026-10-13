@@ -223,3 +223,171 @@ def test_build_assistant_message_有正文时thinking不进历史():
     texts = [b.text for b in msg.content if getattr(b, "text", None)]
     assert texts == ["正文回答"]
     assert not any("内心独白" in (getattr(b, "text", "") or "") for b in msg.content)
+
+
+# ------------------------------------------------------------
+# 流级兜底: 块收尾事件缺失(api_client.stream 循环收尾补 ThinkingEvent)
+# 20261012 现场: GLM 兼容层 50 秒思考增量照常到前端, content_block_stop
+# 始终不来, 块级快照落空 → 「无消息内容!」整轮报废。流级累积器
+# 不依赖线序完整性, 只要 thinking 增量到过就兜得住。
+# ------------------------------------------------------------
+
+class _NS:
+    """模拟 anthropic SDK 原始事件对象（stream() 按 .type 属性分派）。"""
+    def __init__(self, **kw):
+        self.__dict__.update(kw)
+
+
+def _thinking_stream_events(closed: bool) -> list:
+    """thinking 增量×2 → (可选块收尾) → stop_reason → message_stop。"""
+    evs = [
+        _NS(type="content_block_start", index=0,
+            content_block=_NS(type="thinking")),
+        _NS(type="content_block_delta", index=0,
+            delta=_NS(type="thinking_delta", thinking="先排查")),
+        _NS(type="content_block_delta", index=0,
+            delta=_NS(type="thinking_delta", thinking="进程和日志")),
+    ]
+    if closed:
+        evs.append(_NS(type="content_block_stop", index=0))
+    evs += [
+        _NS(type="message_delta",
+            delta=_NS(stop_reason="end_turn"),
+            usage=_NS(input_tokens=10, output_tokens=5,
+                      cache_creation_input_tokens=None,
+                      cache_read_input_tokens=None)),
+        _NS(type="message_stop"),
+    ]
+    return evs
+
+
+def _claude_client_streaming(monkeypatch, raw_events):
+    from aulos.api_client import ClaudeApiClient
+
+    class FakeStream:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def __iter__(self):
+            yield from raw_events
+
+    class FakeMessages:
+        def stream(self, **kwargs):
+            return FakeStream()
+
+    client = ClaudeApiClient(api_key="k", model="m", emit_output=False)
+    monkeypatch.setattr(client, "client",
+                        type("FakeClient", (), {"messages": FakeMessages()})())
+    return client
+
+
+def test_stream_块收尾缺失_流级快照兜底(monkeypatch):
+    """content_block_stop 整条流不发: 循环收尾用流级累积补 ThinkingEvent,
+    build 走 L3 降级而非抛「无消息内容!」——20261012 现场的最小复现。"""
+    from aulos.api_client import MessageStopEvent, ThinkingEvent
+
+    client = _claude_client_streaming(
+        monkeypatch, _thinking_stream_events(closed=False))
+    events = client.stream(system_prompt=["s"], messages=[])
+
+    thinking = [e for e in events if isinstance(e, ThinkingEvent)]
+    assert len(thinking) == 1
+    assert "先排查" in thinking[0].text and "进程和日志" in thinking[0].text
+    assert isinstance(events[-1], MessageStopEvent)   # stop 恰为末事件
+    msg, _ = build_assistant_message(events)
+    assert "thinking 兜底" in msg.content[0].text     # 显式降级标记
+    assert "进程和日志" in msg.content[0].text
+
+
+def test_stream_块正常闭合_快照不重复(monkeypatch):
+    """收尾事件齐全时行为与从前一致: 块级快照已入, 流级补快照跳过。"""
+    from aulos.api_client import ThinkingEvent
+
+    client = _claude_client_streaming(
+        monkeypatch, _thinking_stream_events(closed=True))
+    events = client.stream(system_prompt=["s"], messages=[])
+    thinking = [e for e in events if isinstance(e, ThinkingEvent)]
+    assert len(thinking) == 1
+    assert thinking[0].text == "先排查进程和日志"
+
+
+def test_stream_思考未闭合但有正文_历史只留正文(monkeypatch):
+    """思考块未闭合 + 正文在场: 快照仅作兜底原料, 历史不污染。"""
+    raw = [
+        _NS(type="content_block_start", index=0,
+            content_block=_NS(type="thinking")),
+        _NS(type="content_block_delta", index=0,
+            delta=_NS(type="thinking_delta", thinking="内心独白")),
+        _NS(type="content_block_start", index=1,
+            content_block=_NS(type="text")),
+        _NS(type="content_block_delta", index=1,
+            delta=_NS(type="text_delta", text="正文回答")),
+        _NS(type="message_delta",
+            delta=_NS(stop_reason="end_turn"),
+            usage=_NS(input_tokens=10, output_tokens=5,
+                      cache_creation_input_tokens=None,
+                      cache_read_input_tokens=None)),
+        _NS(type="message_stop"),
+    ]
+    client = _claude_client_streaming(monkeypatch, raw)
+    events = client.stream(system_prompt=["s"], messages=[])
+    msg, _ = build_assistant_message(events)
+    texts = [b.text for b in msg.content if getattr(b, "text", None)]
+    assert texts == ["正文回答"]
+
+
+# ------------------------------------------------------------
+# 失败轮留痕: runtime 在 build_assistant_message 拒收时记日志再抛
+# (20261012 排查时失败轮不落任何痕迹, 只能靠时间戳反推)
+# ------------------------------------------------------------
+
+class _ScriptedClient:
+    """按脚本依次返回 events 列表的假 api_client(同 test_auto_compact_signal)。"""
+    def __init__(self, script: list):
+        self.script = list(script)
+        self.calls = 0
+        self.thinking_level = "medium"
+
+    def stream(self, system_prompt, messages, thinking_level=None, *,
+               model=None, include_tools=True, emit_output=None,
+               on_event=None) -> list:
+        events = self.script[self.calls] if self.calls < len(self.script) else self.script[-1]
+        self.calls += 1
+        return events
+
+
+class _NoopExecutor:
+    def execute(self, tool_name, input, tool_use_id=None) -> str:
+        return ""
+
+
+def test_runtime_零内容块响应_原样抛错且落留痕日志(tmp_path, monkeypatch):
+    """主 agent 收到零内容块响应: 「无消息内容!」照旧抛给上层(行为不变),
+    但失败形状必须先落日志——event_counts 就是归因兼容层线序的一手证据。"""
+    import aulos.call_log as call_log
+    from aulos.api_client import MessageStopEvent
+    from aulos.models import Session
+    from aulos.permissions import ALLOW_MODE, PermissionPolicy
+    from aulos.runtime import ConversationRuntime
+
+    monkeypatch.setattr(call_log, "LOG_DIR", tmp_path)
+    runtime = ConversationRuntime(
+        session=Session(),
+        api_client=_ScriptedClient([[MessageStopEvent(usage=None)]]),
+        tool_executor=_NoopExecutor(),
+        permission_policy=PermissionPolicy(active_mode=ALLOW_MODE),
+        system_prompt=["助手"])
+
+    with pytest.raises(RuntimeError, match="无消息内容"):
+        runtime.run_turn("hi")
+
+    files = list(tmp_path.glob("runtime-*.log"))
+    assert len(files) == 1
+    record = json.loads(files[0].read_text(encoding="utf-8").splitlines()[0])
+    assert record["error"] == "无消息内容!"
+    assert record["event_counts"] == {"MessageStopEvent": 1}
+    assert record["thinking_chars"] == 0
+    assert record["iter"] == 1
