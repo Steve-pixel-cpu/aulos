@@ -222,8 +222,14 @@ def _apply_provider_config(cfg: dict) -> None:
     active 缺失/指向不存在或被禁用的供应商时: 保持未配置空 key（初始化页接管）。
     active 无 model: 只应用连接信息, 模型留待用户显式添加。
     协议与当前单例不同（如 anthropic → openai）时经工厂重建实例; 同协议
-    走 configure() 原地换连接信息, 保留 cache 降级等实例内运行态。"""
+    走 configure() 原地换连接信息, 保留 cache 降级等实例内运行态。
+
+    重建实例时必须回写 server_common.api_client: 功能域（server_pets 等）
+    `from server_common import api_client` 持有的是那份绑定——只改本模块
+    命名空间会让它们拿过期实例（用户配 openai 供应商时桌宠点评永远走
+    空 key 兜底, 5 条 test_pets 用例同时假失败, 20261015 实测）。"""
     global api_client
+    import aulos.web.server_common as _common   # noqa: PLC0415
     if _provider_ready(cfg):
         active = cfg.get("active") or {}
         prov = next((p for p in cfg.get("providers", [])
@@ -244,6 +250,7 @@ def _apply_provider_config(cfg: dict) -> None:
                 should_stop_provider=_should_stop_now,
                 on_event_provider=lambda: _mirror_on_event(dispatch.current_sink()),
             )
+            _common.api_client = api_client   # 同步给功能域的 from-import 绑定
         else:
             api_client.configure(
                 base_url=base_url,
