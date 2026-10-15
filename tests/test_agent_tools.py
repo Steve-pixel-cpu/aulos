@@ -14,6 +14,7 @@ import os
 import shutil
 import subprocess
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import tempfile
 
@@ -466,6 +467,104 @@ def test_reconcile_keeps_terminal_states():
     n = orch.reconcile_orphans()
     assert n == 0
     assert orch.get_status(agent_id).status == "completed"
+
+
+# ------------------------------------------------------------
+# 9. 过期清理（multi_agent.cleanup_expired）
+#    终态记录（completed/failed）在结果收割后没有留存价值, 永久累积
+#    会拖慢 list_agents 的 glob+逐文件解析。只删超期的终态记录;
+#    running/pending 与未过期的记录一律不动（worker 线程可能还在写）。
+# ------------------------------------------------------------
+
+def _age_manifest(orch, agent_id, days):
+    """把 manifest 的 created_at 拨回 N 天前, 模拟旧记录。"""
+    json_path = orch._store_dir / f"{agent_id}.json"
+    d = json.loads(json_path.read_text(encoding="utf-8"))
+    old = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    d["created_at"] = old
+    d["started_at"] = old
+    json_path.write_text(json.dumps(d), encoding="utf-8")
+
+
+def test_cleanup_removes_old_terminal_records():
+    """超期终态记录: 两个文件（.json + .md）都被删, 返回删除数。"""
+    orch = agent_tools._toolbox._orchestrator
+    old_id = _spawn_and_complete(description="过期记录", result="旧结果")
+    fresh_id = _spawn_and_complete(description="新鲜记录")
+    _age_manifest(orch, old_id, days=8)   # 超过 7 天
+    removed = orch.cleanup_expired(retention_days=7)
+    assert removed == 1
+    assert not (orch._store_dir / f"{old_id}.json").exists()
+    assert not (orch._store_dir / f"{old_id}.md").exists()
+    # 新鲜的终态记录不受影响
+    assert orch.get_status(fresh_id).status == "completed"
+
+
+def test_cleanup_keeps_running_regardless_of_age():
+    """running 记录哪怕很老也不能删（worker 可能还在写终态）。"""
+    orch = agent_tools._toolbox._orchestrator
+    rec = RecordingSpawn()
+    orch2 = AgentOrchestrator(orch._store_dir, spawn_fn=rec)
+    m = orch2.spawn_agent("很老的 running", "p", _owner_pid=os.getpid())
+    _age_manifest(orch, m.agent_id, days=30)
+    removed = orch.cleanup_expired(retention_days=7)
+    assert removed == 0
+    assert orch.get_status(m.agent_id).status == "running"
+
+
+def test_cleanup_keeps_recent_failed_record():
+    """未过期的 failed 记录保留（错误信息还在排查窗口内）。"""
+    orch = agent_tools._toolbox._orchestrator
+    rec = RecordingSpawn()
+    orch2 = AgentOrchestrator(orch._store_dir, spawn_fn=rec)
+    try:
+        orch2.spawn_agent("", "")   # 空描述直接 ValueError, 不产生文件
+    except ValueError:
+        pass
+    m = orch2.spawn_agent("新失败", "p", _owner_pid=1)  # PID 1 视为死 → 后续可标 failed
+    orch2.reconcile_orphans()   # 把它标成 failed（终态）
+    _age_manifest(orch, m.agent_id, days=2)   # 2 天, 未过期
+    removed = orch.cleanup_expired(retention_days=7)
+    assert removed == 0
+    assert orch.get_status(m.agent_id).status == "failed"
+
+
+def test_cleanup_removes_old_failed_record():
+    """超期的 failed 记录同样清理。"""
+    orch = agent_tools._toolbox._orchestrator
+    rec = RecordingSpawn()
+    orch2 = AgentOrchestrator(orch._store_dir, spawn_fn=rec)
+    m = orch2.spawn_agent("老失败", "p", _owner_pid=1)
+    orch2.reconcile_orphans()   # 标 failed
+    _age_manifest(orch, m.agent_id, days=10)
+    removed = orch.cleanup_expired(retention_days=7)
+    assert removed == 1
+    assert not (orch._store_dir / f"{m.agent_id}.json").exists()
+    assert not (orch._store_dir / f"{m.agent_id}.md").exists()
+
+
+def test_reconcile_also_runs_cleanup():
+    """清理挂在对账之后: 启动时 reconcile_orphans 顺带清一次过期记录。"""
+    orch = agent_tools._toolbox._orchestrator
+    old_id = _spawn_and_complete(description="对账时顺带清理", result="旧")
+    _age_manifest(orch, old_id, days=8)
+    n = orch.reconcile_orphans()
+    # 返回值仍是对账数（无孤儿）, 清理是副作用
+    assert n == 0
+    assert not (orch._store_dir / f"{old_id}.json").exists()
+
+
+def test_cleanup_default_retention_is_seven_days():
+    """缺省保留 7 天: 6 天前的记录保留, 8 天前的删除。"""
+    orch = agent_tools._toolbox._orchestrator
+    keep_id = _spawn_and_complete(description="六天前")
+    drop_id = _spawn_and_complete(description="八天前")
+    _age_manifest(orch, keep_id, days=6)
+    _age_manifest(orch, drop_id, days=8)
+    removed = orch.cleanup_expired()   # 不传参, 用缺省值
+    assert removed == 1
+    assert (orch._store_dir / f"{keep_id}.json").exists()
+    assert not (orch._store_dir / f"{drop_id}.json").exists()
 
 
 def test_reap_ready_ignores_delivered():

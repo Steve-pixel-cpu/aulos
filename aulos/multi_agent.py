@@ -3,7 +3,7 @@ import os
 import sys
 import threading
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from pathlib import Path
 from textwrap import dedent
@@ -519,14 +519,57 @@ class AgentOrchestrator:
         的跳过; 没有 owner_pid 的旧版 manifest 无法验尸, 按孤儿保守处理。
 
         简化假设: 对账只在进程启动时调用一次, 此刻本进程的 _default_spawn_fn
-        还没跑过。运行期绝不能调用。"""
+        还没跑过。运行期绝不能调用。
+
+        收尾顺带跑一次过期清理（cleanup_expired）: 终态记录永久累积会
+        拖慢 list_agents 的 glob+逐文件解析。只删超期终态, running 一律不动。"""
         orphans = [m for m in self.list_agents()
                    if m.status == AgentStatus.RUNNING.value
                    and not (m.owner_pid and pid_alive(m.owner_pid))]
         for m in orphans:
             self.fail_agent(m.agent_id,
                             "进程重启时该 worker 仍在运行, 已标记为失败（结果未产出）")
+        try:
+            self.cleanup_expired()
+        except Exception:
+            pass   # 清理是锦上添花, 失败不阻断对账
         return len(orphans)
+
+    # 默认保留期（天）: 终态记录超期即清理。7 天覆盖"上次会话忘了收割,
+    # 过几天回来看结果"的场景; 再旧的结果即使想看, 项目状态也早变了,
+    # 记录本身失去参考价值。
+    DEFAULT_RETENTION_DAYS = 7
+
+    def cleanup_expired(self, retention_days: int = DEFAULT_RETENTION_DAYS) -> int:
+        """删除超过保留期的终态（completed/failed）记录, 返回删除数。
+
+        只动终态: running/pending 的记录哪怕再旧也不删——worker 线程可能
+        正在写终态（先 .md 后 .json）, 删掉会造成 .md/.json 分裂; 孤儿
+        running 由 reconcile_orphans 在启动时先定罪成 failed, 下次启动
+        的清理自然回收。pending 状态 spawn 立即转 running, 实际不会出现。
+
+        .md 与 .json 一起删（成对存在, 单留一个会误导）。删除失败不抛:
+        文件被读者占用（Windows）时跳过, 下次启动再试。"""
+        cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
+        removed = 0
+        for m in self.list_agents():
+            if m.status not in (AgentStatus.COMPLETED.value, AgentStatus.FAILED.value):
+                continue
+            try:
+                created = datetime.fromisoformat(m.created_at)
+            except (TypeError, ValueError):
+                continue   # 时间戳坏了的不敢删, 留给人工处理
+            if created.tzinfo is None:
+                created = created.replace(tzinfo=timezone.utc)
+            if created >= cutoff:
+                continue
+            for suffix in (".json", ".md"):
+                try:
+                    (self._store_dir / f"{m.agent_id}{suffix}").unlink(missing_ok=True)
+                except OSError:
+                    pass   # 被占用等瞬时错误: 留到下次启动再试
+            removed += 1
+        return removed
 
 
     def fail_agent(self, agent_id: str, error: str) :
