@@ -101,6 +101,35 @@ test("超长思考: raw 裁剪到窗口上限, 显示只留尾部", () => {
   assert.equal(run.curThinking.live.textContent.length, 4000, "显示窗口只留尾 4000");
 });
 
+test("thinking_end 缺失兜底: 正文先到 → 悬空真思考行就地收口(客户端计时)", () => {
+  // GLM 兼容层偶发整条流不发 content_block_stop → thinking_end 永远不来,
+  // 前端"思考中…"+实时文本冻在正文上方(20261014 现场)。正文/工具即思考
+  // 结束的实证: 就地按客户端计时收口, 胶囊定格为耗时文案。
+  const w = setup("s-dangling-text");
+  const col = w.colOf("s-dangling-text");
+  w.onThinkingStart({}, "s-dangling-text");
+  w.onThinkingDelta({ text: "想完这一步" }, "s-dangling-text");
+  w.onTextDelta({ text: "正文来了" }, "s-dangling-text");
+  assert.equal(col.querySelector(".think-live"), null, "实时文本已撤");
+  assert.equal(col.querySelector(".think-live-wrap"), null, "包装行拆除");
+  const row = col.querySelector(".think-row");
+  assert.ok(row, "胶囊保留定格, 不像乐观胶囊那样整个移除");
+  assert.ok(!row.classList.contains("thinking"), "退出动画态");
+  assert.match(row.textContent, /思考 · 持续了/);
+});
+
+test("thinking_end 缺失兜底: 工具先到 → 悬空真思考行就地收口", () => {
+  const w = setup("s-dangling-tool");
+  const col = w.colOf("s-dangling-tool");
+  w.onThinkingStart({}, "s-dangling-tool");
+  w.onThinkingDelta({ text: "想想" }, "s-dangling-tool");
+  w.onToolUseStarted({ id: "t1", name: "read_file" }, "s-dangling-tool");
+  assert.equal(col.querySelector(".think-live-wrap"), null, "包装行拆除");
+  const row = col.querySelector(".think-row");
+  assert.ok(row, "胶囊保留定格");
+  assert.match(row.textContent, /思考 · 持续了/);
+});
+
 test("乐观胶囊被撤（正文先到）: 文本与包装行一起消失, 胶囊一并移除", () => {
   const w = setup("s-drop");
   const col = w.colOf("s-drop");

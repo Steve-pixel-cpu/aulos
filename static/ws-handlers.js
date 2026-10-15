@@ -146,12 +146,23 @@ function bumpUnread(sid) {
 }
 
 /* ---------- 正文流式（sid 感知: 后台会话写进自己的列） ---------- */
+/* 悬空真思考行的纵深防御: thinking_end 因兼容层缺 content_block_stop 而
+ * 永远不来时(GLM 线, 服务端有镜像补发兜底, 但历史窗口/丢包仍可漏),
+ * 正文/工具事件即思考已结束的实证——就地按客户端计时收口。真思考行
+ * 定格为耗时胶囊(不像乐观胶囊那样整个移除), 实时文本与包装行一并拆除。 */
+function closeDanglingThinking(run, sid) {
+  const cur = run.curThinking;
+  if (!cur || cur.optimistic) return;   // 乐观胶囊有专门的撤销路径, 不在此处理
+  onThinkingEnd({}, sid);
+}
+
 function onTextDelta(msg, sid) {
   const run = runOf(sid);
   clearRateLimitNote(run);   // 正文已到: 限流重试成功, 撤提示行
   const active = sid === state.sessionId;
   run.awaiting = false;                    // 首个内容事件: 等待空窗结束
   if (active) syncThinkingIndicator();
+  closeDanglingThinking(run, sid);   // 悬空思考行: 正文即收口实证
   dropOptimisticThinking(run);   // 正文先到: 撤掉还没被 thinking_start 接管的乐观胶囊
   if (!run.curBubble) {
     run.curBubble = addAssistantBubble("", "", colOf(sid));
@@ -373,10 +384,11 @@ function updateToolGroupHeader(group) {
     sum.textContent = rows.length === 1 ? "运行中…" : "运行中 " + done + "/" + rows.length + "…";
     sum.className = "tg-sum run";
   } else {
-    /* 摘要 = 迷你计数胶囊(成功绿/需注意橙) + 总耗时小字。
-     * 胶囊比 "✓5 · !1" 的细杆符号好认; 耗时来自各行闭合时累加的
+    /* 摘要 = 着色粗体计数文本(成功绿/需注意橙), 无符号无容器。
+     * 数字颜色即状态语言; 耗时来自各行闭合时累加的
      * group._ms(setToolState 里 += ), 历史回放无 _t0 则无耗时, 照旧不显示。 */
-    let html = '<span class="cnt ok">' + ok + '</span>';
+    let html = "";
+    if (ok) html += '<span class="cnt ok">' + ok + '</span>';
     if (bad) html += '<span class="cnt bad">' + bad + '</span>';
     if (group._ms >= 100) html += '<span class="tg-dur">' + fmtToolDur(group._ms) + '</span>';
     sum.innerHTML = html;
@@ -716,6 +728,7 @@ function onToolUseStarted(msg, sid) {
   run.awaiting = false;                    // 工具卡已是可见反馈: 空窗结束
   clearRateLimitNote(run);
   if (active) syncThinkingIndicator();
+  closeDanglingThinking(run, sid);   // 悬空思考行: 工具卡即收口实证
   flushAssistantBubble(run);
   dropOptimisticThinking(run);
   const card = addToolCard({ id: msg.id, name: msg.name, input: "" }, colOf(sid));
@@ -730,6 +743,7 @@ function onToolUse(msg, sid) {
   run.awaiting = false;                    // 工具卡已是可见反馈: 空窗结束
   clearRateLimitNote(run);   // 工具调用已到: 限流重试成功, 撤提示行
   if (active) syncThinkingIndicator();
+  closeDanglingThinking(run, sid);   // 悬空思考行: 工具卡即收口实证
   flushAssistantBubble(run);   // 工具前先收掉流式中的正文气泡
   dropOptimisticThinking(run);   // 工具先于思考到达: 撤掉乐观胶囊（工具卡已是反馈）
   // tool_use_started 已提前建卡: 就地补全真实参数, 不重复建卡

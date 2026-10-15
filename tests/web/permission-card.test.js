@@ -18,11 +18,30 @@ const FILES = ["ui-dialogs.js", "notify.js", "app.js", "settings-extras.js",
   "desktop.js", "bubbles.js", "msg-extras.js", "ws-handlers.js",
   "sidebar.js", "settings-page.js"];   // = index.html 完整 defer 序
 
+// 本文件会注册会话并渲染会话列表, 渲染链启动的常驻刷新器（时间戳轮询等）
+// 留下活句柄钉死事件循环——测试进程不退出, node --test 挂到超时。
+// afterEach 统一关窗释放句柄; 单测子进程模式跑整个文件时同样受益。
+// 关窗瞬间 jsdom 内部尚有排队定时器回调引用已置 null 的窗口（'_origin'
+// 噪音）: 先让一拍宏任务排空再关, 漏网的走 unhandledRejection 吸收。
+process.on("unhandledRejection", (e) => {
+  if (String(e && e.message).includes("'_origin'")) return;   // jsdom 关窗噪音
+  console.error("unhandledRejection:", e);
+});
+const bootedWindows = [];
+test.afterEach(async () => {
+  await new Promise(r => setImmediate(r));   // 排空已入队的 jsdom 回调
+  while (bootedWindows.length) {
+    try { bootedWindows.pop().close(); } catch (e) { /* 已关: 忽略 */ }
+  }
+  await new Promise(r => setImmediate(r));   // 关窗后残余回调落地
+});
+
 function boot() {
   const html = fs.readFileSync(path.join(STATIC, "index.html"), "utf-8")
     .replace(/<script[\s\S]*?<\/script>/g, "")
     .replace(/<link[^>]*rel="stylesheet"[^>]*>/g, "");
   const window = makeDom(html);
+  bootedWindows.push(window);
   window.fetch = async () => { throw new TypeError("no backend in tests"); };
   const src = FILES.map(f => fs.readFileSync(path.join(STATIC, f), "utf-8")).join("\n;\n");
   window.eval(src + "\n;\nwindow.__api = { get state() { return state; }, runOf, onToolUseStarted, onPermissionRequest, onPermissionResolved, respondPermission };");

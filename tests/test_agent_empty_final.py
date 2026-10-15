@@ -314,6 +314,92 @@ def test_stream_块正常闭合_快照不重复(monkeypatch):
     assert thinking[0].text == "先排查进程和日志"
 
 
+def test_stream_思考块未闭合_镜像补发thinking_end(monkeypatch):
+    """20261014 现场: 块收尾缺失时数据侧有流级快照兜底, 镜像侧没有——
+    前端"思考中…"实时行收不到 thinking_end, 冻在正文/工具上方。
+    兜底: 停止事件前补发 WireThinkingEnd, 恰一发。"""
+    from aulos.api_client import (WireThinkingDelta, WireThinkingEnd,
+                                  WireStop)
+
+    client = _claude_client_streaming(
+        monkeypatch, _thinking_stream_events(closed=False))
+    seen = []
+    client.stream(system_prompt=["s"], messages=[], on_event=seen.append)
+    types = [type(e).__name__ for e in seen]
+    assert types.count("WireThinkingEnd") == 1, types
+    assert types[-1] == "WireStop"
+    assert types.index("WireThinkingEnd") > types.index(
+        type(WireThinkingDelta(text="")).__name__)
+
+
+def test_stream_思考未闭合来正文_镜像先补end再镜像正文(monkeypatch):
+    """思考块悬空 + 正文块开始: 线序保证块不交错, 补发的 end 必须落在
+    正文 wire 事件之前——否则前端思考行挂在正文上方。"""
+    from aulos.api_client import WireTextDelta, WireThinkingEnd, WireStop
+
+    raw = [
+        _NS(type="content_block_start", index=0,
+            content_block=_NS(type="thinking")),
+        _NS(type="content_block_delta", index=0,
+            delta=_NS(type="thinking_delta", thinking="内心独白")),
+        _NS(type="content_block_start", index=1,
+            content_block=_NS(type="text")),
+        _NS(type="content_block_delta", index=1,
+            delta=_NS(type="text_delta", text="正文回答")),
+        _NS(type="message_delta",
+            delta=_NS(stop_reason="end_turn"),
+            usage=_NS(input_tokens=10, output_tokens=5,
+                      cache_creation_input_tokens=None,
+                      cache_read_input_tokens=None)),
+        _NS(type="message_stop"),
+    ]
+    client = _claude_client_streaming(monkeypatch, raw)
+    seen = []
+    client.stream(system_prompt=["s"], messages=[], on_event=seen.append)
+    types = [type(e).__name__ for e in seen]
+    assert types.count("WireThinkingEnd") == 1, types
+    assert types.index("WireThinkingEnd") < types.index("WireTextDelta")
+    assert types[-1] == "WireStop"
+
+
+def test_stream_打断时思考悬空_镜像补end再合成stop(monkeypatch):
+    """限流重试/用户打断中途掐流: 思考块没机会闭合, 合成 interrupted stop
+    之前同样要补 end——前端轮次兜底之外的第一道收口。"""
+    from aulos.api_client import ClaudeApiClient, WireStop
+
+    # 迭代开始后才置打断: 建连阶段 should_stop 被轮询会直接 RetryAborted,
+    # 流根本开不起来; 置在首个 yield 之后 = 命中流内打断检查点
+    stop_flag = {"armed": False}
+
+    class FakeStream:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def __iter__(self):
+            for ev in _thinking_stream_events(closed=False):
+                yield ev
+                if ev.type == "content_block_delta":
+                    stop_flag["armed"] = True   # 增量后置打断: 命中流内检查点
+
+    class FakeMessages:
+        def stream(self, **kwargs):
+            return FakeStream()
+
+    client = ClaudeApiClient(api_key="k", model="m", emit_output=False)
+    monkeypatch.setattr(client, "client",
+                        type("FakeClient", (), {"messages": FakeMessages()})())
+    monkeypatch.setattr(client, "_should_stop_provider",
+                        lambda: stop_flag["armed"])
+    seen = []
+    client.stream(system_prompt=["s"], messages=[], on_event=seen.append)
+    types = [type(e).__name__ for e in seen]
+    assert types.count("WireThinkingEnd") == 1, types
+    assert types[-1] == "WireStop"
+
+
 def test_stream_思考未闭合但有正文_历史只留正文(monkeypatch):
     """思考块未闭合 + 正文在场: 快照仅作兜底原料, 历史不污染。"""
     raw = [

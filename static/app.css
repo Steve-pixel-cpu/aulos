@@ -3367,3 +3367,68 @@ body.col-resizing, body.col-resizing * { cursor: col-resize !important; }
   :root[data-mica="1"] #settings-page,
   :root[data-mica="1"] #onboarding-page { background: transparent; }
   :root[data-mica="1"] .set-row { background: transparent; }
+
+  /* ============================================================
+   * 工具分组头部美化 (2026-10-14): 折叠头从"裸文本行"升级为紧凑芯片
+   * 问题: 旧折叠头是漂浮小字+数字胶囊, 视觉存在感弱、留白突兀,
+   * 且全成功时 "✓0" 噪音胶囊与绿色状态点双重冗余。
+   * 方案: 芯片贴内容宽(hug), 描边+微底示意可点; 状态语义收敛到
+   * 摘要胶囊(带 ✓/! 符号), 状态点只在 运行中/需注意 时出现;
+   * 展开态左竖轨渲染成渐隐时间轴。JS 已同步: 0 值胶囊不再渲染。
+   * 全部基于既有令牌, 与 data-theme / data-mica 正交。
+   * ============================================================ */
+
+  /* ---------- 折叠头: hug 宽芯片 ---------- */
+  .tool-group .tg-head {
+    width: fit-content; max-width: 100%;
+    gap: 7px;
+    padding: 5px 12px 5px 10px;
+    border: 1px solid color-mix(in srgb, var(--text) 9%, transparent);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--text) 3.5%, transparent);
+    transition: background .15s, border-color .15s, box-shadow .15s;
+  }
+  .tool-group .tg-head:hover {
+    background: color-mix(in srgb, var(--text) 6.5%, transparent);
+    border-color: color-mix(in srgb, var(--text) 16%, transparent);
+  }
+  .tool-group .tg-head:active { transform: translateY(0.5px); }
+  .tool-group .tg-caret { width: 9px; font-size: calc(10px * var(--fs-ui)); opacity: .75; }
+  .tool-group .tg-title {
+    color: var(--text-2);
+    font-size: calc(12px * var(--fs-ui));
+    font-weight: 500;
+    letter-spacing: .1px;
+  }
+  /* 状态点退休: 计数颜色即状态语言(见下方计数段) */
+
+  .tool-group:has(.tg-sum.run) .tg-head {
+    border-color: var(--accent-border);
+    background: var(--accent-soft);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 7%, transparent);
+  }
+  .tool-group:has(.tg-sum.bad) .tg-head {
+    border-color: color-mix(in srgb, var(--warn) 38%, transparent);
+    background: color-mix(in srgb, var(--warn) 7%, transparent);
+  }
+
+  /* ---------- 状态圆点退休: 用户不要圆点, 计数颜色即状态语言 ---------- */
+
+  /* ---------- 计数: 着色粗体数字, 无符号无容器 ----------
+   * 绿色数字=全部成功, 橙色=含失败; 耗时小字缀尾保持弱展示 */
+  .tool-group .tg-sum { gap: 7px; margin-left: 1px; }
+  .tool-group .tg-sum .cnt {
+    font-size: calc(12.5px * var(--fs-ui));
+    font-weight: 700;
+    font-family: var(--font-mono);
+  }
+  .tool-group .tg-sum .cnt.ok { color: var(--ok); }
+  .tool-group .tg-sum .cnt.bad { color: var(--warn); }
+  .tool-group .tg-sum .tg-dur { margin-left: 3px; }
+
+  /* ---------- 展开态: 左竖轨转渐隐时间轴, 折叠时竖轨净空 ---------- */
+  .tool-group { border-left-color: transparent; transition: border-color .15s; }
+  .tool-group:not(.collapsed) {
+    border-left-color: color-mix(in srgb, var(--text) 11%, transparent);
+  }
+  .tool-group:not(.collapsed) .tg-head { margin-bottom: 2px; }

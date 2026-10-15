@@ -758,10 +758,29 @@ class ClaudeApiClient(ApiClient):
             # 内容!」整轮报废(20261012 实测)。这里并行累一份全文, 循环
             # 结束后补快照用。
             thinking_acc = ""
+            # 镜像侧同源兜底: WireThinkingEnd 只挂在 content_block_stop 上,
+            # 块收尾一缺失前端就收不到 thinking_end, "思考中…"实时行冻在
+            # 正文/工具上方(20261014 现场)。thinking_open 钉住"思考块开着",
+            # 三个出口收口: ①下一个非 thinking 块开始(协议保证块不交错);
+            # ②流正常结束; ③流内打断(合成 stop 之前)。①②发过即复位,
+            # 正常路径 content_block_stop 已发, 不重不漏。
+            thinking_open = False
+
+            def _close_thinking_wire() -> None:
+                nonlocal thinking_open
+                if not thinking_open:
+                    return
+                thinking_open = False
+                echo.on_thinking_end()
+                if wire is not None:
+                    wire(WireThinkingEnd())
+
             for event in stream:
                 if event.type == 'content_block_start':
                     cb = event.content_block
                     echo.on_block_start()
+                    if cb.type != "thinking":
+                        _close_thinking_wire()   # 思考块悬空来了正文/工具块: 先收思考(协议保证块不交错)
                     if cb.type == "tool_use":
                         blocks[event.index] = {
                             "type": "tool_use",
@@ -777,8 +796,12 @@ class ClaudeApiClient(ApiClient):
                             "type": cb.type,
 
                         }
-                        if cb.type == "thinking" and wire is not None:
-                            wire(WireThinkingStart())
+                        if cb.type == "thinking":
+                            if thinking_open:
+                                _close_thinking_wire()   # 前块悬空又开新思考块: 先收前块
+                            thinking_open = True
+                            if wire is not None:
+                                wire(WireThinkingStart())
 
                 elif event.type == 'content_block_delta':
                     if event.delta.type == 'text_delta':
@@ -819,6 +842,7 @@ class ClaudeApiClient(ApiClient):
                     else:
                         # thinking 块结束：收指示器行
                         echo.on_thinking_end()
+                        thinking_open = False   # 已收口: 兜底出口跳过(防重发)
                         if wire is not None:
                             wire(WireThinkingEnd())
                         # 快照全文进 events（ThinkingEvent）: 仅当整条响应
@@ -841,6 +865,7 @@ class ClaudeApiClient(ApiClient):
                     stop_reason = getattr(event.delta, "stop_reason", None) or stop_reason
 
                 elif event.type == 'message_stop':
+                    _close_thinking_wire()   # 兼容层整条流不闭合思考块: 流止即收
                     echo.finish()
                     if wire is not None:
                         if usage_acc:
@@ -868,6 +893,7 @@ class ClaudeApiClient(ApiClient):
                 # runtime 据此在一致点收束本轮——补 error tool_result 后抛
                 # TurnInterrupted, 历史不留悬空 tool_use。usage 照常携带,
                 # 已流出部分的用量不丢。
+                _close_thinking_wire()   # 思考块悬空被打断: 合成 stop 前先收
                 echo.finish()
                 if wire is not None:
                     if usage_acc:
