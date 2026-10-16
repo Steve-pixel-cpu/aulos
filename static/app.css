@@ -235,6 +235,44 @@
     color: var(--accent); font-weight: 600;
   }
   .seg-acts { display: flex; gap: 2px; }
+  .seg-acts .icon-btn.on { color: var(--accent); background: var(--accent-soft); }
+  /* 归档视图: 隐藏 分组/项目 切换（X 关闭复用 tab-archive 再点） */
+  #side-tabs-row.archive-mode .seg { display: none; }
+  #side-tabs-row.archive-mode .seg-acts { flex: 1; justify-content: flex-end; }
+  #tab-archive.on { color: var(--accent); background: var(--accent-soft); }
+  /* 归档视图会话行: workdir 子标签（扁平列表补归属感） */
+  .session-item .s-workdir {
+    display: flex; align-items: center; gap: 5px;
+    font-size: calc(11.5px * var(--fs-ui)); color: var(--text-3);
+    margin-top: 2px;
+  }
+  /* 归档/恢复操作钮: 与重命名/删除同一悬停显隐节奏 */
+  .session-item .s-arc, .session-item .s-unarc {
+    display: none; flex: none;
+    width: 25px; height: 25px; padding: 0;
+    border: none; background: none; border-radius: 7px;
+    color: var(--text-2); align-items: center; justify-content: center;
+    transition: all .12s;
+  }
+  .session-item:hover .s-arc, .session-item:hover .s-unarc { display: inline-flex; }
+  .session-item .s-arc:hover { color: var(--accent); background: var(--accent-soft); }
+  .session-item .s-unarc:hover { color: var(--accent); background: var(--accent-soft); }
+  .session-item.renaming .s-arc, .session-item.renaming .s-unarc { display: none; }
+  /* 批量归档阈值小弹层 */
+  .batch-pop {
+    position: fixed; z-index: 999;
+    background: var(--surface-2); border: 1px solid var(--border-strong);
+    border-radius: var(--r-md, 8px); padding: 8px; min-width: 160px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.25);
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  .batch-pop-title { font-size: 12px; color: var(--text-3); padding: 2px 6px 4px; }
+  .batch-pop button {
+    border: none; background: none; text-align: left;
+    padding: 6px 10px; border-radius: 6px;
+    font-size: calc(12.5px * var(--fs-ui)); color: var(--text-1);
+  }
+  .batch-pop button:hover { background: var(--accent-soft); color: var(--accent); }
   .icon-btn {
     width: 27px; height: 27px; border: none; background: none; border-radius: 7px;
     color: var(--text-3); display: inline-flex; align-items: center; justify-content: center;

@@ -132,6 +132,7 @@ function handleServerMessage(msg, sid) {
     case "model_changed":      onModelChanged(msg, sid); break;
     case "turn_done":          onTurnDone(msg); break;
     case "session_renamed":    onSessionRenamed(msg); break;
+    case "session_unarchived": onSessionUnarchived(msg); break;
     case "error":              onError(msg); break;
     default: console.warn("未知消息类型", msg);
   }
@@ -1489,6 +1490,11 @@ function onSessionRenamed(msg) {
   (async () => { await loadSessions(); refreshDocTitle(); })();
 }
 
+function onSessionUnarchived(msg) {
+  // 给归档会话发消息触发自动恢复: 重新拉列表（archived 翻转已落盘）
+  (async () => { await loadSessions(); })();
+}
+
 function onError(msg) {
   // 错误也是本轮结束: 不复位 busy 的话输入框会永久锁死，看起来像卡死
   endTurnUiReset();
@@ -1809,6 +1815,8 @@ function setSideTab(tab) {
 }
 $("tab-project").onclick = () => setSideTab("project");
 $("tab-group").onclick = () => setSideTab("group");
+/* 归档视图开关: 归档态再点即退出（与 X/Esc 等效） */
+$("tab-archive").onclick = () => setArchiveView(!state.archiveView);
 
 function openSearch() {
   $("search-box").classList.add("open");
@@ -1866,6 +1874,9 @@ function scheduleFulltextSearch() {
 $("search-input").addEventListener("input", () => { syncSearchClear(); renderSessionList(); scheduleFulltextSearch(); });
 $("search-input").addEventListener("keydown", ev => {
   if (ev.key === "Escape") closeSearch();
+});
+document.addEventListener("keydown", ev => {
+  if (ev.key === "Escape" && state.archiveView) setArchiveView(false);
 });
 /* 一键清除: 只清内容、保留搜索框展开与焦点（和 Esc/再点搜索钮的"收起"
  * 区分开）; 清空后走与打字清空相同的收口——标题过滤重绘 + 全文态清除 */

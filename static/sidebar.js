@@ -63,6 +63,63 @@ async function loadSessions() {
 }
 
 const TRASH_SMALL_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M9.5 7V5h5v2M6.5 7l1 13h9l1-13"/></svg>';
+/* 归档 = 追加式记录, 只在列表视图隐藏, 数据不丢; 恢复即回主列表 */
+const ARCHIVE_BOX_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a2 2 0 002 2h10a2 2 0 002-2V8M10 12h4"/></svg>';
+const UNARCHIVE_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 016 6v4"/></svg>';
+const CLOSE_SMALL_SVG = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+
+/* 归档/恢复: POST 后原地更新 state 并重绘（失败 toast, 不动列表） */
+async function setSessionArchived(id, archived) {
+  try {
+    const r = await fetch(`/api/sessions/${id}/archive`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ archived }),
+    });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      throw new Error(err.detail || r.status);
+    }
+    const s = state.sessions.find(x => x.id === id);
+    if (s) s.archived = archived;
+    renderSessionList();
+    toast(archived ? "已归档" : "已恢复");
+  } catch (e) {
+    toast(archived ? "归档失败: " : "恢复失败: " + e.message);
+  }
+}
+
+/* 批量归档: days 取 7/30/90, 结果 toast 计数后刷新 */
+async function batchArchive(days) {
+  try {
+    const r = await fetch("/api/sessions/batch-archive", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ days }),
+    });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      throw new Error(err.detail || r.status);
+    }
+    const body = await r.json();
+    await loadSessions();
+    toast(body.archived
+      ? `已归档 ${body.archived} 个会话`
+        + (body.skipped_busy ? `，${body.skipped_busy} 个对话中已跳过` : "")
+      : "没有需要归档的会话");
+  } catch (e) {
+    toast("批量归档失败: " + e.message);
+  }
+}
+
+/* 归档视图开关: 不持久化, 刷新回主列表（X/Esc/再点归档钮都可退出） */
+function setArchiveView(on) {
+  state.archiveView = on;
+  $("side-tabs-row").classList.toggle("archive-mode", on);
+  const btn = $("tab-archive");
+  if (btn) btn.classList.toggle("on", on);
+  renderSessionList();
+}
 const PENCIL_SMALL_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l4.5-1L20 7.5 16.5 4 5 15.5 4 20z"/></svg>';
 /* 会话状态图标: 运行中转圈 / 未读红点 / 空闲对话气泡 */
 const SPINNER_SVG = '<svg class="s-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M21 12a9 9 0 11-9-9"/></svg>';
@@ -128,13 +185,18 @@ function makeSessionItem(s) {
     + (s.id === state.sessionId ? " active" : "")
     + (unnamed ? " unnamed" : "");
   item.dataset.id = s.id;
+  const archivedView = !!state.archiveView;
   item.innerHTML = '<span class="s-ico">' + sessionStateIcon(s) + '</span>'
     + '<span class="s-unread"></span>'
     + '<span class="s-plan">待批计划</span>'
     + '<span class="title"></span><span class="meta"></span>'
     + '<div class="s-snippet"></div>'
+    + (archivedView ? "" : '<button class="s-arc" data-tip="归档">' + ARCHIVE_BOX_SVG + '</button>')
     + '<button class="s-ren" data-tip="重命名">' + PENCIL_SMALL_SVG + '</button>'
-    + '<button class="s-del" data-tip="删除会话">' + TRASH_SMALL_SVG + '</button>';
+    + (archivedView
+      ? '<button class="s-unarc" data-tip="恢复">' + UNARCHIVE_SVG + '</button>'
+        + '<button class="s-del" data-tip="删除会话">' + TRASH_SMALL_SVG + '</button>'
+      : '<button class="s-del" data-tip="删除会话">' + TRASH_SMALL_SVG + '</button>');
   item.querySelector(".title").textContent = displayTitle(s);
   item.querySelector(".meta").textContent = relativeTime(s.id);
   // 全文命中摘录: 标题也命中时同样展示（"正文"前缀区分命中来源）。
@@ -175,6 +237,24 @@ function makeSessionItem(s) {
     item.querySelector(".s-unread").textContent = run.unread > 99 ? "99+" : run.unread;
   }
   item.onclick = () => selectSession(s.id);
+  // 归档视图: workdir 子标签（主列表按项目折叠分组, 扁平列表没有归属感）
+  if (archivedView && s.workdir) {
+    const wd = document.createElement("div");
+    wd.className = "s-workdir";
+    wd.innerHTML = FOLDER_SVG + '<span></span>';
+    wd.querySelector("span").textContent = projectDisplayName(s.workdir);
+    item.appendChild(wd);
+  }
+  const arcBtn = item.querySelector(".s-arc");
+  if (arcBtn) arcBtn.onclick = ev => {
+    ev.stopPropagation();
+    setSessionArchived(s.id, true);
+  };
+  const unarcBtn = item.querySelector(".s-unarc");
+  if (unarcBtn) unarcBtn.onclick = ev => {
+    ev.stopPropagation();
+    setSessionArchived(s.id, false);
+  };
   item.querySelector(".s-ren").onclick = ev => {
     ev.stopPropagation();
     if (item.classList.contains("renaming")) return;
@@ -250,11 +330,13 @@ function renderSessionList() {
   // 桌宠专属会话不进任务列表: 它是悬浮输入框的对话载体, 混在用户
   // 任务里只会越积越长。会话本体照常存在(WS/轮次/落盘), 仅列表不渲染
   const petSid = petTaskSidSaved();
-  const sessions = state.sessions.filter(
-    s => s.id !== petSid
-      && (!q
-        || (s.title || "").toLowerCase().includes(q)
-        || (s.workdir || "").toLowerCase().includes(q)));
+  // 归档视图: 只渲染已归档会话; 主视图: 过滤掉已归档的
+  // （字段缺省视为未归档——旧响应/旧会话零迁移）
+  let sessions = state.sessions.filter(s => s.id !== petSid && !!s.archived === (state.archiveView === true));
+  sessions = sessions.filter(
+    s => !q
+      || (s.title || "").toLowerCase().includes(q)
+      || (s.workdir || "").toLowerCase().includes(q));
   // 全文命中但标题没命中的会话也要显示（追加到过滤结果后面, 去重）
   if (ftsActive) {
     const seen = new Set(sessions.map(s => s.id));
@@ -275,6 +357,39 @@ function renderSessionList() {
     l.textContent = text;
     list.appendChild(l);
   };
+  /* ---- 归档视图: 扁平列表（时间倒序）+ 顶部批量归档工具行 ---- */
+  if (state.archiveView) {
+    if (!sessions.length && !q) {
+      list.innerHTML = '<div class="list-empty">暂无归档会话</div>';
+      return;
+    }
+    const toolRow = document.createElement("div");
+    toolRow.className = "list-label-row";
+    toolRow.innerHTML = '<span class="list-label">归档</span>';
+    const batch = document.createElement("button");
+    batch.type = "button";
+    batch.className = "icon-btn";
+    batch.dataset.tip = "批量归档 N 天前的会话";
+    batch.innerHTML = ARCHIVE_BOX_SVG;
+    batch.onclick = async ev => {
+      ev.stopPropagation();
+      const days = await pickBatchDays();
+      if (days) batchArchive(days);
+    };
+    toolRow.appendChild(batch);
+    list.appendChild(toolRow);
+    if (!sessions.length) {
+      list.innerHTML += '<div class="list-empty">没有匹配的归档会话</div>';
+      return;
+    }
+    const sorted = [...sessions].sort((a, b) => b.id.localeCompare(a.id));
+    for (const s of sorted) {
+      const it = makeSessionItem(s);
+      it.classList.add("in-project", "archived-item");
+      list.appendChild(it);
+    }
+    return;
+  }
   if (state.sideTab === "group") {
     if (!sessions.length) {
       list.innerHTML = '<div class="list-empty">' + (q ? "没有匹配的会话" : "还没有会话") + "</div>";
@@ -407,6 +522,26 @@ function renderSessionList() {
   } else {
     for (const s of loose) list.appendChild(makeSessionItem(s));
   }
+}
+
+/* 批量阈值小弹层: 7/30/90 三档, resolve 天数或 null（取消） */
+function pickBatchDays() {
+  return new Promise(resolve => {
+    const pop = document.createElement("div");
+    pop.className = "batch-pop";
+    pop.innerHTML = '<div class="batch-pop-title">归档多少天前的会话？</div>';
+    for (const d of [7, 30, 90]) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = d + " 天前";
+      b.onclick = ev => { ev.stopPropagation(); close(null); resolve(d); };
+      pop.appendChild(b);
+    }
+    const close = ret => { pop.remove(); document.removeEventListener("click", onDoc, true); if (ret === null) resolve(null); };
+    const onDoc = ev => { if (!pop.contains(ev.target)) close(null); };
+    document.addEventListener("click", onDoc, true);
+    document.body.appendChild(pop);
+  });
 }
 
 function toggleProject(wd) {

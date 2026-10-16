@@ -29,6 +29,7 @@ const state = {
   sessionId: null,          // 当前"可见"的会话 id（null = 草稿/无）
   sessions: [],             // 全量会话列表（loadSessions 填充）
   sideTab: "project",       // 侧栏列表模式: project | group
+  archiveView: false,       // 归档视图开关（不持久化, 刷新回主列表）
   draft: false,             // 草稿态: 已点"新建"但还没发首条消息（不建条目）
   draftAttach: [],          // 草稿态未发送的附件（跟随会话切换）
   draftInput: "",           // 草稿态未发送的输入（跟随会话切换）
@@ -1279,6 +1280,7 @@ async function loadSettings() {
     const s = await r.json();
     state.providerCfg = await pr.json();
     loadUtilityProvider();   // side-call 小模型设置（下拉项依赖供应商列表）
+    loadWorkerProvider();    // 子代理模型设置（下拉项同样依赖供应商列表）
     syncModelDropdown(s.provider_id, s.model_id);
     modeDd.setValue(mkModeValue(s.permission_mode || "prompt", !!s.permission_plan));
     thinkDd.setValue(s.thinking_level);
@@ -1849,6 +1851,74 @@ async function saveUtilityProvider() {
   });
 }
 
+/* ---------- 设置 → 模型: 子代理模型（workerProvider） ----------
+ * 派出去的 subagent 专用（执行层分层: 主对话强模型, worker 便宜模型）。
+ * 保存无需重建任何 client——worker 每次派生时现读设置, 保存即对下一次
+ * 派发生效。UI 结构与辅助模型（utilityProvider）同款。 */
+const wkProviderDd = makeDropdown($("wk-provider"), {
+  items: [{ value: "", label: "不使用（跟主对话模型）" }],
+  value: "",
+  onChange() { scheduleWorkerSave(); },
+});
+async function loadWorkerProvider() {
+  try {
+    state.workerCfg = await fetch("/api/worker-provider").then(r => r.json());
+    syncWorkerControls();
+  } catch (e) { console.error("加载子代理模型配置失败", e); }
+}
+function syncWorkerControls() {
+  const items = [{ value: "", label: "不使用（跟主对话模型）" }];
+  for (const p of (state.providerCfg?.providers || [])) {
+    items.push({ value: p.id, label: p.name || p.id });
+  }
+  wkProviderDd.setItems(items, state.workerCfg?.provider || "");
+  $("wk-model").value = state.workerCfg?.model || "";
+  renderWorkerStatus();
+}
+function renderWorkerStatus() {
+  const s = state.workerCfg;
+  const el = $("wk-status");
+  if (!s || !el) return;
+  el.classList.remove("err");
+  if (!s.provider) el.textContent = "当前：子代理跟主对话模型";
+  else if (s.valid) el.textContent = `当前：子代理执行用 ${s.effective_model || s.model}`;
+  else { el.textContent = "已配置但不可用（供应商被禁用/缺 key，或模型名留空），暂跟主对话模型"; el.classList.add("err"); }
+}
+let wkSaveTimer = null;
+function scheduleWorkerSave() {
+  clearTimeout(wkSaveTimer);
+  wkSaveTimer = setTimeout(saveWorkerProvider, 800);   // 与辅助模型同一防抖口径
+}
+async function saveWorkerProvider() {
+  clearTimeout(wkSaveTimer);
+  wkSaveTimer = null;
+  try {
+    state.workerCfg = await fetch("/api/worker-provider", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        provider: wkProviderDd.getValue(),
+        model: $("wk-model").value.trim(),
+      }),
+    }).then(async r => {
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || `HTTP ${r.status}`);
+      return r.json();
+    });
+    renderWorkerStatus();
+  } catch (e) {
+    const el = $("wk-status");
+    if (el) { el.textContent = "保存失败: " + e.message; el.classList.add("err"); }
+  }
+}
+{
+  const model = $("wk-model");
+  model.addEventListener("input", scheduleWorkerSave);
+  model.addEventListener("keydown", ev => {
+    ev.stopPropagation();
+    if (ev.key === "Enter") saveWorkerProvider();
+  });
+}
+
 /* ---------- 设置 → 配置文件: 用系统默认编辑器打开 settings.json ---------- */
 $("btn-open-config").onclick = async () => {
   try {
@@ -1914,6 +1984,7 @@ async function persistProviders() {
     }
     provStatus("已保存");
     syncUtilityControls();   // 供应商改名/增删后刷新 side-call 下拉选项
+    syncWorkerControls();    // 子代理模型下拉同此
     // 刷新 composer 模型下拉。模型改名/删除（防抖自动保存期间是常态）会让
     // 当前显示的键从列表里消失, syncLabel 找不到就把原始 provider|model 键
     // 铺在界面上（用户看到的"乱码"）。按会话显示链回填第一个仍存在的键,
