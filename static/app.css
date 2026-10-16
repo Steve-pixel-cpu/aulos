@@ -235,12 +235,20 @@
     color: var(--accent); font-weight: 600;
   }
   .seg-acts { display: flex; gap: 2px; }
-  .seg-acts .icon-btn.on { color: var(--accent); background: var(--accent-soft); }
+  /* 归档入口: 无边框裸图标钮（与 seg 同视觉语言） */
+  .seg-acts .seg-act {
+    width: 27px; height: 26px; padding: 0;
+    border: none; background: none; border-radius: 6px;
+    color: var(--text-3); display: inline-flex;
+    align-items: center; justify-content: center;
+    flex: none; transition: all .12s;
+  }
+  .seg-acts .seg-act:hover { background: var(--hover); color: var(--text); }
+  .seg-acts .seg-act.on { color: var(--accent); background: var(--accent-soft); }
   /* 归档视图: 隐藏 分组/项目 切换（X 关闭复用 tab-archive 再点） */
   #side-tabs-row.archive-mode .seg { display: none; }
   #side-tabs-row.archive-mode .seg-acts { flex: 1; justify-content: flex-end; }
-  #tab-archive.on { color: var(--accent); background: var(--accent-soft); }
-  /* 归档视图会话行: workdir 子标签（扁平列表补归属感） */
+  #tab-archive.on { color: var(--accent); background: var(--accent-soft); }  /* 归档视图会话行: workdir 子标签（扁平列表补归属感） */
   .session-item .s-workdir {
     display: flex; align-items: center; gap: 5px;
     font-size: calc(11.5px * var(--fs-ui)); color: var(--text-3);

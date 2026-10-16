@@ -38,15 +38,26 @@ test("主列表: 未归档会话显示, 已归档的过滤掉", async () => {
   assert.ok(!html.includes(">b<"), "已归档会话不应出现在主列表");
 });
 
-test("归档视图: 只显示已归档, 行带恢复+删除钮, 无归档钮, 带 workdir 子标签", async () => {
+test("归档视图: 只显示已归档, 行带恢复+删除钮, 无改名/归档钮, 带 workdir 子标签", async () => {
   const w = await bootWith([sess("a"), sess("b", { archived: true, workdir: "D:\\myproj" })], []);
   w.setArchiveView(true);
   const html = listHtml(w);
   assert.ok(html.includes(">b<"), "归档视图应显示已归档会话");
   assert.ok(!html.includes(">a<"), "未归档会话不出现在归档视图");
   assert.ok(!/data-tip="归档"/.test(html), "归档视图行不应再有归档钮");
+  assert.ok(!/data-tip="重命名"/.test(html), "归档视图行不应有改名钮");
   assert.ok(/data-tip="恢复"/.test(html), "归档视图行应有恢复钮");
+  assert.ok(/data-tip="删除会话"/.test(html), "归档视图行应有删除钮");
   assert.ok(html.includes("myproj"), "归档视图行应带 workdir 子标签");
+});
+
+test("普通视图: 行只带改名+归档钮, 无删除/恢复钮", async () => {
+  const w = await bootWith([sess("a")], []);
+  const html = listHtml(w);
+  assert.ok(/data-tip="重命名"/.test(html), "普通视图行应有改名钮");
+  assert.ok(/data-tip="归档"/.test(html), "普通视图行应有归档钮");
+  assert.ok(!/data-tip="删除会话"/.test(html), "普通视图行不应有删除钮");
+  assert.ok(!/data-tip="恢复"/.test(html), "普通视图行不应有恢复钮");
 });
 
 test("归档视图: 空态文案", async () => {

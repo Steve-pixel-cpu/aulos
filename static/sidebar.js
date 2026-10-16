@@ -186,17 +186,17 @@ function makeSessionItem(s) {
     + (unnamed ? " unnamed" : "");
   item.dataset.id = s.id;
   const archivedView = !!state.archiveView;
+  /* 普通视图: 改名+归档; 归档视图: 恢复+删除（删除只在归档视图提供） */
   item.innerHTML = '<span class="s-ico">' + sessionStateIcon(s) + '</span>'
     + '<span class="s-unread"></span>'
     + '<span class="s-plan">待批计划</span>'
     + '<span class="title"></span><span class="meta"></span>'
     + '<div class="s-snippet"></div>'
-    + (archivedView ? "" : '<button class="s-arc" data-tip="归档">' + ARCHIVE_BOX_SVG + '</button>')
-    + '<button class="s-ren" data-tip="重命名">' + PENCIL_SMALL_SVG + '</button>'
     + (archivedView
       ? '<button class="s-unarc" data-tip="恢复">' + UNARCHIVE_SVG + '</button>'
         + '<button class="s-del" data-tip="删除会话">' + TRASH_SMALL_SVG + '</button>'
-      : '<button class="s-del" data-tip="删除会话">' + TRASH_SMALL_SVG + '</button>');
+      : '<button class="s-arc" data-tip="归档">' + ARCHIVE_BOX_SVG + '</button>'
+        + '<button class="s-ren" data-tip="重命名">' + PENCIL_SMALL_SVG + '</button>');
   item.querySelector(".title").textContent = displayTitle(s);
   item.querySelector(".meta").textContent = relativeTime(s.id);
   // 全文命中摘录: 标题也命中时同样展示（"正文"前缀区分命中来源）。
@@ -255,7 +255,8 @@ function makeSessionItem(s) {
     ev.stopPropagation();
     setSessionArchived(s.id, false);
   };
-  item.querySelector(".s-ren").onclick = ev => {
+  const renBtn = item.querySelector(".s-ren");
+  if (renBtn) renBtn.onclick = ev => {
     ev.stopPropagation();
     if (item.classList.contains("renaming")) return;
     item.classList.add("renaming");   // 编辑期间隐藏标题/时间/按钮
@@ -266,7 +267,8 @@ function makeSessionItem(s) {
     );
     item.appendChild(input);
   };
-  item.querySelector(".s-del").onclick = ev => {
+  const delBtn = item.querySelector(".s-del");
+  if (delBtn) delBtn.onclick = ev => {
     ev.stopPropagation();
     deleteSession(s.id);
   };
