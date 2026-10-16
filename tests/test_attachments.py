@@ -155,8 +155,9 @@ def test_estimate_tokens_image_and_file():
         {"kind": "image", "media_type": "image/png", "data": "A"},
         {"kind": "file", "name": "n.md", "text": "x" * 40},
     ])
-    # text(2//4+1=1) + image(1500) + file((4+40)//4+1=12)
-    assert estimate_message_tokens(m) == 1 + 1500 + 12
+    # R2 CJK 分桶: text"看图"=2 中文字→3（旧 //4 只给 1, 低估）+ image(1500)
+    # + file("n.md"+40 ASCII→12)
+    assert estimate_message_tokens(m) == 3 + 1500 + 12
 
 
 def test_estimate_tokens_image_only():

@@ -75,6 +75,34 @@ def is_rate_limit_error(e: Exception) -> bool:
     （全程 <1s）会在同一窗口里反复撞墙; 其余可重试错误维持连接抖动曲线。"""
     return isinstance(e, HttpApiError) and e.status_code in (429, 529)
 
+
+# 溢出错误的宽松匹配词: 各供应商措辞不同——OpenAI "maximum context length",
+# Anthropic "prompt is too long", Gemini "input token count exceeds"。
+# 宽松匹配宁可漏判（走原路径上抛）也不错抓普通 400。
+_CONTEXT_OVERFLOW_PAT = (
+    "context length", "context window", "context_tokens",
+    "prompt is too long", "too long", "input token count",
+    "maximum context", "max tokens", "exceeds.*token",
+    "token.*exceed", "too many tokens",
+)
+
+import re as _re
+_OVERFLOW_RE = _re.compile("|".join(_CONTEXT_OVERFLOW_PAT), _re.IGNORECASE)
+
+
+def is_context_overflow_error(e: Exception) -> bool:
+    """上下文溢出分诊: HttpApiError 且 (413, 或 400 且 message 匹配
+    context/maximum-length 类关键词)。用于反应式恢复——压缩后单次重试,
+    而不是让整轮炸掉。非 HttpApiError（连接/认证等）一律 False。"""
+    if not isinstance(e, HttpApiError):
+        return False
+    if e.status_code == 413:
+        return True
+    if e.status_code != 400:
+        return False
+    return bool(_OVERFLOW_RE.search(str(e)))
+
+
 def backoff_for_attempt(attempt: int,
                         initial_ms: float = DEFAULT_INITIAL_BACKOFF_MS,
                         max_ms: float = DEFAULT_MAX_BACKOFF_MS) -> float:

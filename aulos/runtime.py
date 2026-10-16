@@ -1034,6 +1034,13 @@ class ConversationRuntime:
         # (_on_compacted, Web 端广播提示), 之后持续生效不再重复通知。
         if not self._context_over_compact_threshold():
             return False
+        return self._activate_compact()
+
+    def _activate_compact(self) -> bool:
+        """激活压缩粘性标记+护栏清零+通知。主动路径（usage 超阈值）与
+        反应式路径（服务端报溢出, run_turn 捕获后强制激活）共用——激活
+        动作本身无口径之分。消息数 <= preserve_recent（无安全切割点）
+        时返回 False, 激活失败。"""
         if self._compact_active:
             return True                      # 已激活: 持续生效, 不重复通知
         # 真正能压掉东西才亮信号（消息数 <= preserve_recent 时无安全切割点）
@@ -1059,6 +1066,45 @@ class ConversationRuntime:
                 print(f"[WARN] compact hook failed: {e}")
 
         return True
+
+    # 反应式溢出恢复硬上限: 每轮至多一次——重试后保留区本身仍超窗口
+    # （如单条超大粘贴 + 大 system prompt）时, 再压也压不动, 必须提示
+    # 用户调 contextWindow, 绝不进循环/重试风暴。
+    _OVERFLOW_RECOVERY_MAX = 1
+
+    def _stream_with_overflow_recovery(self, effective_level) -> list:
+        """stream 调用 + 溢出反应式恢复: 服务端报 context overflow
+        （413 / 400+关键词, 见 retry.is_context_overflow_error）且本轮
+        尚未恢复过 → 强制激活压缩视图, 重试恰好一次。重试仍溢出 → 抛
+        可读错误（调 contextWindow / 清理会话）。非溢出错误原样上抛
+        （retry 层的可重试错误已在 api_client 内部消化, 这里看到的就是
+        终态错误）。熔断器打开时压缩走规则摘要, 同样能救场——不为此
+        复位熔断器。"""
+        from aulos.retry import is_context_overflow_error
+        recoveries = 0
+        while True:
+            try:
+                return self._api_client.stream(
+                    system_prompt=self._effective_system_prompt,
+                    messages=self._model_view(),
+                    thinking_level=effective_level,
+                    model=self._model,
+                )
+            except Exception as e:
+                if (not is_context_overflow_error(e)
+                        or recoveries >= self._OVERFLOW_RECOVERY_MAX):
+                    if is_context_overflow_error(e) and recoveries:
+                        raise RuntimeError(
+                            "context overflow persists after compaction "
+                            "retry — the preserved tail alone exceeds the "
+                            "window. 调大 contextWindow 配置、清理会话, "
+                            "或换更大窗口的模型。") from e
+                    raise
+                recoveries += 1
+                # 强制激活（绕过预估口径）: 失败（无安全切割点）说明
+                # 没东西可压, 直接上抛原错误
+                if not self._activate_compact():
+                    raise
 
     # 摘要重算余量: 保留区比"preserve_recent + 余量"还长时才值得重新
     # 切割+重算摘要; 未超余量就复用旧切割点, 保留区温和变长。没有这个
@@ -1463,12 +1509,8 @@ class ConversationRuntime:
             # 一律用生效提示词
             # messages 用模型视图: 压缩激活时 = [续接摘要] + 保留区,
             # 全量历史原样留在会话里供展示与落盘。
-            events = self._api_client.stream(
-                system_prompt=self._effective_system_prompt,
-                messages=self._model_view(),
-                thinking_level=effective_level,
-                model=self._model,
-            )
+            events = self._stream_with_overflow_recovery(
+                effective_level=effective_level)
             # 流内打断: api_client 在流式消费循环里查 should_stop 命中后
             # 补 stop_reason="interrupted" 的合成 stop 返回（不抛异常,
             # 已流出内容保住）。这里照常入账/入历史, 再把消息里的 tool_use
