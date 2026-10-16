@@ -7,6 +7,29 @@ from aulos.models import (Message, TextContentBlock, ToolContentBlock, ToolResul
                     ImageContentBlock, FileContentBlock)
 from aulos.prompt import _collapse_blank_lines
 
+# CJK 分桶 token 估算: len//4+1 是英文校准的, 中文在现代分词器下约
+# 1 字 ≈ 0.7~1.1 token——//4 只给 0.25, 低估 3~4 倍, 让 MicroCompact
+# 的触发线滞后数万 token。按字符分桶: CJK 区间按 ~1 token/字计, 其余
+# 维持 //4。注意不能全局 //2——对英文内容高估约 2 倍, 微压缩会提前
+# 触发、多清结果。区间至少覆盖: CJK 统一表意、扩展A、标点、全角形式。
+_CJK_RANGES = (
+    (0x4E00, 0x9FFF),    # CJK Unified Ideographs
+    (0x3400, 0x4DBF),    # CJK Extension A
+    (0x3000, 0x303F),    # CJK Symbols and Punctuation
+    (0xFF00, 0xFFEF),    # Halfwidth and Fullwidth Forms
+)
+_CJK_CHARS = re.compile(
+    "[" + "".join(f"{chr(lo)}-{chr(hi)}" for lo, hi in _CJK_RANGES) + "]"
+)
+
+
+def _estimate_text_tokens(text: str) -> int:
+    """文本 token 估算: CJK 字符按 ~1 token/字计, 其余按 len//4。
+    大文本 O(n) 扫描对工具输出量级（<100KB）足够, 保持直白。"""
+    cjk = len(_CJK_CHARS.findall(text))
+    other = len(text) - cjk
+    return cjk + other // 4 + 1
+
 
 class CompactionConfig(BaseModel):
     # 保留区默认 8 条 = 通常覆盖最近两个完整的工具交换块。压缩摘要再好
@@ -26,17 +49,17 @@ def estimate_message_tokens(msg: Message) -> int:
     res = 0
     for block in msg.content:
         if isinstance(block, TextContentBlock):
-            res = res + len(block.text) // 4 + 1
+            res = res + _estimate_text_tokens(block.text)
         elif isinstance(block, ToolContentBlock):
-            res = res + (len(block.name) + len(block.input)) // 4 + 1
+            res = res + _estimate_text_tokens(block.name + block.input)
         elif isinstance(block, ToolResultContentBlock):
-            res = res + (len(block.name) + len(block.output)) // 4 + 1
+            res = res + _estimate_text_tokens(block.name + block.output)
         elif isinstance(block, ImageContentBlock):
             # 图片按固定值估算: base64 体积与像素数都不反映真实 token 开销,
             # 视觉端点按分辨率分档计, 1500 是常见的单图近似值
             res = res + 1500
         elif isinstance(block, FileContentBlock):
-            res = res + (len(block.name) + len(block.text)) // 4 + 1
+            res = res + _estimate_text_tokens(block.name + block.text)
     return res
 
 
