@@ -1,4 +1,5 @@
 import random
+import re
 import time
 from typing import Callable, Optional, TypeVar
 
@@ -79,15 +80,17 @@ def is_rate_limit_error(e: Exception) -> bool:
 # 溢出错误的宽松匹配词: 各供应商措辞不同——OpenAI "maximum context length",
 # Anthropic "prompt is too long", Gemini "input token count exceeds"。
 # 宽松匹配宁可漏判（走原路径上抛）也不错抓普通 400。
+# 注意没有裸 "max tokens"/"max_tokens is too large": 那是**输出上限**
+# 配置错误（如 max_tokens 超过模型支持值）, 误判会把真问题引向
+# contextWindow 诊断——已有 "maximum context"/"context length" 足以
+# 覆盖真溢出措辞。
 _CONTEXT_OVERFLOW_PAT = (
     "context length", "context window", "context_tokens",
     "prompt is too long", "too long", "input token count",
-    "maximum context", "max tokens", "exceeds.*token",
+    "maximum context", "exceeds.*token",
     "token.*exceed", "too many tokens",
 )
-
-import re as _re
-_OVERFLOW_RE = _re.compile("|".join(_CONTEXT_OVERFLOW_PAT), _re.IGNORECASE)
+_OVERFLOW_RE = re.compile("|".join(_CONTEXT_OVERFLOW_PAT), re.IGNORECASE)
 
 
 def is_context_overflow_error(e: Exception) -> bool:

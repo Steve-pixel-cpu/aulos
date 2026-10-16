@@ -222,13 +222,11 @@ def summarize_messages(msgs: List[Message]) -> str:
 
     # 6. 助手结论逐字保留: 助手正文是调查结论的唯一载体（"实锤了——X 写进了
     # Y"这类句子）。工具结果可以截断, 结论截断 = 模型失忆 = 重新排查。
-    findings: list[str] = []
+    # 抽取逻辑与滚动摘要锚点共用 extract_assistant_findings——两份实现
+    # 会在配额调整时静默分叉。
+    findings = extract_assistant_findings(msgs)
     attachment_lines: list[str] = []
     for msg in msgs:
-        if msg.role == "assistant":
-            for block in msg.content:
-                if isinstance(block, TextContentBlock) and block.text.strip():
-                    findings.append(block.text.strip()[:_MAX_FINDING_CHARS])
         marks = []
         for block in msg.content:
             if isinstance(block, ImageContentBlock):
@@ -237,7 +235,6 @@ def summarize_messages(msgs: List[Message]) -> str:
                 marks.append(f"[附件 {block.name}]")
         if marks:
             attachment_lines.append(f"  - {msg.role}: {' / '.join(marks)}")
-    findings = findings[-_MAX_FINDINGS:]
 
     # 7. 时间线只覆盖末尾一小段: 它的职责是衔接下面的保留区（"最近在干
     # 什么"）, 不是复述全部历史——全史复述正是旧实现越压越大的原因。

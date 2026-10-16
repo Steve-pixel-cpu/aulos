@@ -63,6 +63,10 @@ def test_is_context_overflow_error_判定矩阵():
     assert is_context_overflow_error(HttpApiError(400, "invalid tool_use block")) is False
     assert is_context_overflow_error(HttpApiError(401, "bad key")) is False
     assert is_context_overflow_error(HttpApiError(429, "rate limited")) is False
+    # 输出上限配置错误不是上下文溢出——误判会把用户引向 contextWindow
+    # 诊断, 真问题是 max_tokens 配置（验收 D1 意见: 删 "max tokens" 词）
+    assert is_context_overflow_error(HttpApiError(
+        400, "max_tokens is too large: 32768. This model supports at most 16384")) is False
 
 
 def test_首次溢出_强制压缩视图_恰好重试一次_轮次正常收束():
