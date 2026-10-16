@@ -64,7 +64,7 @@ import uuid
 from contextlib import suppress
 from contextvars import ContextVar
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -1484,6 +1484,8 @@ async def api_list_sessions():
             "message_count": meta["count"],
             # 项目归属: 会话的工作目录(WorkdirRecord, 取最新一条); 未设置时 None
             "workdir": meta["workdir"],
+            # 归档状态: 追加式 ArchiveRecord 取最新; 前端据此过滤/渲染归档视图
+            "archived": meta["archived"],
             "permission_mode": _mode_name_for(sid, meta),
             "plan_active": _session_plan(sid, meta),
             "thinking_level": _session_thinking(sid),
@@ -1493,7 +1495,7 @@ async def api_list_sessions():
     for sid in _pending_sessions:
         meta = store.get_session_meta(sid)   # 未落盘: 全默认值, 仅一次 stat
         items.append({"id": sid, "title": UNTITLED, "message_count": 0,
-                      "workdir": None,
+                      "workdir": None, "archived": False,
                       "permission_mode": _mode_name_for(sid, meta),
                       "plan_active": _session_plan(sid, meta),
                       "thinking_level": _session_thinking(sid),
@@ -1547,6 +1549,59 @@ async def api_delete_session(session_id: str):
         # 本就不存在（旧 pending 未落盘等）: 按幂等成功处理，内存态已清
         pass
     return {"ok": True}
+
+
+@app.post("/api/sessions/batch-archive")
+async def api_batch_archive_sessions(request: dict):
+    """批量归档: N 天前的未归档会话一次性收进归档视图。
+
+    days 必须为正整数（前端固定 7/30/90 三档）。逐会话追加 ArchiveRecord
+    （与单会话归档同一通道）; 对话中的会话跳过并在结果里计数, 不部分失败。
+    """
+    try:
+        days = int(request.get("days"))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=422, detail="days 必须是整数天数")
+    if days <= 0:
+        raise HTTPException(status_code=422, detail="days 必须是正整数")
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    archived = 0
+    skipped_busy = 0
+    for sid in store.list_sessions():
+        # 会话 id 是 %Y%m%d-%H%M%S 的 UTC 时间戳, 字典序即时间序
+        try:
+            created = datetime.strptime(sid.split("w")[0], "%Y%m%d-%H%M%S")\
+                .replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue   # 非 timestamp 形状的 id 不碰
+        if created >= cutoff:
+            continue
+        web_session = _sessions.get(sid)
+        if web_session is not None and web_session.busy:
+            skipped_busy += 1
+            continue
+        meta = store.get_session_meta(sid)
+        if meta["archived"]:
+            continue   # 已归档: 不重复追加记录
+        store.archive_session(sid, True)
+        archived += 1
+    return {"archived": archived, "skipped_busy": skipped_busy}
+
+
+@app.post("/api/sessions/{session_id}/archive")
+async def api_archive_session(session_id: str, request: dict):
+    """归档/恢复: 追加一条 archive 记录（展示取最新）。对话中的会话拒归档。"""
+    archived = request.get("archived")
+    if not isinstance(archived, bool):
+        raise HTTPException(status_code=422, detail="archived 必须是布尔值")
+    web_session = _sessions.get(session_id)
+    if web_session is not None and web_session.busy and archived:
+        raise HTTPException(status_code=409, detail="会话正在对话中，暂不能归档")
+    if session_id not in set(store.list_sessions()) \
+            and session_id not in _pending_sessions:
+        raise HTTPException(status_code=404, detail="会话不存在")
+    store.archive_session(session_id, archived)
+    return {"ok": True, "archived": archived}
 
 
 @app.post("/api/sessions/{session_id}/rename")
@@ -1666,6 +1721,7 @@ from aulos.web.server_settings import (  # noqa: E402,F401  re-export
     api_get_settings, api_post_settings,
     _save_setting, _save_permission_mode,
     api_get_providers, api_get_utility_provider, api_save_utility_provider,
+    api_get_worker_provider, api_save_worker_provider,
     api_save_providers, api_test_provider, api_open_config,
 )
 from aulos.web.server_policy import (  # noqa: E402,F401  re-export
@@ -1796,6 +1852,11 @@ async def ws_endpoint(websocket: WebSocket, session_id: str):
                         continue
                     web_session.workdir = str(wd.resolve())
                     store.set_workdir(web_session.session_id, web_session.workdir)
+                # 给已归档的会话发消息 = 恢复它: 自动取消归档并广播,
+                # 防止"我在归档列表里发了消息, 主列表却没有它"的困惑
+                if store.get_session_meta(web_session.session_id)["archived"]:
+                    store.archive_session(web_session.session_id, False)
+                    web_session.broadcast({"type": "session_unarchived"})
                 # 首轮固化会话模型（在 runtime 组装前: 组装即取固化值）
                 _pin_session_model(web_session)
                 try:

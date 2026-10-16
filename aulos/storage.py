@@ -60,6 +60,15 @@ class ModelRecord(BaseModel):
     timestamp: str
 
 
+class ArchiveRecord(BaseModel):
+    """会话归档记录: 追加式（同 title/workdir）, 取最新一条为准。
+    archived=True 进归档视图, False 恢复主列表。不挪文件、不动消息链——
+    列表视图层面的"眼不见", 恢复/搜索/历史回放零感知。"""
+    type: Literal["archive"] = "archive"
+    archived: bool
+    timestamp: str
+
+
 class SessionMemoryRecord(BaseModel):
     """Session Memory（三层压缩中间层的滚动摘要）记录: 后台消化每合并
     一步追加一条, 恢复时取最新。last_sha = 第 digested-1 条消息内容的
@@ -184,6 +193,15 @@ class SessionStore:
         """追加一条命名记录。改名不删旧记录, 展示层取最新。"""
         record = TitleRecord(
             title=title,
+            timestamp=datetime.now(timezone.utc).isoformat(),
+        )
+        self._append_entry(self._session_path(session_id), record)
+
+    def archive_session(self, session_id: str, archived: bool) -> None:
+        """追加一条归档记录（归档/恢复共用, 展示层取最新）。
+        不挪文件、不动消息链——恢复/搜索/历史回放零感知。"""
+        record = ArchiveRecord(
+            archived=bool(archived),
             timestamp=datetime.now(timezone.utc).isoformat(),
         )
         self._append_entry(self._session_path(session_id), record)
@@ -326,7 +344,7 @@ class SessionStore:
         失效; 进程重启清零, 派生数据不落盘, 永不与 JSONL 失同步。"""
         empty = {"title": None, "count": 0, "workdir": None, "mode": None,
                  "plan": False, "provider_id": None, "model_id": None,
-                 "first_user_text": None}
+                 "first_user_text": None, "archived": False}
         file_path = self._session_path(session_id)
         try:
             st = file_path.stat()
@@ -342,6 +360,7 @@ class SessionStore:
         plan = False
         provider_id: Optional[str] = None
         model_id: Optional[str] = None
+        archived = False
         msg_entries: list[StorageEntry] = []
         for entry in self._read_entries(file_path):
             if isinstance(entry, StorageEntry):
@@ -354,6 +373,8 @@ class SessionStore:
                 mode, plan = entry.mode, bool(entry.plan)
             elif isinstance(entry, ModelRecord):
                 provider_id, model_id = entry.provider_id, entry.model_id
+            elif isinstance(entry, ArchiveRecord):
+                archived = bool(entry.archived)
         if mode in ("plan", "read-only"):   # 旧数据归一: 同 get_permission_mode
             mode, plan = "prompt", True
         count = 0
@@ -370,7 +391,7 @@ class SessionStore:
         meta = {"title": title, "count": count, "workdir": workdir,
                 "mode": mode, "plan": plan,
                 "provider_id": provider_id, "model_id": model_id,
-                "first_user_text": first_user_text}
+                "first_user_text": first_user_text, "archived": archived}
         self._meta_cache[session_id] = (key, meta)
         return dict(meta)
 
@@ -490,6 +511,8 @@ class SessionStore:
                     result.append(ModelRecord.model_validate(data))
                 elif data.get("type") == "session_memory":
                     result.append(SessionMemoryRecord.model_validate(data))
+                elif data.get("type") == "archive":
+                    result.append(ArchiveRecord.model_validate(data))
                 else:
                     result.append(StorageEntry.model_validate(data))
             except json.JSONDecodeError as e:
