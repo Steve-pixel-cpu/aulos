@@ -183,6 +183,9 @@ MICROCOMPACT_MIN_CHARS = 1_000      # 太短的结果不值得清（省不了几
 MICROCOMPACT_PLACEHOLDER = "[Old tool result content cleared]"
 # 可清除白名单: 高产出、可复现（重跑命令/重读文件即可拿回）。todo/plan/
 # agent 等低产出或不可复现的结果不动。
+# web_search/web_fetch 严格说重跑不保证一致（网络快照漂移）, 不满足
+# "可复现"前提——但清除前会尽力落盘（_microcompact_view）, 至少可找回,
+# 故保留在名单内。
 MICROCOMPACT_COMPACTABLE_TOOLS = frozenset({
     "read_file", "grep", "glob", "bash", "powershell",
     "web_search", "web_fetch",
@@ -1230,8 +1233,15 @@ class ConversationRuntime:
                 continue
             # 占位符带落盘路径（若原文有）: 被清掉的旧结果可经 read_file 找回,
             # 不再是黑洞。延迟导入防环——tools 依赖 runtime 的 ToolError。
-            from aulos.tools import resumable_spill_path
+            from aulos.tools import resumable_spill_path, spill_tool_output
             spill = resumable_spill_path(block.output)
+            if not spill:
+                # 1K~落盘线区间的结果入口层不落盘, 清掉即无址（重跑长测试/
+                # 构建成本高）。清除前尽力落盘: 失败退回纯占位符, 不抛异常。
+                try:
+                    spill = spill_tool_output(block.output)
+                except Exception:
+                    spill = None
             placeholder = MICROCOMPACT_PLACEHOLDER
             if spill:
                 placeholder += (f"\n[Full output saved to `{spill}` — recover "

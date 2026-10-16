@@ -55,10 +55,10 @@ def test_超过阈值清除旧工具结果保留最近8条():
 
     assert view is not rt.session().messages          # 纯视图: 会话原样
     assert len(view) == 12
-    cleared = [m for m in view if m.content[0].output == MICROCOMPACT_PLACEHOLDER]
+    cleared = [m for m in view if m.content[0].output.startswith(MICROCOMPACT_PLACEHOLDER)]
     assert len(cleared) == 12 - 8                     # 最近 8 条原文保留
     for m in view[-8:]:
-        assert m.content[0].output != MICROCOMPACT_PLACEHOLDER
+        assert not m.content[0].output.startswith(MICROCOMPACT_PLACEHOLDER)
     # 块结构与 role 原样: 配对不破坏, API 不会 400
     assert all(m.role == "tool" and m.content[0].type == "tool_result" for m in view)
     # 展示层看不到占位符
@@ -105,7 +105,7 @@ def test_清完即稳定_重复构建视图无二次改动():
 
     assert view1 == view2
     assert sum(1 for m in view2
-               if m.content[0].output == MICROCOMPACT_PLACEHOLDER) == 4
+               if m.content[0].output.startswith(MICROCOMPACT_PLACEHOLDER)) == 4
 
 
 def test_压缩视图同样过microcompact():
@@ -120,5 +120,5 @@ def test_压缩视图同样过microcompact():
 
     body = view[1:]
     assert len(body) == 12
-    cleared = [m for m in body if m.content[0].output == MICROCOMPACT_PLACEHOLDER]
+    cleared = [m for m in body if m.content[0].output.startswith(MICROCOMPACT_PLACEHOLDER)]
     assert len(cleared) == 12 - 8
