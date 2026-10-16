@@ -915,6 +915,7 @@ function openSettings() {
   $("bg-bright-val").textContent = String(bgBrightPref());
   syncAccentInput();  // 迭代次数: 未加载过(服务端值未知)时留空给 placeholder 兜底, 已知则回显
   if (state.serverMaxIter != null) $("set-max-iter").value = String(state.serverMaxIter);
+  syncBrowserVisibilityControls();   // 浏览器可见性: 回显状态值, 未加载过给安全默认
   loadProviders().then(renderProviderSettings);   // 拉取供应商配置并渲染
   loadMcpServers().then(renderMcpSettings);       // 拉取 MCP 配置与连接状态并渲染
   renderAllowlistSettings();                      // 拉取命令白名单并渲染

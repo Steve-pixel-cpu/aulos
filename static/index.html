@@ -538,6 +538,22 @@
           </div>
           <input id="set-max-iter" class="hex-input num-input" spellcheck="false" inputmode="numeric" placeholder="128" maxlength="5">
         </div>
+        <div class="al-sub">浏览器可见性</div>
+        <div class="sp-section-desc">AI 用内置浏览器实测网页时是否显示真实浏览器窗口，以及每个动作之间的延迟（毫秒）。开可见、加延迟适合演示与录屏——能看清 AI 在点哪里；日常用保持关闭 + 0 毫秒最快。改完对新打开的浏览器生效（说"关掉浏览器"再试即可）</div>
+        <div class="set-row">
+          <div class="set-info">
+            <div class="set-name">显示浏览器窗口</div>
+            <div class="set-desc">关闭 = 后台隐身运行（默认）；开启 = 弹出真实 Chromium 窗口</div>
+          </div>
+          <label class="prov-switch"><input type="checkbox" id="set-browser-headed"><span class="track"></span></label>
+        </div>
+        <div class="set-row">
+          <div class="set-info">
+            <div class="set-name">动作间隔延迟（毫秒）</div>
+            <div class="set-desc">每次点击/输入之间的停顿，0–10000；演示建议 200–500</div>
+          </div>
+          <input id="set-browser-slowmo" class="hex-input num-input" spellcheck="false" inputmode="numeric" placeholder="0" maxlength="5">
+        </div>
         <div class="al-sub">命令白名单</div>
         <div class="sp-section-desc">匹配规则的 shell 命令不再弹权限确认，直接执行。规则按词序前缀匹配（如 "git push" 命中 "git push origin main"）；组合命令里每一段"命中规则或属于只读探查"即可放行，带命令替换或写文件重定向的段永远不命中。保存后立即对所有会话生效</div>
         <div class="al-add-row">

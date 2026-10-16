@@ -223,6 +223,14 @@ class RuntimeFeatureConfig(BaseModel):
     # 同文件重读去重: 文件未变时的整读只回一行 unchanged（带首次读取时刻）,
     # 任何写入介入或文件变化即失效; offset/limit/force=true 永远给全文。
     reread_dedup: bool = True
+    # 浏览器工具的可见性与节奏: headless=False 时 Chromium 以真实窗口启动
+    # （用户能看到 AI 在点哪里）; browser_slow_mo 毫秒数会加在 Playwright
+    # 每个动作之间——录演示视频/给人围观时放慢到 200~500 才看得清。
+    # 默认维持 headless + 0ms（CI 与日常速度不变）。环境变量
+    # AULOS_BROWSER_HEADED / AULOS_BROWSER_SLOWMO 可临时覆盖（见
+    # browser_tools.launch_options）。
+    browser_headless: bool = True
+    browser_slow_mo: int = Field(default=0, ge=0)
     # MCP 服务器列表（配置 mcpServers key）。空列表 = 未配置, 零开销。
     mcp_servers: list[McpServerConfig] = Field(default_factory=list)
 
@@ -412,6 +420,21 @@ class ConfigLoader:
                 f"rereadDedup: expected boolean, got {raw_dedup!r}",
                 kind="parse",
             )
+        # browserHeadless / browserSlowMo: 浏览器工具可见性与动作节奏
+        # （非法值在 RuntimeFeatureConfig 的 pydantic 校验层统一报错）
+        browser_headless = merged.get("browserHeadless", True)
+        if not isinstance(browser_headless, bool):
+            raise ConfigError(
+                f"browserHeadless: expected boolean, got {browser_headless!r}",
+                kind="parse",
+            )
+        browser_slow_mo = merged.get("browserSlowMo", 0)
+        if not isinstance(browser_slow_mo, int) or isinstance(browser_slow_mo, bool) \
+                or browser_slow_mo < 0:
+            raise ConfigError(
+                f"browserSlowMo: expected non-negative integer, got {browser_slow_mo!r}",
+                kind="parse",
+            )
 
         return RuntimeFeatureConfig(
             hooks_pre_tool_use=pre,
@@ -430,6 +453,8 @@ class ConfigLoader:
             convergence_nudge_at=nudge_at,
             tool_result_char_limit=raw_char_limit,
             reread_dedup=raw_dedup,
+            browser_headless=browser_headless,
+            browser_slow_mo=browser_slow_mo,
             mcp_servers=_parse_mcp_servers(merged),
         )
 

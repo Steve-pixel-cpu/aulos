@@ -30,6 +30,56 @@ def screenshots_dir() -> Path:
     return USER_DIR / "screenshots"
 
 
+# --- 启动选项: 配置 + 环境变量 → headless/slowMo/channel（纯函数, 可单测） ---
+
+# AULOS_BROWSER_HEADED 的显式关闭值: 视同未设置（回退配置）; 其余非空值 =
+# 强制可见。演示/录视频时不想改配置文件, 环境变量是临时覆盖的捷径。
+_HEADED_FALSY = {"0", "false", "off", "no"}
+
+
+def launch_options(feature_config, environ) -> dict:
+    """解析浏览器启动选项。优先级: 环境变量 > feature_config > 默认。
+
+    参数:
+        feature_config: RuntimeFeatureConfig（读 browser_headless/browser_slow_mo）
+        environ: os.environ 风格的映射（AULOS_BROWSER_HEADED/SLOWMO/CHANNEL）
+    返回:
+        {"headless": bool, "slow_mo": int, "channel": str | None}
+    异常:
+        配置层 slowMo 为负 → ValueError（配置错误, 应在启动时暴露）
+        环境变量值非法 → 忽略该变量, 不让可见性配置问题卡死浏览器
+    """
+    headless = bool(getattr(feature_config, "browser_headless", True))
+    slow_mo = int(getattr(feature_config, "browser_slow_mo", 0) or 0)
+    if slow_mo < 0:
+        raise ValueError(f"browserSlowMo: expected non-negative integer, got {slow_mo}")
+
+    headed_raw = str(environ.get("AULOS_BROWSER_HEADED", "")).strip().lower()
+    if headed_raw and headed_raw not in _HEADED_FALSY:
+        headless = False
+
+    slowmo_raw = str(environ.get("AULOS_BROWSER_SLOWMO", "")).strip()
+    try:
+        slow_mo = int(slowmo_raw)
+    except ValueError:
+        pass  # 非法值忽略; "0" 是合法显式关闭, 走正常赋值
+
+    channel = str(environ.get("AULOS_BROWSER_CHANNEL", "")).strip() or None
+    return {"headless": headless, "slow_mo": slow_mo, "channel": channel}
+
+
+def _current_feature_config():
+    """读当前生效的 feature_config; 加载失败回退默认（headless）——浏览器
+    工具的可见性是锦上添花, 不该因配置系统故障变成不可用。"""
+    try:
+        from aulos.config import ConfigLoader
+        from aulos.config import USER_DIR
+        return ConfigLoader(Path.cwd(), USER_DIR).load().feature_config
+    except Exception:
+        from aulos.config import RuntimeFeatureConfig
+        return RuntimeFeatureConfig()
+
+
 # --- 浏览器单例状态（只在 _BROWSER_POOL 线程里触碰） ---
 
 class _BrowserState:
@@ -41,6 +91,7 @@ class _BrowserState:
         self._browser = None       # Browser（复用, 工具间不重启）
         self._page = None          # 当前活动 Page（单页面会话）
         self._channel_used = None  # 实际启动成功的渠道（诊断用）
+        self._headless = True      # 实际启动模式（工具描述自述用）
         self.console: list[str] = []   # console 消息 + pageerror 累积
         self.max_console = 200     # 防长会话无限膨胀
 
@@ -57,21 +108,25 @@ class _BrowserState:
         return sync_playwright
 
     def _launch(self):
-        """起 playwright + headless chromium。渠道顺序: 环境变量 AULOS_BROWSER_CHANNEL
-        指定 > chromium（playwright 自带） > 本机 chrome > 本机 msedge（Windows
-        全机自带）。桌面端/冻结 exe 没法跑 `playwright install`，靠后面的本机
-        浏览器渠道兜底——Win10/11 必有 Edge，等效"零额外下载"。"""
+        """起 playwright chromium（headless/slowMo 由配置+环境变量决定）。
+        渠道顺序: 环境变量 AULOS_BROWSER_CHANNEL 指定 > chromium（playwright
+        自带） > 本机 chrome > 本机 msedge（Windows 全机自带）。桌面端/冻结
+        exe 没法跑 `playwright install`，靠后面的本机浏览器渠道兜底——
+        Win10/11 必有 Edge，等效"零额外下载"。可见性与节奏解析见
+        launch_options()；browser_close 后下次调用按新配置重开。"""
         sync_playwright = self._import_playwright()
         self._pw = sync_playwright().start()
         import os
-        forced = os.environ.get("AULOS_BROWSER_CHANNEL", "").strip() or None
-        channels = [forced] if forced else [None, "chrome", "msedge"]
+        opts = launch_options(_current_feature_config(), os.environ)
+        channels = [opts["channel"]] if opts["channel"] else [None, "chrome", "msedge"]
         last_err: Exception | None = None
         for channel in channels:
             try:
-                self._browser = self._pw.chromium.launch(headless=True,
-                                                         channel=channel)
+                self._browser = self._pw.chromium.launch(
+                    headless=opts["headless"], slow_mo=opts["slow_mo"],
+                    channel=channel)
                 self._channel_used = channel or "chromium"
+                self._headless = opts["headless"]
                 break
             except Exception as e:
                 last_err = e
@@ -308,10 +363,21 @@ _COMMON_TIMEOUT = {
 SELECTOR_DOC = (
     "CSS selector or text engine ('text=Login', 'role=button[name=Submit]')")
 
+def _browser_visibility_doc() -> str:
+    """工具描述里按当前实际可见性自述（headless 写死时代的描述会骗模型）。"""
+    try:
+        headless = _STATE._headless
+    except Exception:
+        headless = True
+    return ("headless (invisible)" if headless
+            else "headed (a visible Chromium window the user can watch)")
+
+
 browser_navigate_spec = {
     "name": "browser_navigate",
     "description": (
-        "Open a URL in a headless Chromium browser (Playwright). Returns "
+        "Open a URL in a Chromium browser (Playwright; visibility depends "
+        "on user config). Returns "
         "page title, final URL, HTTP status and an aria snapshot of the "
         "page structure. First call of a web-testing flow; subsequent "
         "snapshot/click/type operate on the same page."),
@@ -451,7 +517,15 @@ BROWSER_TOOL_NAMES = {s["name"] for s in BROWSER_TOOL_SPECS}
 
 
 def register_browser_tools(registry):
-    """把 9 个浏览器工具注册进 ToolRegistry（main.build_registry 调用）。"""
+    """把 9 个浏览器工具注册进 ToolRegistry（main.build_registry 调用）。
+    注册时把浏览器实际可见性拼进 navigate 描述, 模型不会按过时的
+    "headless" 假设向用户转述。"""
+    browser_navigate_spec["description"] = (
+        f"Open a URL in a Chromium browser (Playwright; currently "
+        f"{_browser_visibility_doc()}). Returns "
+        "page title, final URL, HTTP status and an aria snapshot of the "
+        "page structure. First call of a web-testing flow; subsequent "
+        "snapshot/click/type operate on the same page.")
     return (registry
             .register(name="browser_navigate", handler=browser_navigate_tool)
             .register(name="browser_snapshot", handler=browser_snapshot_tool)

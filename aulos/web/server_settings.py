@@ -295,6 +295,11 @@ async def api_get_settings():
         "thinking_auto_downshift": server.runtime_config.thinking_auto_downshift(),
         "downshift_after_iterations": server.runtime_config.downshift_after_iterations(),
         "convergence_nudge_at": server.runtime_config.convergence_nudge_at(),
+        # 浏览器工具的可见性与动作节奏（设置页「行为」分区）:
+        # 改的是全局默认, 已在跑的浏览器实例不受影响, browser_close 后
+        # 下一次调用按新值重开——与 max_iterations 的会话隔离语义对齐
+        "browser_headless": server.runtime_config.feature_config.browser_headless,
+        "browser_slow_mo": server.runtime_config.feature_config.browser_slow_mo,
         # 前端展示用: 输入栏的模型名 + 顶栏面包屑的工作区名
         "model": server.api_client.model,
         "provider_id": active.get("provider"),
@@ -410,6 +415,32 @@ async def api_post_settings(request: dict):
             )
         server.runtime_config.feature_config.convergence_nudge_at = raw_nudge
         _save_setting("convergenceNudgeAt", raw_nudge)
+
+    # 浏览器可见性与动作节奏: headless=False 时浏览器以可见窗口启动;
+    # slow_mo 是 Playwright 每个动作间的毫秒延迟（演示/录视频用）。
+    # 只改全局默认: 正在跑的浏览器实例不动, browser_close 后生效
+    raw_browser_headless = request.get("browser_headless")
+    if raw_browser_headless is not None:
+        if not isinstance(raw_browser_headless, bool):
+            raise HTTPException(
+                status_code=400,
+                detail=f"browser_headless: 须为布尔, got {raw_browser_headless!r}",
+            )
+        server.runtime_config.feature_config.browser_headless = raw_browser_headless
+        _save_setting("browserHeadless", raw_browser_headless)
+
+    raw_browser_slow_mo = request.get("browser_slow_mo")
+    if raw_browser_slow_mo is not None:
+        if (not isinstance(raw_browser_slow_mo, int)
+                or isinstance(raw_browser_slow_mo, bool)
+                or not 0 <= raw_browser_slow_mo <= 10000):
+            raise HTTPException(
+                status_code=400,
+                detail=("browser_slow_mo: 须为 0–10000 的整数, "
+                        f"got {raw_browser_slow_mo!r}"),
+            )
+        server.runtime_config.feature_config.browser_slow_mo = raw_browser_slow_mo
+        _save_setting("browserSlowMo", raw_browser_slow_mo)
 
     # 切换激活模型（来自输入框模型下拉）
     provider_id = request.get("provider_id")

@@ -1293,6 +1293,9 @@ async function loadSettings() {
       state.serverMaxIter = s.max_iterations;
       $("set-max-iter").value = String(s.max_iterations);
     }
+    state.serverBrowserHeaded = s.browser_headless === false;
+    state.serverBrowserSlowMo = s.browser_slow_mo ?? null;
+    syncBrowserVisibilityControls();
     if (s.workspace) $("ws-tag-text").textContent = s.workspace;
     state.serverWorkspace = s.workspace || null;
     state.configured = s.configured !== false;   // 旧服务端无此字段时视为已配置
@@ -1741,6 +1744,43 @@ function currentMaxIter() {
   });
 }
 
+/* ---------- 设置 → 行为: 浏览器可见性与动作延迟 ---------- */
+function browserSlowMoValid(v) {
+  return Number.isInteger(v) && v >= 0 && v <= 10000;
+}
+function syncBrowserVisibilityControls() {
+  // 服务端值未知时给安全默认（undefined → 关）, 避免开关显示假状态
+  $("set-browser-headed").checked = state.serverBrowserHeaded === true;
+  $("set-browser-slowmo").value =
+      state.serverBrowserSlowMo != null ? String(state.serverBrowserSlowMo) : "";
+}
+{
+  const chk = $("set-browser-headed");
+  chk.addEventListener("change", async () => {
+    const s = await saveSettings({ browser_headless: !chk.checked });
+    if (s) toast(chk.checked ? "已开启，新打开的浏览器可见" : "已关闭，新打开的浏览器隐身");
+  });
+  const inp = $("set-browser-slowmo");
+  const submit = async () => {
+    const cur = state.serverBrowserSlowMo;
+    if (inp.value.trim() === "") {   // 清空 = 回显当前值
+      if (cur != null) inp.value = String(cur);
+      inp.classList.remove("invalid");
+      return;
+    }
+    const v = parseInt(inp.value, 10);
+    if (!browserSlowMoValid(v)) { inp.classList.add("invalid"); return; }
+    inp.classList.remove("invalid");
+    await saveSettings({ browser_slow_mo: v });
+    toast("已保存，对新打开的浏览器生效");
+  };
+  inp.addEventListener("blur", submit);
+  inp.addEventListener("keydown", ev => {
+    ev.stopPropagation();   // 别让 Enter/Esc 冒泡成全局快捷键
+    if (ev.key === "Enter") ev.target.blur();
+  });
+}
+
 /* ---------- 设置 → 模型: 辅助模型（utilityProvider） ----------
  * 压缩摘要/会话记忆摘要/自动命名等"整理型"调用专用。独立端点读写原始
  * 设置（不含供应商 key），保存后服务端即时重建 utility client。
@@ -1937,6 +1977,11 @@ async function saveSettings(patch) {
     if (s.permission_mode) state.globalDefaults.permissionMode = s.permission_mode;
     if (s.permission_plan != null) state.globalDefaults.permissionPlan = !!s.permission_plan;
     if (s.max_iterations != null) $("set-max-iter").value = String(s.max_iterations);
+    if (s.browser_headless != null || s.browser_slow_mo != null) {
+      if (s.browser_headless != null) state.serverBrowserHeaded = s.browser_headless === false;
+      if (s.browser_slow_mo != null) state.serverBrowserSlowMo = s.browser_slow_mo;
+      syncBrowserVisibilityControls();
+    }
     if (s.provider_id && s.model_id) {
       state.globalDefaults.modelKey = s.provider_id + "|" + s.model_id;
       if (!state.sessionId) modelDd.setValue(state.globalDefaults.modelKey);
