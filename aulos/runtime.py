@@ -24,7 +24,9 @@ from aulos.compact import (
     cut_point,
     estimate_session_tokens,
     format_compact_summary,
+    format_findings_section,
     summarize_messages,
+    extract_assistant_findings,
 )
 from aulos.hooks import HookRunner, HookResult
 from aulos.models import Message, TextContentBlock, AnyContentBlock, ToolContentBlock, ToolResultContentBlock, Session
@@ -1173,7 +1175,14 @@ class ConversationRuntime:
         # → 直接当压缩结果, 现场摘要 side-call 都不用发
         mem = self._session_memory
         if mem.summary and mem.digested >= keep_from:
-            return mem.summary
+            # 逐字锚点（消费端派生）: 滚动摘要经多代 LLM 接力合并, 误差
+            # 单调累积且持久化跨重启存续——它是这里归档区的唯一表示,
+            # 漂移无处对冲。msgs 原文从不截断, 直接从归档区机械抽取助手
+            # 结论原文拼在摘要后（复用 summarize_messages 的 findings
+            # 逻辑）: 锚点由代码维护、永不经过模型。纯 CPU, 保持零调用。
+            anchors = format_findings_section(
+                extract_assistant_findings(msgs[:keep_from]))
+            return mem.summary + ("\n\n" + anchors if anchors else "")
         prev_summary: Optional[str] = None
         archived = msgs[:keep_from]
         if self._compact_cache is not None:

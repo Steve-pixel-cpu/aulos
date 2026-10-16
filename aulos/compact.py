@@ -84,6 +84,33 @@ _MAX_FINDING_CHARS = 1_500   # 单条结论截断上限（正常助手消息远�
 _RECENT_TIMELINE = 10        # 时间线覆盖的条数: 只衔接保留区, 不复述全史
 
 
+def extract_assistant_findings(msgs: List[Message]) -> List[str]:
+    """机械抽取助手结论原文（逐字, 不经模型）。规则摘要与压缩零调用
+    路径的滚动摘要锚点共用: 助手正文是调查结论的唯一载体（"实锤了——
+    X 写进了 Y"）, 工具结果可以截断, 结论截断 = 失忆 = 重新排查。
+    只收 assistant 消息的 Text 块, 单条截 _MAX_FINDING_CHARS, 取最新的
+    _MAX_FINDINGS 条（时间序）。"""
+    findings: list[str] = []
+    for msg in msgs:
+        if msg.role == "assistant":
+            for block in msg.content:
+                if isinstance(block, TextContentBlock) and block.text.strip():
+                    findings.append(block.text.strip()[:_MAX_FINDING_CHARS])
+    return findings[-_MAX_FINDINGS:]
+
+
+def format_findings_section(findings: List[str]) -> str:
+    """把逐字结论渲染成摘要锚点段（与 summarize_messages 的 findings
+    段同款措辞）。"""
+    if not findings:
+        return ""
+    lines = ["Assistant conclusions (verbatim, oldest first — settled "
+             "results, cite them directly):"]
+    for i, finding in enumerate(findings, 1):
+        lines.append(f"  {i}. {finding}")
+    return "\n".join(lines)
+
+
 def _clean_snippet(text: str, limit: int) -> str:
     """摘要片段净化: 工具输出里常有无法解码的字节（解码器以 U+FFFD 替代,
     压缩摘要直接截取就会带出一串乱码）和多行内容——剔除替换符、压平空白
