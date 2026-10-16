@@ -682,6 +682,86 @@ def save_utility_provider_setting(want: Optional[dict]) -> dict:
     return cleaned
 
 
+# workerProvider（settings.json 的 workerProvider 键）: 派出去的子代理
+# （subagent worker）走它指向的供应商——"强模型 Leader 做诊断/规划, 便宜
+# 模型 worker 做执行"的分层模式。与 utilityProvider 的关键差异: worker
+# 的意义就在换一个更便宜的模型, 所以 model 留空视为未配置（不存在
+# "换供应商不换模型"的回落档）; 未配置/无效时 worker 跟随派生会话的
+# 模型（原行为）。生效时机: 每次 spawn 现读设置, 保存即对下一次派发生效。
+WORKER_PROVIDER_KEY = "workerProvider"
+
+
+def load_worker_provider() -> Optional[dict]:
+    """读子代理专用供应商配置。
+
+    settings.json: {"workerProvider": {"provider": <providers 里的 id>,
+    "model": "模型名"}}。校验与 utilityProvider 同口径: 未配置 / 指向不
+    存在或被禁用的供应商 / 缺 key 或 base_url / model 留空 → None（调用方
+    回落会话继承）。返回 {"api_key", "base_url", "protocol", "model"}。"""
+    try:
+        data = json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    want = data.get(WORKER_PROVIDER_KEY)
+    if not isinstance(want, dict):
+        return None
+    provider_id = want.get("provider")
+    prov = next((p for p in data.get("providers", [])
+                 if isinstance(p, dict) and p.get("id") == provider_id), None)
+    if not (prov and prov.get("enabled") and prov.get("api_key")
+            and str(prov.get("base_url") or "").strip()):
+        return None
+    model = str(want.get("model") or "").strip()
+    if not model:
+        return None
+    return {
+        "api_key": prov.get("api_key"),
+        "base_url": str(prov.get("base_url") or "").strip(),
+        "protocol": prov.get("protocol"),
+        "model": model,
+    }
+
+
+def load_worker_provider_setting() -> dict:
+    """读原始设置（设置页 UI 用, 不含解析出的 key/地址）。"""
+    try:
+        data = json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {"provider": None, "model": None}
+    if not isinstance(data, dict):
+        return {"provider": None, "model": None}
+    want = data.get(WORKER_PROVIDER_KEY)
+    if not isinstance(want, dict):
+        return {"provider": None, "model": None}
+    return {"provider": want.get("provider") or None,
+            "model": str(want.get("model") or "").strip() or None}
+
+
+def save_worker_provider_setting(want: Optional[dict]) -> dict:
+    """写原始设置: 读-改-写保留文件里其他 key。provider 为空 = 清除
+    （整键删除, worker 回落会话继承）。返回清洗后的生效设置。"""
+    cleaned = {"provider": None, "model": None}
+    if isinstance(want, dict):
+        cleaned = {"provider": str(want.get("provider") or "").strip() or None,
+                   "model": str(want.get("model") or "").strip() or None}
+    try:
+        data = json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            data = {}
+    except (OSError, ValueError):
+        data = {}
+    if cleaned["provider"] is None:
+        data.pop(WORKER_PROVIDER_KEY, None)
+    else:
+        data[WORKER_PROVIDER_KEY] = cleaned
+    SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    SETTINGS_FILE.write_text(
+        json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    return cleaned
+
+
 # 命令前缀白名单: 与供应商配置同文件（commandAllowlist 键）, 读-改-写
 # 保留其他 key。规则是 shell 词序前缀（如 "git push"、"uv run pytest"）,
 # 授权层按词对齐匹配——见 permissions.shell_command_matches_allowlist。

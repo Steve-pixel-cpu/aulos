@@ -24,7 +24,9 @@ from aulos.api_client import (KNOWN_PROTOCOLS, THINKING_LEVELS,
                         normalize_protocol)
 from aulos.config import (SETTINGS_FILE, USER_DIR, ConfigLoader,
                     load_utility_provider, load_utility_provider_setting,
-                    save_providers, save_utility_provider_setting)
+                    load_worker_provider, load_worker_provider_setting,
+                    save_providers, save_utility_provider_setting,
+                    save_worker_provider_setting)
 from aulos.mcp_client import MCP_TOOL_PREFIX, get_mcp_manager
 from aulos.permissions import MODE_TO_NAME, NAME_TO_MODE, PermissionMode
 from aulos.skills import (SkillError, delete_user_skill, discover_skills,
@@ -518,6 +520,32 @@ async def api_save_utility_provider(request: dict):
     return {**setting, "valid": load_utility_provider() is not None,
             "effective_model": server._utility_client.model if server._utility_client
             else (server.api_client.model or None)}
+
+
+@app.get("/api/worker-provider")
+async def api_get_worker_provider():
+    """设置页的子代理模型配置: 原始设置 + 有效性 + 将生效的模型名。
+    worker 每次派生时现读设置, 无需重建任何 client——这里只做诊断展示。"""
+    setting = load_worker_provider_setting()
+    wprov = load_worker_provider()
+    return {**setting,
+            "valid": wprov is not None,
+            "effective_model": (wprov or {}).get("model")}
+
+
+@app.post("/api/worker-provider")
+async def api_save_worker_provider(request: dict):
+    """保存子代理模型设置。无需重建 client: worker 在每次派生时现读
+    设置, 保存即对下一次派发生效。provider 留空 = 清除, 回落会话继承。"""
+    pid = str(request.get("provider") or "").strip()
+    if pid and not any(p.get("id") == pid
+                       for p in server._provider_cfg.get("providers", [])):
+        raise HTTPException(status_code=400, detail=f"供应商不存在: {pid}")
+    setting = save_worker_provider_setting(
+        {"provider": pid, "model": request.get("model")})
+    wprov = load_worker_provider()
+    return {**setting, "valid": wprov is not None,
+            "effective_model": (wprov or {}).get("model")}
 
 
 @app.post("/api/providers")

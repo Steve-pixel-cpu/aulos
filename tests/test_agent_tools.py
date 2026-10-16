@@ -171,8 +171,11 @@ def test_spawn_without_workdir_defaults_to_none():
 # ------------------------------------------------------------
 
 def test_spawn_without_session_binding_passes_none_api_config(monkeypatch):
-    """无会话绑定（CLI）: api_config=None → worker 回落全局工厂。"""
+    """无会话绑定（CLI）: api_config=None → worker 回落全局工厂。
+    桩掉 worker_api_config: 该函数现读真实 ~/.aulos/settings.json,
+    不隔离会把用户已配置的 workerProvider 泄漏进测试。"""
     monkeypatch.setattr(agent_tools, "current_session_id", lambda: None)
+    monkeypatch.setattr(agent_tools, "worker_api_config", lambda: None)
     rec = RecordingSpawn()
     agent_tools._toolbox._orchestrator = AgentOrchestrator(
         Path(tempfile.mkdtemp()), spawn_fn=rec)
@@ -181,9 +184,11 @@ def test_spawn_without_session_binding_passes_none_api_config(monkeypatch):
 
 
 def test_spawn_carries_session_api_config(monkeypatch):
-    """Web 有会话绑定: job 带上派生会话解析出的连接四元组。"""
+    """Web 有会话绑定: job 带上派生会话解析出的连接四元组。
+    同上桩掉 worker_api_config, 隔离真实设置的 workerProvider。"""
     quad = ("sk-x", "https://api.example.com", "session-model", "openai")
     monkeypatch.setattr(agent_tools, "current_session_id", lambda: "s-1")
+    monkeypatch.setattr(agent_tools, "worker_api_config", lambda: None)
     monkeypatch.setattr(agent_tools, "current_session_api_config", lambda: quad)
     rec = RecordingSpawn()
     agent_tools._toolbox._orchestrator = AgentOrchestrator(

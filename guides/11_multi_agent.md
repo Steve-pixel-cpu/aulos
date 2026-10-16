@@ -140,3 +140,17 @@ AgentOrchestrator
 
 测试: `tests/test_agent_tools.py`（spec↔handler↔白名单一致性、workdir
 参数流、规格过滤、spawn→complete→status 闭环、API 配置注入/回落）。
+
+## 模型分层（workerProvider, 2026-10 新增）
+
+worker 的连接配置解析顺序（`agent_tools.spawn_agent_tool`）:
+
+1. `workerProvider`（settings.json, 与 utilityProvider 同款结构）: 指定后
+   子代理走该供应商+模型——"强模型 Leader 做诊断/规划, 便宜模型 worker
+   做执行"的分层模式。model 留空视为未配置（worker 的意义就在换便宜
+   模型, 与 utilityProvider 的回落语义不同）;
+2. 派生会话的 api_config（Web 会话专属模型对子代理同样生效）;
+3. 全局工厂 `.env`（CLI 旧行为）。
+
+生效时机: 每次 spawn 现读设置——设置页保存后无需重启或重建 client,
+对下一次派生即生效。测试: `tests/test_worker_provider.py`。

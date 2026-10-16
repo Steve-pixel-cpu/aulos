@@ -192,6 +192,28 @@ def current_session_api_config() -> Optional[tuple[str, Optional[str], str, str]
         return None
 
 
+def worker_api_config() -> Optional[tuple[str, Optional[str], str, str]]:
+    """workerProvider（settings.json）→ worker 的连接元组。
+
+    强模型 Leader + 便宜模型 worker 的分层执行: 配置了 workerProvider 时
+    子代理走它的供应商和模型（与主对话不同也可）, 未配置/无效返回 None
+    → 回落会话继承（原行为）。每次 spawn 现读设置: 设置页保存后无需重启,
+    对下一次派生即生效。协议/base_url 归一与 CLI 装配 utilityProvider 同
+    口径; 协议非法同样视为未配置, 不阻断 spawn。"""
+    from aulos.config import load_worker_provider
+    wprov = load_worker_provider()
+    if not wprov:
+        return None
+    from aulos.api_client import normalize_base_url, normalize_protocol
+    try:
+        protocol = normalize_protocol(wprov.get("protocol"))
+    except ValueError:
+        return None
+    base_url = normalize_base_url(wprov.get("base_url"), protocol=protocol)
+    return (str(wprov.get("api_key")), base_url or None,
+            wprov["model"], protocol)
+
+
 # --- handlers: 签名与其他工具一致 (params: dict, workdir: Optional[str]) ---
 
 def _fmt_manifest(m) -> str:
@@ -212,9 +234,10 @@ def spawn_agent_tool(params: dict, workdir: Optional[str] = None) -> str:
             name=params.get("name") or None,
             subagent_type=params.get("subagent_type") or "general",
             workdir=workdir,
-            # worker 跟随派生会话的模型/供应商（会话专属模型对子代理同样生效）;
-            # CLI / 无会话绑定时为 None → 回落全局工厂, 行为不变
-            api_config=current_session_api_config(),
+            # 分层执行: workerProvider（便宜模型专职执行）优先; 未配置时
+            # worker 跟随派生会话的模型/供应商（会话专属模型对子代理同样
+            # 生效）; CLI / 无会话绑定时为 None → 回落全局工厂, 行为不变
+            api_config=worker_api_config() or current_session_api_config(),
         )
     except ValueError as e:
         return f"ERROR: {e}"
