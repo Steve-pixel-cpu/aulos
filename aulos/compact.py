@@ -67,6 +67,11 @@ def estimate_session_tokens(msgs: List[Message]) -> int:
     return sum(estimate_message_tokens(msg) for msg in msgs)
 
 def should_compact(msgs: List[Message], config: CompactionConfig) -> bool:
+    """双触发判断（CC compact.rs 教学镜像, 生产路径零调用）。
+
+    aulos 生产触发口径见 runtime._context_over_compact_threshold:
+    看最近一次 API 调用的真实 usage, 阈值 750K——按轮累加的估算会把
+    工具迭代重复计入, 造成误触发。本函数仅为对齐源码结构保留。"""
     return len(msgs) > config.preserve_recent_messages and estimate_session_tokens(msgs) > config.max_estimated_tokens
 
 

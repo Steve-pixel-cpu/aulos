@@ -18,6 +18,13 @@
 5. 新 session = [system 摘要消息] + [保留消息]
 ```
 
+> **注（生产口径）**：此节是 CC compact.rs 的教学镜像。aulos 生产触发的
+> 口径不是这里的双触发判断，而是 runtime 的 `_context_over_compact_threshold`
+> ——看**最近一次 API 调用的真实 usage**（input+缓存读写），阈值默认
+> 750K；按轮累加的 usage 会把工具迭代重复计入（迭代 N 次 = N 份上下文），
+> 造成误触发→失忆→重读循环。`compact.should_compact` 仅为对齐源码结构
+> 保留，生产路径零调用。
+
 ### 摘要提取 (代码做的，不是 AI)
 
 源码 compact.rs:113-198 提取:
@@ -88,6 +95,9 @@ compact_session(msgs, config) -> CompactionResult
 
 完整层次：MicroCompact（清旧工具结果, 零调用）→ **Session Memory 中间层**
 （预建滚动摘要, 压缩时零调用）→ Full Compact（LLM 现场摘要, 兜底）。
+
+> **注**：压缩激活的生产触发口径见上文"生产口径"注（runtime 真实 usage），
+> 本节以及下文的 `should_compact` 双触发均为教学镜像。
 
 ### Session Memory 中间层（compact.SessionMemory）
 
