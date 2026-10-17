@@ -518,8 +518,8 @@
         <div class="prov-actions">
           <span id="prov-save-status" class="prov-save-status" aria-live="polite"></span>
         </div>
-        <div class="al-sub">辅助模型（自动起名、摘要等后台任务）</div>
-        <div class="sp-section-desc">会话自动起名、长对话自动压缩成摘要、跨会话记忆整理，这些后台任务默认也在用你的主力对话模型。这里可以指定一个更便宜的模型专门干这些活——省钱，且不影响对话本身；不配置就跟主模型。改动停顿后自动保存，立即生效</div>
+        <div class="al-sub">辅助模型（自动起名、摘要、看图等后台任务）</div>
+        <div class="sp-section-desc">会话自动起名、长对话自动压缩成摘要、跨会话记忆整理、图片转述——这些后台任务默认也在用你的主力对话模型。这里可以指定一个更便宜的模型专门干这些活——省钱，且不影响对话本身；不配置就跟主模型。注意选带视觉能力的模型：主模型不吃图片时（部分纯文本部署会直接拒图），会把图交给辅助模型转述成文字再继续；配了纯文本模型这条救场通道就不可用。改动停顿后自动保存，立即生效</div>
         <div class="al-add-row">
           <!-- mem-cat-dd: 与记忆分区分类下拉同款边框样式（app.css 设置页分区） -->
           <button type="button" class="dd set-dd mem-cat-dd" id="ut-provider" aria-label="辅助模型供应商">

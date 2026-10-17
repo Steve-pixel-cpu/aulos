@@ -1812,8 +1812,8 @@ function renderUtilityStatus() {
   const el = $("ut-status");
   if (!s || !el) return;
   el.classList.remove("err");
-  if (!s.provider) el.textContent = "当前：跟主模型";
-  else if (s.valid) el.textContent = `当前：起名/摘要等后台任务用 ${s.effective_model || s.model || "主对话模型"}`;
+  if (!s.provider) el.textContent = "当前：跟主模型（主模型若拒图将无转述救场，建议配带视觉的模型）";
+  else if (s.valid) el.textContent = `当前：起名/摘要/看图转述等后台任务用 ${s.effective_model || s.model || "主对话模型"}`;
   else { el.textContent = "已配置但不可用（供应商被禁用或缺 key），暂跟主模型"; el.classList.add("err"); }
 }
 let utSaveTimer = null;
