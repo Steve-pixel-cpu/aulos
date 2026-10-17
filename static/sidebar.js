@@ -66,6 +66,7 @@ const TRASH_SMALL_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="n
 /* 归档 = 追加式记录, 只在列表视图隐藏, 数据不丢; 恢复即回主列表 */
 const ARCHIVE_BOX_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a2 2 0 002 2h10a2 2 0 002-2V8M10 12h4"/></svg>';
 const UNARCHIVE_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 016 6v4"/></svg>';
+const MORE_SMALL_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>';
 const CLOSE_SMALL_SVG = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
 
 /* 归档/恢复: POST 后原地更新 state 并重绘（失败 toast, 不动列表） */
@@ -89,7 +90,7 @@ async function setSessionArchived(id, archived) {
   }
 }
 
-/* 批量归档: days 取 7/30/90, 结果 toast 计数后刷新 */
+/* 批量归档: days 为正整数（弹层输入或预设档）, 结果 toast 计数后刷新 */
 async function batchArchive(days) {
   try {
     const r = await fetch("/api/sessions/batch-archive", {
@@ -109,6 +110,31 @@ async function batchArchive(days) {
       : "没有需要归档的会话");
   } catch (e) {
     toast("批量归档失败: " + e.message);
+  }
+}
+
+/* 全部删除归档任务: 危险操作, confirmDialog 后走批量删除接口 */
+async function deleteAllArchived() {
+  const n = state.sessions.filter(s => s.archived).length;
+  if (!n) { toast("没有归档任务"); return; }
+  const ok = await confirmDialog(
+    `将永久删除 ${n} 个归档会话及其全部消息，不可恢复。`,
+    { title: "删除所有归档任务", okText: "全部删除", danger: true });
+  if (!ok) return;
+  try {
+    const r = await fetch("/api/sessions/batch-delete-archived", { method: "POST" });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      throw new Error(err.detail || r.status);
+    }
+    const body = await r.json();
+    await loadSessions();
+    toast(body.deleted.length
+      ? `已删除 ${body.deleted.length} 个归档会话`
+        + (body.skipped_busy ? `，${body.skipped_busy} 个对话中已跳过` : "")
+      : "没有可删除的归档会话");
+  } catch (e) {
+    toast("删除失败: " + e.message);
   }
 }
 
@@ -186,16 +212,15 @@ function makeSessionItem(s) {
     + (unnamed ? " unnamed" : "");
   item.dataset.id = s.id;
   const archivedView = !!state.archiveView;
-  /* 普通视图: 改名+归档; 归档视图: 恢复+删除（删除只在归档视图提供） */
+  /* 普通视图: 改名+归档; 归档视图: 行内不带操作钮——恢复/删除在子行,
+   * 主行保持 标题+时间 两元素, 与 mock 一致 */
   item.innerHTML = '<span class="s-ico">' + sessionStateIcon(s) + '</span>'
     + '<span class="s-unread"></span>'
     + '<span class="s-plan">待批计划</span>'
     + '<span class="title"></span><span class="meta"></span>'
     + '<div class="s-snippet"></div>'
-    + (archivedView
-      ? '<button class="s-unarc" data-tip="恢复">' + UNARCHIVE_SVG + '</button>'
-        + '<button class="s-del" data-tip="删除会话">' + TRASH_SMALL_SVG + '</button>'
-      : '<button class="s-arc" data-tip="归档">' + ARCHIVE_BOX_SVG + '</button>'
+    + (archivedView ? "" :
+        '<button class="s-arc" data-tip="归档">' + ARCHIVE_BOX_SVG + '</button>'
         + '<button class="s-ren" data-tip="重命名">' + PENCIL_SMALL_SVG + '</button>');
   item.querySelector(".title").textContent = displayTitle(s);
   item.querySelector(".meta").textContent = relativeTime(s.id);
@@ -237,12 +262,15 @@ function makeSessionItem(s) {
     item.querySelector(".s-unread").textContent = run.unread > 99 ? "99+" : run.unread;
   }
   item.onclick = () => selectSession(s.id);
-  // 归档视图: workdir 子标签（主列表按项目折叠分组, 扁平列表没有归属感）
-  if (archivedView && s.workdir) {
+  /* 归档视图: workdir 子行（第二行, 无项目显示 default）; 恢复/删除悬停
+   * 出现在子行右侧——上下两行, 主行保持标题+时间的干净布局 */
+  if (archivedView) {
     const wd = document.createElement("div");
     wd.className = "s-workdir";
-    wd.innerHTML = FOLDER_SVG + '<span></span>';
-    wd.querySelector("span").textContent = projectDisplayName(s.workdir);
+    wd.innerHTML = FOLDER_SVG + '<span></span>'
+      + '<button class="s-unarc" data-tip="恢复">' + UNARCHIVE_SVG + '</button>'
+      + '<button class="s-del" data-tip="删除会话">' + TRASH_SMALL_SVG + '</button>';
+    wd.querySelector("span").textContent = s.workdir ? projectDisplayName(s.workdir) : "default";
     item.appendChild(wd);
   }
   const arcBtn = item.querySelector(".s-arc");
@@ -359,32 +387,89 @@ function renderSessionList() {
     l.textContent = text;
     list.appendChild(l);
   };
-  /* ---- 归档视图: 扁平列表（时间倒序）+ 顶部批量归档工具行 ---- */
+  /* ---- 归档视图: 排序 + 批量归档 + …菜单(全部删除) 工具行 ---- */
   if (state.archiveView) {
     if (!sessions.length && !q) {
       list.innerHTML = '<div class="list-empty">暂无归档会话</div>';
       return;
     }
     const toolRow = document.createElement("div");
-    toolRow.className = "list-label-row";
+    toolRow.className = "list-label-row archived-tools";
     toolRow.innerHTML = '<span class="list-label">归档</span>';
-    const batch = document.createElement("button");
-    batch.type = "button";
-    batch.className = "icon-btn";
-    batch.dataset.tip = "批量归档 N 天前的会话";
-    batch.innerHTML = ARCHIVE_BOX_SVG;
+    const mkBtn = (tip, svg) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "icon-btn";
+      b.dataset.tip = tip;
+      b.innerHTML = svg;
+      return b;
+    };
+    /* 排序: 更新时间(mtime) / 创建时间(id 前缀), 持久化; 图标即当前档位 */
+    const sortBtn = mkBtn(
+      "排序: " + (archiveSortMode() === "updated" ? "更新时间" : "创建时间"),
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>');
+    sortBtn.onclick = ev => {
+      ev.stopPropagation();
+      if (sortBtn._pop) { sortBtn._pop.close(); sortBtn._pop = null; return; }   // 再点 = 关
+      const pop = anchoredPop(sortBtn, "dd-pop");
+      sortBtn._pop = pop;
+      const origClose = pop.close;
+      pop.close = () => { origClose(); sortBtn._pop = null; };
+      const mkOpt = (label, mode) => {
+        const o = document.createElement("button");
+        o.type = "button";
+        o.className = "dd-opt" + (archiveSortMode() === mode ? " on" : "");
+        o.innerHTML = '<span class="dd-check">' + CHECK_SVG + '</span><span class="dd-txt"></span>';
+        o.querySelector(".dd-txt").textContent = label;
+        o.onclick = () => { setArchiveSort(mode); pop.close(); };
+        pop.appendChild(o);
+      };
+      mkOpt("更新时间", "updated");
+      mkOpt("创建时间", "created");
+    };
+    /* 批量归档 */
+    const batch = mkBtn("批量归档 N 天前的会话", ARCHIVE_BOX_SVG);
     batch.onclick = async ev => {
       ev.stopPropagation();
-      const days = await pickBatchDays();
+      if (batch._pop) { batch._pop.close(); batch._pop = null; return; }   // 再点 = 关
+      const days = await pickBatchDays(batch, p => { batch._pop = p; });
+      batch._pop = null;
       if (days) batchArchive(days);
     };
+    /* …菜单: 全部删除 */
+    const more = mkBtn("更多操作", MORE_SMALL_SVG);
+    more.onclick = ev => {
+      ev.stopPropagation();
+      if (more._pop) { more._pop.close(); more._pop = null; return; }   // 再点 = 关
+      const n = state.sessions.filter(s => s.archived).length;
+      const pop = anchoredPop(more, "dd-pop");
+      more._pop = pop;
+      const origClose = pop.close;
+      pop.close = () => { origClose(); more._pop = null; };
+      const cnt = document.createElement("div");
+      cnt.className = "dd-opt plain dd-head";
+      cnt.textContent = n + " 个归档任务";
+      pop.appendChild(cnt);
+      const del = document.createElement("button");
+      del.type = "button";
+      del.className = "dd-opt danger";
+      del.innerHTML = '<span class="dd-ico">' + TRASH_SMALL_SVG + '</span><span class="dd-txt"></span>';
+      del.querySelector(".dd-txt").textContent = "删除所有归档任务";
+      del.onclick = () => { pop.close(); deleteAllArchived(); };
+      pop.appendChild(del);
+    };
+    toolRow.appendChild(sortBtn);
     toolRow.appendChild(batch);
+    toolRow.appendChild(more);
     list.appendChild(toolRow);
     if (!sessions.length) {
       list.innerHTML += '<div class="list-empty">没有匹配的归档会话</div>';
       return;
     }
-    const sorted = [...sessions].sort((a, b) => b.id.localeCompare(a.id));
+    const sortMode = archiveSortMode();
+    const sorted = [...sessions].sort((a, b) => sortMode === "updated"
+      ? (b.mtime || 0) - (a.mtime || 0) || b.id.localeCompare(a.id)
+      : b.id.localeCompare(a.id));
     for (const s of sorted) {
       const it = makeSessionItem(s);
       it.classList.add("in-project", "archived-item");
@@ -526,23 +611,95 @@ function renderSessionList() {
   }
 }
 
-/* 批量阈值小弹层: 7/30/90 三档, resolve 天数或 null（取消） */
-function pickBatchDays() {
+/* 归档视图排序: "created" | "updated"（持久化, 重开归档视图保留选择） */
+function archiveSortMode() {
+  return localStorage.getItem("xc-archive-sort") || "created";
+}
+function setArchiveSort(mode) {
+  localStorage.setItem("xc-archive-sort", mode);
+  renderSessionList();
+}
+
+/* 通用小弹层: 锚定 trigger（默认下方, 空间不足翻上方）, 点击外部关闭 */
+function anchoredPop(trigger, className) {
+  const pop = document.createElement("div");
+  pop.className = className;
+  document.body.appendChild(pop);
+  const r = trigger.getBoundingClientRect();
+  const pw = pop.offsetWidth, ph = pop.offsetHeight;
+  const left = Math.max(8, Math.min(r.left, window.innerWidth - pw - 8));
+  let top = r.bottom + 6;                       // 默认向下弹（侧栏工具行）
+  if (top + ph > window.innerHeight - 8) top = Math.max(8, r.top - ph - 6);
+  pop.style.left = left + "px";
+  pop.style.top = top + "px";
+  const onDoc = ev => {
+    // 点触发钮本体的 mousedown 不关: 让后续 click 事件走 toggle 逻辑,
+    // 否则外点关闭后 click 再打开 = 再点一次弹窗不消失
+    if (pop.contains(ev.target)) return;
+    if (ev.target === trigger || trigger.contains(ev.target)) return;
+    close();
+  };
+  const onKey = ev => { if (ev.key === "Escape") close(); };
+  function close() {
+    pop.remove();
+    document.removeEventListener("mousedown", onDoc, true);
+    document.removeEventListener("keydown", onKey, true);
+  }
+  document.addEventListener("mousedown", onDoc, true);
+  document.addEventListener("keydown", onKey, true);
+  pop.close = close;
+  return pop;
+}
+
+/* 批量归档弹层: 预设 7/30/90 + 自定义天数输入, 锚定触发按钮。
+ * onOpen(pop) 让调用方拿到引用, 供"再点一次关闭"的 toggle 用 */
+function pickBatchDays(trigger, onOpen) {
   return new Promise(resolve => {
-    const pop = document.createElement("div");
-    pop.className = "batch-pop";
-    pop.innerHTML = '<div class="batch-pop-title">归档多少天前的会话？</div>';
+    const pop = anchoredPop(trigger, "dd-pop batch-pop");
+    if (onOpen) onOpen(pop);
+    pop.innerHTML = '<div class="dd-opt dd-head plain">归档多少天前的会话？</div>';
+    const done = v => { pop.close(); resolve(v); };
     for (const d of [7, 30, 90]) {
       const b = document.createElement("button");
       b.type = "button";
+      b.className = "dd-opt";
       b.textContent = d + " 天前";
-      b.onclick = ev => { ev.stopPropagation(); close(null); resolve(d); };
+      b.onclick = () => done(d);
       pop.appendChild(b);
     }
-    const close = ret => { pop.remove(); document.removeEventListener("click", onDoc, true); if (ret === null) resolve(null); };
-    const onDoc = ev => { if (!pop.contains(ev.target)) close(null); };
-    document.addEventListener("click", onDoc, true);
-    document.body.appendChild(pop);
+    /* 自定义: 纯选项风格的最后一档, 点开就地变行内输入 */
+    const sep = document.createElement("div");
+    sep.className = "dd-sep";
+    pop.appendChild(sep);
+    const custom = document.createElement("button");
+    custom.type = "button";
+    custom.className = "dd-opt";
+    custom.innerHTML = '<span class="dd-ico">' + PENCIL_SMALL_SVG + '</span><span class="dd-txt"></span>';
+    custom.querySelector(".dd-txt").textContent = "自定义天数…";
+    custom.onclick = () => {
+      custom.style.display = "none";
+      sep.style.display = "none";
+      const row = document.createElement("div");
+      row.className = "dd-opt plain batch-custom";
+      const inp = document.createElement("input");
+      inp.type = "number";
+      inp.min = "1";
+      inp.placeholder = "天数";
+      inp.className = "batch-days-input";
+      const submit = () => {
+        const v = Math.floor(Number(inp.value));
+        if (v >= 1) done(v);
+        else inp.focus();
+      };
+      inp.onkeydown = ev => {
+        if (ev.key === "Enter") { ev.stopPropagation(); submit(); }
+        if (ev.key === "Escape") { ev.stopPropagation(); done(null); }
+      };
+      row.appendChild(inp);
+      pop.appendChild(row);
+      setTimeout(() => inp.focus(), 0);
+    };
+    pop.appendChild(custom);
   });
 }
 

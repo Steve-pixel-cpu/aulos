@@ -1486,6 +1486,9 @@ async def api_list_sessions():
             "workdir": meta["workdir"],
             # 归档状态: 追加式 ArchiveRecord 取最新; 前端据此过滤/渲染归档视图
             "archived": meta["archived"],
+            # 归档视图排序用「最后活动时间」: 最后一条消息的落盘时间——
+            # mtime 会被归档动作污染（批量归档瞬间所有文件 mtime 同刷新）
+            "mtime": meta.get("last_activity") or 0,
             "permission_mode": _mode_name_for(sid, meta),
             "plan_active": _session_plan(sid, meta),
             "thinking_level": _session_thinking(sid),
@@ -1495,7 +1498,7 @@ async def api_list_sessions():
     for sid in _pending_sessions:
         meta = store.get_session_meta(sid)   # 未落盘: 全默认值, 仅一次 stat
         items.append({"id": sid, "title": UNTITLED, "message_count": 0,
-                      "workdir": None, "archived": False,
+                      "workdir": None, "archived": False, "mtime": 0,
                       "permission_mode": _mode_name_for(sid, meta),
                       "plan_active": _session_plan(sid, meta),
                       "thinking_level": _session_thinking(sid),
@@ -1549,6 +1552,32 @@ async def api_delete_session(session_id: str):
         # 本就不存在（旧 pending 未落盘等）: 按幂等成功处理，内存态已清
         pass
     return {"ok": True}
+
+
+@app.post("/api/sessions/batch-delete-archived")
+async def api_batch_delete_archived():
+    """全部删除归档任务: 只删已归档会话, 对话中的跳过并计数。
+
+    危险操作, 前端须先 confirmDialog; 磁盘 JSONL 一并删除, 不可恢复——
+    这正是它只认 archived=True 的原因: 未归档会话永远不会被误伤。
+    """
+    deleted: list[str] = []
+    skipped_busy = 0
+    for sid in store.list_sessions():
+        if not store.get_session_meta(sid)["archived"]:
+            continue
+        web_session = _sessions.get(sid)
+        if web_session is not None and web_session.busy:
+            skipped_busy += 1
+            continue
+        try:
+            store.delete_session(sid)
+        except KeyError:
+            pass
+        _sessions.pop(sid, None)
+        _pending_sessions.discard(sid)
+        deleted.append(sid)
+    return {"deleted": deleted, "skipped_busy": skipped_busy}
 
 
 @app.post("/api/sessions/batch-archive")

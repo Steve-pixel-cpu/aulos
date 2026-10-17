@@ -175,6 +175,15 @@ class SessionStore:
             p.stem for p in self._storage_dir.glob("*.jsonl")
         )
 
+    def session_mtime(self, session_id: str) -> float:
+        """会话文件最后写入时间（epoch 秒）; 未落盘返回 0。
+        归档视图「更新时间」排序用——追加式写入必改 mtime。"""
+        p = self._session_path(session_id)
+        try:
+            return p.stat().st_mtime
+        except OSError:
+            return 0.0
+
     def delete_session(self, session_id: str) -> None:
         """删除会话（消息 + 命名记录同在一个 JSONL，删文件即可）。文件不存在抛 KeyError。"""
         file_path = self._session_path(session_id)
@@ -361,10 +370,18 @@ class SessionStore:
         provider_id: Optional[str] = None
         model_id: Optional[str] = None
         archived = False
+        last_activity: float = 0.0   # 最后一条消息的落盘时间(epoch 秒)
         msg_entries: list[StorageEntry] = []
         for entry in self._read_entries(file_path):
             if isinstance(entry, StorageEntry):
                 msg_entries.append(entry)
+                # 追加有序: 最后一条消息记录即最后对话活动。不用 mtime——
+                # 归档/改名也会写文件, 会把 mtime 污染成"被归档的时间"
+                try:
+                    last_activity = datetime.fromisoformat(entry.timestamp)\
+                        .timestamp()
+                except (ValueError, TypeError):
+                    pass
             elif isinstance(entry, TitleRecord):
                 title = entry.title
             elif isinstance(entry, WorkdirRecord):
@@ -391,7 +408,8 @@ class SessionStore:
         meta = {"title": title, "count": count, "workdir": workdir,
                 "mode": mode, "plan": plan,
                 "provider_id": provider_id, "model_id": model_id,
-                "first_user_text": first_user_text, "archived": archived}
+                "first_user_text": first_user_text, "archived": archived,
+                "last_activity": last_activity}
         self._meta_cache[session_id] = (key, meta)
         return dict(meta)
 

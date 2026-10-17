@@ -100,6 +100,32 @@ class TestArchiveStorage:
         assert len(archives) == 1 and archives[0].archived is True
         assert len(msgs) == 1   # 消息条目不受影响
 
+    def test_session_mtime(self, tmp_path):
+        """mtime: 落盘会话返回文件 mtime epoch 秒, 未落盘返回 0。"""
+        import os
+        store = SessionStore(tmp_path)
+        assert store.session_mtime("ghost") == 0
+        add_msg(store, "s1", "user", "hi")
+        mt = store.session_mtime("s1")
+        assert mt > 0
+        expect = os.stat(store._session_path("s1")).st_mtime
+        assert abs(mt - expect) < 1e-6
+
+    def test_last_activity_immune_to_archive_write(self, tmp_path):
+        """回归: 归档动作写文件后, meta.last_activity 仍是最后一条消息的
+        时间——「更新时间」排序不能被归档动作污染。"""
+        import time
+        store = SessionStore(tmp_path)
+        add_msg(store, "s1", "user", "hi")
+        before = store.get_session_meta("s1")["last_activity"]
+        assert before > 0
+        time.sleep(0.05)   # 保证 mtime 必变
+        store.archive_session("s1", True)
+        after = store.get_session_meta("s1")["last_activity"]
+        assert after == before, "归档记录不应改变最后活动时间"
+        mt = store.session_mtime("s1")
+        assert mt > before, "mtime 确实被归档刷新了（证明旧方案失真）"
+
 
 # ============================================================
 # REST API
@@ -177,6 +203,37 @@ class TestArchiveEndpoint:
 
 
 class TestBatchArchiveEndpoint:
+    def test_batch_delete_all_archived(self, archive_client):
+        """全部删除: 只删已归档会话; busy 的归档会话跳过并计数, 未归档不碰。"""
+        client, store = archive_client
+        taken: set = set()
+        keep = _sid_days_ago(1, taken)
+        del1 = _sid_days_ago(5, taken)
+        del2 = _sid_days_ago(6, taken)
+        busy_arch = _sid_days_ago(7, taken)
+        for sid in (keep, del1, del2, busy_arch):
+            add_msg(store, sid, "user", "hi")
+        store.archive_session(del1, True)
+        store.archive_session(del2, True)
+        store.archive_session(busy_arch, True)
+        import aulos.server as server
+        # busy 的未归档会话: 不该出现在删除候选里; busy 的归档会话: 跳过计数
+        server._sessions[keep] = type("BusyStub", (), {"busy": True})()
+        server._sessions[busy_arch] = type("BusyStub", (), {"busy": True})()
+        r = client.post("/api/sessions/batch-delete-archived")
+        assert r.status_code == 200
+        body = r.json()
+        assert sorted(body["deleted"]) == sorted([del1, del2])
+        assert body["skipped_busy"] == 1, "busy 的归档会话跳过并计数"
+        assert store.get_session_meta(keep)["count"] == 1, "未归档的不能误删"
+        assert store.get_session_meta(busy_arch)["count"] == 1, "busy 归档会话保留"
+
+    def test_batch_delete_archived_empty(self, archive_client):
+        client, store = archive_client
+        r = client.post("/api/sessions/batch-delete-archived")
+        assert r.status_code == 200
+        assert r.json() == {"deleted": [], "skipped_busy": 0}
+
     def test_batch_by_days(self, archive_client):
         client, store = archive_client
         taken: set = set()
