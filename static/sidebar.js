@@ -461,9 +461,13 @@ function renderSessionList() {
     toolRow.appendChild(more);
     list.appendChild(toolRow);
     if (!sessions.length) {
-      /* 空态跟随搜索语境: 搜索中是"没有匹配", 平时引导去批量归档 */
-      list.innerHTML += '<div class="list-empty">'
-        + (q ? "没有匹配的归档会话" : "暂无归档会话") + "</div>";
+      /* 空态跟随搜索语境: 搜索中是"没有匹配", 平时引导去批量归档。
+       * 必须用 appendChild——innerHTML += 会销毁重建整个容器,
+       * 工具行按钮的事件绑定随旧元素一起被抹掉（点击无反应） */
+      const emptyEl = document.createElement("div");
+      emptyEl.className = "list-empty";
+      emptyEl.textContent = q ? "没有匹配的归档会话" : "暂无归档会话";
+      list.appendChild(emptyEl);
       return;
     }
     const sortMode = archiveSortMode();

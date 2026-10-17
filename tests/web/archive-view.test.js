@@ -76,6 +76,12 @@ test("归档视图: 空态也渲染工具行（批量归档是空列表的入口
   assert.ok(tips.some(t => t.startsWith("排序:")), "空态仍有排序钮");
   assert.ok(tips.some(t => t.includes("批量归档")), "空态仍有批量归档钮");
   assert.ok(tips.includes("更多操作"), "空态仍有…菜单");
+  /* 回归: 空态按钮必须可点——innerHTML += 曾销毁重建工具行,
+   * onclick 随旧元素丢失, 点了没反应 */
+  w.document.querySelector('.list-label-row .icon-btn[data-tip^="排序:"]').click();
+  await new Promise(r => setTimeout(r, 0));
+  assert.ok(w.document.querySelector(".dd-pop"), "空态点排序钮应弹出菜单");
+  assert.ok(w.document.body.textContent.includes("更新时间"), "菜单应含排序选项");
 });
 
 test("点行归档钮: POST archive archived=true, 行原地移出主列表", async () => {
