@@ -981,6 +981,9 @@
   .tool-group.collapsed .td-wrap,
   .tool-group.collapsed .to-term,
   .tool-group.collapsed .todo-list { display: none; }
+  /* 折叠组例外: 运行中行被用户展开的终端块保持可见——
+   * 折叠组里运行中的行本来就可见, 它的命令块也该跟着行走 */
+  .tool-group.collapsed .tg-body .tool-row[data-state="run"] + .to-term:not(.closed) { display: block; }
   .tool-row .t-ico { flex: none; display: inline-flex; }
   .tool-row .tname2 { flex: none; color: var(--text-2); }
   .tool-row .tdesc {
@@ -1034,6 +1037,8 @@
   .to-term .tt-prompt { color: var(--text-3); user-select: none; }
   .to-term .tt-out { color: var(--text-2); margin-top: 2px; }
   .to-term .tt-none { color: var(--text-3); margin-top: 2px; }
+  /* 运行中占位: 命令已见、输出未到——与"运行中"状态同款脉冲 */
+  .to-term .tt-run { color: var(--text-3); margin-top: 2px; animation: pulse 1.2s infinite; }
   .to-term .to-pre { color: var(--text-2); }
   .tool-row.is-err .to-term .tt-out,
   .tool-row.is-err .to-term .to-pre { color: color-mix(in srgb, var(--err) 80%, var(--text-2)); }

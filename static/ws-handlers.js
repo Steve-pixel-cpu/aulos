@@ -496,6 +496,7 @@ function addToolCard({ id, name, input, result }, col) {
     completeToolCard(row, result);
   } else {
     setToolState(row, "run");
+    primeTerminalBlock(row);   // 终端工具: 参数已知的立即预插命令块（运行中可展开）
   }
   scrollToBottom();
   return row;
@@ -564,6 +565,19 @@ function setToolState(row, kind) {
     if (grp && ms >= 100) grp._ms = (grp._ms || 0) + ms;
   }
   updateToolGroupHeader(row.closest(".tool-group"));
+  // 运行中占位收口: 行被中断/拒绝但结果没走 completeToolCard 时,
+  // 预插终端块里的"运行中…"会永远挂着——就地改口为无输出
+  if (kind !== "run") {
+    const term = row.nextElementSibling;
+    const runEl = term && term.classList.contains("to-term") ? term.querySelector(".tt-run") : null;
+    if (runEl) {
+      runEl.remove();
+      const none = document.createElement("div");
+      none.className = "tt-none";
+      none.textContent = "（无输出）";
+      term.appendChild(none);
+    }
+  }
 }
 
 function completeToolCard(row, { is_error, denied, result_meta, output }) {
@@ -609,11 +623,50 @@ function terminalCommand(row) {
 }
 
 function renderOutputPanel(row, outputText, autoOpen) {
-  if (row.querySelector(".to-term")) return;
+  const cmd = terminalCommand(row);
+  const out = prepOutput(outputText);
+  const existing = row.nextElementSibling &&
+    row.nextElementSibling.classList.contains("to-term") ? row.nextElementSibling : null;
+  if (!existing && !out.hasOut && !cmd) return;   // 终端命令即使无输出也渲染: 完整命令是可见性兜底
+  appendTermMeta(row, out);
+  // 终端类: 深色一体化终端块——命令($ 提示符)与输出同块呈现,
+  // 整块滚动（一个滚动条滚全部）, 展开即读作一段真实终端会话。
+  // 运行中 primeTerminalBlock 已预插的块在此就地更新（不重复建块）
+  let term = existing;
+  if (!term) {
+    term = document.createElement("div");
+    term.className = "to-term";
+    if (!cmd) {
+      const pre = document.createElement("div");
+      pre.className = "to-pre";
+      pre.textContent = out.text;
+      term.appendChild(pre);
+    }
+    row.insertAdjacentElement("afterend", term);
+  }
+  if (cmd) {
+    if (!term.querySelector(".tt-cmd")) term.appendChild(buildTermCmdEl(cmd));
+    const runEl = term.querySelector(".tt-run");
+    if (runEl) runEl.remove();
+    let outEl = term.querySelector(".tt-out") || term.querySelector(".tt-none");
+    if (!outEl) {
+      outEl = document.createElement("div");
+      term.appendChild(outEl);
+    }
+    outEl.className = out.hasOut ? "tt-out" : "tt-none";
+    outEl.textContent = out.hasOut ? out.text : "（无输出）";
+  }
+  wireTermToggle(row);
+  if (autoOpen) {
+    term.classList.remove("closed");
+    row.classList.add("open");
+  }
+}
+
+/* 输出文本预处理: 截断标记 + 行数统计（创建与运行中更新两条路径共用） */
+function prepOutput(outputText) {
   const raw = outputText ? String(outputText) : "";
   const hasOut = !!raw.trim();
-  const cmd = terminalCommand(row);
-  if (!hasOut && !cmd) return;   // 终端命令即使无输出也渲染: 完整命令是可见性兜底
   let text = raw;
   let cut = false;
   if (text.length > OUTPUT_PANEL_MAX) {
@@ -623,65 +676,77 @@ function renderOutputPanel(row, outputText, autoOpen) {
   }
   if (!cut && OUT_TRUNCATED_RE.test(raw)) cut = true;
   const lineCount = hasOut ? text.split(/\r?\n/).length : 0;
-  // 行尾元信息（截断/行数）并进工具行——不再另设面板头行
+  return { hasOut: hasOut, text: text, cut: cut, lineCount: lineCount };
+}
+
+/* 行尾元信息（截断/行数）并进工具行——不再另设面板头行 */
+function appendTermMeta(row, out) {
+  const old = row.querySelector(".t-meta");
+  if (old) old.remove();
   const meta = document.createElement("span");
   meta.className = "t-meta";
-  if (cut) {
+  if (out.cut) {
     const c = document.createElement("span");
     c.className = "t-cut";
     c.textContent = "已截断";
     meta.appendChild(c);
   }
-  if (lineCount > 15) {
+  if (out.lineCount > 15) {
     const l = document.createElement("span");
     l.className = "t-loc";
-    l.textContent = lineCount + " 行";
+    l.textContent = out.lineCount + " 行";
     meta.appendChild(l);
   }
   if (meta.childNodes.length) row.appendChild(meta);
-  // 终端类: 深色一体化终端块——命令($ 提示符)与输出同块呈现,
-  // 整块滚动（一个滚动条滚全部）, 展开即读作一段真实终端会话
+}
+
+/* $ 提示符 + 命令全文。多行命令（heredoc/续行）按原文续行,
+ * 提示符只标在首行——与真实终端一致 */
+function buildTermCmdEl(cmd) {
+  const cmdLines = cmd.split(/\r?\n/);
+  const cmdEl = document.createElement("div");
+  cmdEl.className = "tt-cmd";
+  const prompt = document.createElement("span");
+  prompt.className = "tt-prompt";
+  prompt.textContent = "$";
+  cmdEl.appendChild(prompt);
+  cmdEl.appendChild(document.createTextNode(
+    " " + cmdLines[0] +
+    (cmdLines.length > 1 ? "\n" + cmdLines.slice(1).join("\n") : "")));
+  return cmdEl;
+}
+
+/* 行内展开: 点工具行本身开关终端块。运行中的行同样可点——
+ * 块里是预插的完整命令, 长命令不必等结果就能看全 */
+function wireTermToggle(row) {
+  if (row._termToggle) return;
+  row._termToggle = true;
+  row.classList.add("expandable");
+  row.addEventListener("click", () => {
+    const t = row.nextElementSibling;
+    if (!t || !t.classList.contains("to-term")) return;
+    t.classList.toggle("closed");
+    row.classList.toggle("open");
+  });
+}
+
+/* 运行中预插终端块: 命令参数到齐即渲染 $ 命令全文 + 运行中占位,
+ * 默认收起（点行展开, 不自动撑高消息流）; 结果落地由 renderOutputPanel
+ * 就地替换占位。占位卡参数未到齐 / 非终端工具 / 块已存在时 no-op。 */
+function primeTerminalBlock(row) {
+  if (!TERMINAL_TOOLS.has(row.dataset.tool)) return;
+  if (row.nextElementSibling && row.nextElementSibling.classList.contains("to-term")) return;
+  const cmd = terminalCommand(row);
+  if (!cmd) return;
   const term = document.createElement("div");
-  term.className = "to-term" + (autoOpen ? "" : " closed");
-  if (cmd) {
-    const cmdLines = cmd.split(/\r?\n/);
-    const cmdEl = document.createElement("div");
-    cmdEl.className = "tt-cmd";
-    const prompt = document.createElement("span");
-    prompt.className = "tt-prompt";
-    prompt.textContent = "$";
-    cmdEl.appendChild(prompt);
-    // 多行命令（heredoc/续行）按原文续行, 提示符只标在首行——与真实终端一致
-    cmdEl.appendChild(document.createTextNode(
-      " " + cmdLines[0] +
-      (cmdLines.length > 1 ? "\n" + cmdLines.slice(1).join("\n") : "")));
-    term.appendChild(cmdEl);
-    const outEl = document.createElement("div");
-    outEl.className = hasOut ? "tt-out" : "tt-none";
-    outEl.textContent = hasOut ? text : "（无输出）";
-    term.appendChild(outEl);
-  } else {
-    const pre = document.createElement("div");
-    pre.className = "to-pre";
-    pre.textContent = text;
-    term.appendChild(pre);
-  }
+  term.className = "to-term closed";
+  term.appendChild(buildTermCmdEl(cmd));
+  const runEl = document.createElement("div");
+  runEl.className = "tt-run";
+  runEl.textContent = "运行中…";
+  term.appendChild(runEl);
   row.insertAdjacentElement("afterend", term);
-  // 行内展开: 点工具行本身开关（运行中的行等结果, 不响应点击）
-  if (!row._termToggle) {
-    row._termToggle = true;
-    row.classList.add("expandable");
-    row.addEventListener("click", () => {
-      if (row.dataset.state === "run") return;
-      const t = row.nextElementSibling;
-      if (!t || !t.classList.contains("to-term")) return;
-      t.classList.toggle("closed");
-      row.classList.toggle("open");
-    });
-  }
-  if (autoOpen) {
-    row.classList.add("open");
-  }
+  wireTermToggle(row);
 }
 
 /* todo 卡: 工具行下方渲染任务清单本体（取代裸文本结果）。数据取自
@@ -753,6 +818,7 @@ function onToolUse(msg, sid) {
     existing.querySelector(".tdesc").textContent = describeInput(msg.input, msg.name || existing.dataset.tool);
     existing.dataset.input = msg.input || "";          // todo 卡等从入参渲染的地方依赖它
     existing._t0 = Date.now();   // 占位卡早于参数到达: 耗时从参数齐全起算
+    primeTerminalBlock(existing);   // 参数到齐: 终端工具预插命令块（运行中可展开）
     run.activeToolCard = existing;
     return;
   }
