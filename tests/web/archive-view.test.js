@@ -67,10 +67,15 @@ test("普通视图: 行只带改名+归档钮, 无删除/恢复钮", async () =>
   assert.ok(!/data-tip="恢复"/.test(html), "普通视图行不应有恢复钮");
 });
 
-test("归档视图: 空态文案", async () => {
+test("归档视图: 空态也渲染工具行（批量归档是空列表的入口）", async () => {
   const w = await bootWith([sess("a")], []);
   w.setArchiveView(true);
-  assert.ok(listHtml(w).includes("暂无归档会话"));
+  const html = listHtml(w);
+  assert.ok(html.includes("暂无归档会话"));
+  const tips = [...w.document.querySelectorAll(".list-label-row .icon-btn")].map(b => b.dataset.tip);
+  assert.ok(tips.some(t => t.startsWith("排序:")), "空态仍有排序钮");
+  assert.ok(tips.some(t => t.includes("批量归档")), "空态仍有批量归档钮");
+  assert.ok(tips.includes("更多操作"), "空态仍有…菜单");
 });
 
 test("点行归档钮: POST archive archived=true, 行原地移出主列表", async () => {

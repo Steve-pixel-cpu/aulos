@@ -389,10 +389,8 @@ function renderSessionList() {
   };
   /* ---- 归档视图: 排序 + 批量归档 + …菜单(全部删除) 工具行 ---- */
   if (state.archiveView) {
-    if (!sessions.length && !q) {
-      list.innerHTML = '<div class="list-empty">暂无归档会话</div>';
-      return;
-    }
+    /* 工具行始终渲染——空列表时批量归档正是入口
+     * （把主列表的老会话收进来）, 不能只剩一句空态文案 */
     const toolRow = document.createElement("div");
     toolRow.className = "list-label-row archived-tools";
     toolRow.innerHTML = '<span class="list-label">归档</span>';
@@ -463,7 +461,9 @@ function renderSessionList() {
     toolRow.appendChild(more);
     list.appendChild(toolRow);
     if (!sessions.length) {
-      list.innerHTML += '<div class="list-empty">没有匹配的归档会话</div>';
+      /* 空态跟随搜索语境: 搜索中是"没有匹配", 平时引导去批量归档 */
+      list.innerHTML += '<div class="list-empty">'
+        + (q ? "没有匹配的归档会话" : "暂无归档会话") + "</div>";
       return;
     }
     const sortMode = archiveSortMode();
