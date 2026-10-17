@@ -106,6 +106,32 @@ def is_context_overflow_error(e: Exception) -> bool:
     return bool(_OVERFLOW_RE.search(str(e)))
 
 
+# 拒图错误的宽松匹配词: 纯文本部署的主模型收到图片块时返回 400（真实案例
+# GLM Coding 端点 glm-5.3: code 1210, "messages.content.type 参数非法，
+# 取值范围 ['text']"）。与溢出分诊同一哲学: 宁可漏判（原样上抛）也不
+# 错抓普通 400——分诊只决定"要不要试一次视觉转述重试", 误判无害但浪费
+# 一次注定失败的请求, 漏判只是放弃恢复。413 归溢出分诊管, 这里只认 400。
+_IMAGE_REJECT_PAT = (
+    r"content\.type[^\"]{0,40}?(?:非法|取值范围|invalid|unsupported|allowed|must be)",
+    r"unsupported content type",
+    r"不支持.{0,6}(?:图片|图像)",
+    r"image.{0,20}(?:not supported|unsupported)",
+)
+_IMAGE_REJECT_RE = re.compile("|".join(_IMAGE_REJECT_PAT), re.IGNORECASE)
+
+
+def is_image_content_rejected_error(e: Exception) -> bool:
+    """拒图分诊: HttpApiError 且 400 且 message 匹配 content.type/图片
+    拒绝类措辞。用于反应式恢复——请求视图里的图片块换成视觉模型转述后
+    单次重试, 而不是让整轮炸掉。非 HttpApiError（连接/认证等）一律
+    False。宁可漏判（原样上抛）也不错抓普通 400（如 invalid tool_use）。"""
+    if not isinstance(e, HttpApiError):
+        return False
+    if e.status_code != 400:
+        return False
+    return bool(_IMAGE_REJECT_RE.search(str(e)))
+
+
 def backoff_for_attempt(attempt: int,
                         initial_ms: float = DEFAULT_INITIAL_BACKOFF_MS,
                         max_ms: float = DEFAULT_MAX_BACKOFF_MS) -> float:

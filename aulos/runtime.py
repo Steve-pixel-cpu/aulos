@@ -1,6 +1,7 @@
 from typing import Protocol, Optional, List
 from concurrent.futures import ThreadPoolExecutor
 import contextvars
+import hashlib
 import json
 import os
 import re
@@ -29,7 +30,7 @@ from aulos.compact import (
     extract_assistant_findings,
 )
 from aulos.hooks import HookRunner, HookResult
-from aulos.models import Message, TextContentBlock, AnyContentBlock, ToolContentBlock, ToolResultContentBlock, Session
+from aulos.models import Message, TextContentBlock, AnyContentBlock, ImageContentBlock, ToolContentBlock, ToolResultContentBlock, Session
 from aulos.permissions import (PermissionMode, PermissionPolicy, PermissionPrompter,
                          PermissionDecision, MUTATING_SHELL_TOOLS,
                          READ_ONLY_MODE, shell_command_is_read_only)
@@ -210,6 +211,27 @@ OUTPUT_TRUNCATED_NOTICE = (
     "from where the output stopped — no apology, no recap, no repeating "
     "what you already wrote."
 )
+
+# --- 视觉副驾（vision sidecar）: 主模型拒图时用 utility 视觉模型转述 ---
+# 纯文本部署的主模型（如 GLM Coding 端点的 glm-5.3）收到图片块返回 400
+# code 1210; 同端点的 flash 部署是多模态的, 且已作为 utilityProvider 接入
+# side-call 通道。转述文本块的前后包裹标记: 给模型一个明确的边界——里面
+# 是另一双眼睛的描述, 不是用户亲手打的字。
+_IMAGE_CAPTION_PREFIX = "[Image transcribed by vision model]"
+_IMAGE_CAPTION_SUFFIX = "[End of image transcription]"
+# 转述指令: 编码场景里图里的字比图本身值钱——报错堆栈、代码、标签、
+# 文件名、数字必须逐字保留, 布局信息次之。禁止概括省略。
+_IMAGE_CAPTION_INSTRUCTION = (
+    "请转录这张图片：逐字转录图中所有可见文字（报错信息、代码、标签、"
+    "文件名、数字, 不得概括或省略）, 并描述 UI 布局等开发者会关心的细节。"
+    "用中文回答, 精确完整。"
+)
+
+
+def _image_caption_text(caption: str) -> str:
+    """转述文本块的最终形态: 包裹标记 + 转述正文。"""
+    return f"{_IMAGE_CAPTION_PREFIX}\n{caption}\n{_IMAGE_CAPTION_SUFFIX}"
+
 
 # --- Token 用量追踪 ---
 class TokenUsage(BaseModel):
@@ -508,6 +530,15 @@ class ConversationRuntime:
         # 每轮请求都拖进一次注定失败的 side-call。
         self._summary_fail_streak = 0
         self._summary_disabled = False
+        # 视觉副驾状态（仅内存态, 不持久化——会话重载后首个带图轮次重新
+        # 付一次 400 学费, 之后同样进缓存）:
+        # - 按图转述缓存: sha256(图片 base64 data) -> 转述文本。一次描述
+        #   终身复用, 失败不缓存。
+        # - 主模型拒图标志: 撞过一次拒图 400 后置位, 后续轮次发请求前
+        #   主动把视图里的图换成缓存转述, 省掉每轮一次注定失败的请求。
+        #   热换 api_client（端点/模型已换）时复位。
+        self._image_captions: dict[str, str] = {}
+        self._main_rejects_images = False
         # Session Memory 中间层: 后台增量维护的滚动摘要（压缩时零调用,
         # 详见 compact.SessionMemory）。_memory_busy 防并发消化（单飞行）,
         # 守护线程随 run_turn 结束拉起, 崩了只警告不追责——它始终只是
@@ -736,6 +767,9 @@ class ConversationRuntime:
         # 端点已换: 旧端点上的摘要熔断不再成立
         self._summary_fail_streak = 0
         self._summary_disabled = False
+        # 端点已换: 旧端点的"主模型拒图"结论同样作废（新端点可能就是
+        # 多模态部署）。按图转述缓存不清——转述与端点无关, 换模型仍可用。
+        self._main_rejects_images = False
 
     def set_utility_client(self, client: Optional[ApiClient]) -> "ConversationRuntime":
         """绑定 side-call 专用 client（utilityProvider 小模型）。压缩摘要、
@@ -1074,39 +1108,80 @@ class ConversationRuntime:
     # 用户调 contextWindow, 绝不进循环/重试风暴。
     _OVERFLOW_RECOVERY_MAX = 1
 
-    def _stream_with_overflow_recovery(self, effective_level) -> list:
-        """stream 调用 + 溢出反应式恢复: 服务端报 context overflow
-        （413 / 400+关键词, 见 retry.is_context_overflow_error）且本轮
-        尚未恢复过 → 强制激活压缩视图, 重试恰好一次。重试仍溢出 → 抛
-        可读错误（调 contextWindow / 清理会话）。非溢出错误原样上抛
-        （retry 层的可重试错误已在 api_client 内部消化, 这里看到的就是
-        终态错误）。熔断器打开时压缩走规则摘要, 同样能救场——不为此
-        复位熔断器。"""
-        from aulos.retry import is_context_overflow_error
-        recoveries = 0
+    def _stream_with_recovery(self, effective_level) -> list:
+        """stream 调用 + 双反应式恢复（每条至多一次, 请求至多重试到第
+        3 次）:
+
+        1. 溢出恢复: 服务端报 context overflow（413 / 400+关键词, 见
+           retry.is_context_overflow_error）→ 强制激活压缩视图, 重试恰好
+           一次。重试仍溢出 → 抛可读错误（调 contextWindow / 清理会话）。
+           熔断器打开时压缩走规则摘要, 同样能救场——不为此复位熔断器。
+        2. 拒图恢复: 纯文本主模型对图片块返回 400（见
+           retry.is_image_content_rejected_error）→ 视图里的图片块换成
+           utility 视觉模型的转述（_caption_images_in_view）, 重试恰好
+           一次, 并置位 _main_rejects_images——后续轮次发请求前主动替换,
+           不再撞 400。
+
+        视图覆盖（view_override）: 每次尝试的消息 = view_override 优先,
+        否则现场派生 _model_view()。溢出恢复重试前必须把它清空——压缩
+        改变了视图, 要重新派生; 拒图恢复则相反, 用转述后的视图顶上。
+
+        非可恢复错误原样上抛（retry 层的可重试错误已在 api_client 内部
+        消化, 这里看到的就是终态错误）。转述只走 utility client, 失败
+        （None）立即上抛原始错误, 无重试风暴。"""
+        from aulos.retry import (is_context_overflow_error,
+                                 is_image_content_rejected_error)
+        recoveries = 0           # 溢出恢复已用次数
+        image_recoveries = 0     # 拒图恢复已用次数
+        view_override: Optional[List[Message]] = None
         while True:
             try:
+                if view_override is None and self._main_rejects_images:
+                    # 会话内记忆: 此前撞过拒图 → 发请求前主动替换视图里
+                    # 的图片块（全缓存命中, 零 side-call）。替换失败
+                    # （utility 端点瞬时故障）时用原视图硬发。
+                    view_override = self._caption_images_in_view(
+                        self._model_view())
+                messages = (view_override if view_override is not None
+                            else self._model_view())
                 return self._api_client.stream(
                     system_prompt=self._effective_system_prompt,
-                    messages=self._model_view(),
+                    messages=messages,
                     thinking_level=effective_level,
                     model=self._model,
                 )
             except Exception as e:
-                if (not is_context_overflow_error(e)
-                        or recoveries >= self._OVERFLOW_RECOVERY_MAX):
-                    if is_context_overflow_error(e) and recoveries:
+                # 溢出分诊在前（语义与拒图不相交, 但保持原路径逐字节不变）
+                if is_context_overflow_error(e):
+                    if recoveries >= self._OVERFLOW_RECOVERY_MAX:
                         raise RuntimeError(
                             "context overflow persists after compaction "
                             "retry — the preserved tail alone exceeds the "
                             "window. 调大 contextWindow 配置、清理会话, "
                             "或换更大窗口的模型。") from e
-                    raise
-                recoveries += 1
-                # 强制激活（绕过预估口径）: 失败（无安全切割点）说明
-                # 没东西可压, 直接上抛原错误
-                if not self._activate_compact():
-                    raise
+                    recoveries += 1
+                    # 压缩改变了视图: 覆盖作废, 重新派生
+                    view_override = None
+                    # 强制激活（绕过预估口径）: 失败（无安全切割点）说明
+                    # 没东西可压, 直接上抛原错误
+                    if not self._activate_compact():
+                        raise
+                    continue
+                if (is_image_content_rejected_error(e)
+                        and image_recoveries < self._IMAGE_RECOVERY_MAX):
+                    # 主模型拒图实锤: 置位先于转述——转述失败不影响
+                    # "主模型拒图"这个事实的记录（下轮 proactive 路径
+                    # 仍会尝试, 失败则原视图硬发, 有界）
+                    self._main_rejects_images = True
+                    image_recoveries += 1
+                    captioned = self._caption_images_in_view(
+                        view_override if view_override is not None
+                        else self._model_view())
+                    if captioned is None:
+                        raise       # 没图/utility 未配置/转述失败: 原样上抛
+                    view_override = captioned
+                    continue
+                raise
 
     # 摘要重算余量: 保留区比"preserve_recent + 余量"还长时才值得重新
     # 切割+重算摘要; 未超余量就复用旧切割点, 保留区温和变长。没有这个
@@ -1155,6 +1230,81 @@ class ConversationRuntime:
                        if isinstance(e, TextDeltaEvent)).strip()
         if not text:
             raise ValueError("summarizer returned empty text")
+        return text
+
+    # 图片转述硬上限: 每轮至多一次——转述失败（utility 端点故障/不支持
+    # 视觉）说明恢复通道本身不可用, 必须原样上抛拒图错误, 绝不进循环。
+    _IMAGE_RECOVERY_MAX = 1
+
+    def _caption_images_in_view(self, view: List[Message]) -> Optional[List[Message]]:
+        """把视图里 user 消息的图片块换成视觉模型转述文本块（view-only:
+        session.messages 永不被修改——与压缩视图同一哲学, 只影响发出去的
+        请求）。每块先查按图缓存（sha256(base64 data)）, 未命中发一次
+        utility side-call 生成转述并缓存。转述只走 _utility_client——
+        未配置 utility client 时直接返回 None, 绝不拿主 client 试（它就是
+        拒图的那个, 必然同样失败）。任何一块转述失败/空返回 → 返回 None
+        （调用方原样上抛原始错误）, 失败不缓存。
+
+        视图里没有图片块时同样返回 None: 调用方区分"没图不用转述"与
+        "转述失败", 前者该原样发, 后者该上抛。"""
+        if self._utility_client is None:
+            return None
+        changed = False
+        new_view: List[Message] = []
+        for msg in view:
+            img_blocks = [b for b in msg.content
+                          if isinstance(b, ImageContentBlock)]
+            if not img_blocks:
+                new_view.append(msg)
+                continue
+            new_blocks: List[AnyContentBlock] = []
+            for block in msg.content:
+                if not isinstance(block, ImageContentBlock):
+                    new_blocks.append(block)
+                    continue
+                caption = self._caption_one_image(block)
+                if caption is None:
+                    return None      # 任一块失败: 整体放弃, 原样上抛
+                new_blocks.append(TextContentBlock(
+                    type="text", text=_image_caption_text(caption)))
+            new_view.append(Message(
+                role=msg.role, content=new_blocks,
+                result_meta=msg.result_meta))
+            changed = True
+        if not changed:
+            return None              # 视图里本来就没有图片块
+        return new_view
+
+    def _caption_one_image(self, block: ImageContentBlock) -> Optional[str]:
+        """单块图片的转述（带缓存）。返回 None = 转述失败（不缓存）。"""
+        data = str(block.source.get("data") or "")
+        key = hashlib.sha256(data.encode("utf-8")).hexdigest()
+        cached = self._image_captions.get(key)
+        if cached is not None:
+            return cached
+        # 打断检查点（与 _llm_summarize 同语义）: 用户已叫停时不再发起
+        # 转述 side-call——它是一次完整的模型调用
+        if self._cancel_check is not None and self._cancel_check():
+            raise TurnInterrupted()
+        conv = [Message(role="user", content=[
+            block,
+            TextContentBlock(type="text", text=_IMAGE_CAPTION_INSTRUCTION),
+        ])]
+        try:
+            events = self._utility_client.stream(
+                system_prompt=[],
+                messages=conv,
+                thinking_level="low",
+                include_tools=False,
+                emit_output=False,
+            )
+            text = "".join(e.text for e in events
+                           if isinstance(e, TextDeltaEvent)).strip()
+        except Exception:
+            return None              # 端点故障/打断/不支持 side-call 参数
+        if not text:
+            return None
+        self._image_captions[key] = text
         return text
 
     def _build_compact_summary(self, msgs: List[Message], keep_from: int) -> str:
@@ -1518,7 +1668,7 @@ class ConversationRuntime:
             # 一律用生效提示词
             # messages 用模型视图: 压缩激活时 = [续接摘要] + 保留区,
             # 全量历史原样留在会话里供展示与落盘。
-            events = self._stream_with_overflow_recovery(
+            events = self._stream_with_recovery(
                 effective_level=effective_level)
             # 流内打断: api_client 在流式消费循环里查 should_stop 命中后
             # 补 stop_reason="interrupted" 的合成 stop 返回（不抛异常,
