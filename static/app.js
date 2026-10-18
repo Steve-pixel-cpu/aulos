@@ -11,7 +11,7 @@ const DESKTOP = window.aulosDesktop
 if (!DESKTOP) {
   document.documentElement.innerHTML =
     '<head><meta charset="UTF-8"><title>Aulos</title></head>' +
-    '<body style="margin:0;background:#101014">' +
+    '<body style="margin:0;background:#18181c">' +
     '<div style="height:100vh;display:flex;flex-direction:column;gap:10px;' +
     'align-items:center;justify-content:center;font-family:system-ui,' +
     '"Microsoft YaHei",sans-serif;color:#a0a1ab;font-size:15px">' +

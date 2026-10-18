@@ -1,18 +1,27 @@
   /* ============ 设计令牌: 深色为默认，浅色经 [data-theme=light] 覆盖 ============ */
   :root {
     color-scheme: dark;
-    --bg: #101014;
-    --bg-side: #0b0b0f;
-    --surface: #17171d;
-    --surface-2: #1d1d24;
-    --surface-3: #26262f;
-    --border: #26262e;
-    --border-strong: #34343e;
+    /* 深色色阶整体抬一档(2026-10 视觉实测: 纯黑≈"终端感", 石墨灰≈"产品感";
+       明度中位 0.08 → ~0.11 落入主流深色主题区间, 侧栏与主区差值 5→7
+       使分层可感知)。蓝紫偏差(+B)保留——品牌色系不动, 只抬明度。
+       第二轮: 背景饱和度 0.19-0.25 → 0.11-0.15(低明度下饱和度视觉放大,
+       压掉"蓝雾感"得冷调石墨; 背景越中性, accent 越显贵)。明度梯子不动:
+       side 17 → bg 24 → surface 30 → surface-2 36 → surface-3 46(B 通道等差+5)。
+       第三轮: 侧栏脱离"全场最黑"——#111114(明度0.08)→#151519(0.10),
+       与主区差收窄到 3-4/255, 分层职责移交 1px 边框(Linear/Notion 做法:
+       大面同色系+边框分隔, 避免"侧栏一块黑"); B 通道梯子变 side 21→bg 28。 */
+    --bg: #18181c;
+    --bg-side: #151519;
+    --surface: #1e1e23;
+    --surface-2: #24242a;
+    --surface-3: #2e2e35;
+    --border: #2b2b31;
+    --border-strong: #3b3b43;
     --text: #ececf1;
     --text-2: #a0a1ab;
     --text-3: #6c6d78;
-    --hover: #1d1d24;
-    --active: #23232c;
+    --hover: #24242a;
+    --active: #26262d;
     --accent: #b9bec7;
     --accent-deep: #8f95a0;
     --accent-soft: rgba(203, 208, 217, .10);
@@ -20,13 +29,13 @@
     --ok: #4ade80;      --ok-soft: rgba(74, 222, 128, .12);
     --err: #f87171;     --err-soft: rgba(248, 113, 113, .12);
     --warn: #fbbf24;    --warn-soft: rgba(251, 191, 36, .12);
-    --code-bg: #0c0c11;
-    --code-head: #131318;
-    --overlay: rgba(6, 6, 10, .6);
+    --code-bg: #131316;
+    --code-head: #17171b;
+    --overlay: rgba(12, 12, 16, .6);
     --shadow-md: 0 2px 12px rgba(0, 0, 0, .28);
     --shadow-lg: 0 12px 40px rgba(0, 0, 0, .42);
     --shadow-pop: 0 4px 14px rgba(0, 0, 0, .26), 0 18px 50px rgba(0, 0, 0, .38);
-    --pop-bg: rgba(30, 30, 38, .74);   /* 悬浮层玻璃底: 半透明 + 模糊 */
+    --pop-bg: rgba(36, 36, 42, .74);   /* 悬浮层玻璃底: 半透明 + 模糊 */
     --content-w: min(1000px, calc(100% - 64px));
     --r-sm: 8px; --r-md: 12px; --r-lg: 16px; --r-xl: 20px;
     /* 字号比例: 设置→外观 可调, JS 写在 documentElement 内联样式上。
@@ -135,14 +144,14 @@
    * 一处全局透出。RGB 保持原值只降 alpha(乘 --bg-surf, 随"壁纸亮度"滑块
    * 联动: 100% 最透 / 50% 默认 / 更低更实), 文字对比度不受影响 */
   :root[data-bg="1"] {
-    --bg:        rgb(16 16 20 / calc(.48 * var(--bg-surf, 1)));
-    --surface:   rgb(23 23 29 / calc(.55 * var(--bg-surf, 1)));
-    --surface-2: rgb(29 29 36 / calc(.50 * var(--bg-surf, 1)));
-    --surface-3: rgb(38 38 47 / calc(.46 * var(--bg-surf, 1)));
-    --code-bg:   rgb(12 12 17 / calc(.45 * var(--bg-surf, 1)));
-    --code-head: rgb(19 19 24 / calc(.55 * var(--bg-surf, 1)));
-    --hover:     rgb(29 29 36 / calc(.38 * var(--bg-surf, 1)));
-    --active:    rgb(35 35 44 / calc(.40 * var(--bg-surf, 1)));
+    --bg:        rgb(24 24 28 / calc(.48 * var(--bg-surf, 1)));
+    --surface:   rgb(30 30 35 / calc(.55 * var(--bg-surf, 1)));
+    --surface-2: rgb(36 36 42 / calc(.50 * var(--bg-surf, 1)));
+    --surface-3: rgb(46 46 53 / calc(.46 * var(--bg-surf, 1)));
+    --code-bg:   rgb(19 19 22 / calc(.45 * var(--bg-surf, 1)));
+    --code-head: rgb(23 23 27 / calc(.55 * var(--bg-surf, 1)));
+    --hover:     rgb(36 36 42 / calc(.38 * var(--bg-surf, 1)));
+    --active:    rgb(38 38 45 / calc(.40 * var(--bg-surf, 1)));
   }
   :root[data-theme="light"][data-bg="1"] {
     --bg:        rgb(255 255 255 / calc(.48 * var(--bg-surf, 1)));
@@ -162,7 +171,7 @@
    * 遮罩只管露出的壁纸区域。
    * --bg-dim / --bg-surf 由"壁纸亮度"滑块驱动(1=默认观感, <1 更亮, >1 更暗);
    * alpha 会被 CSS 钳到 0..1, 调亮端(系数<1)线性减淡压暗层 */
-  :root[data-bg="1"] { --bg-scrim: rgb(10 10 14 / calc(.38 * var(--bg-dim, 1))); }
+  :root[data-bg="1"] { --bg-scrim: rgb(17 17 20 / calc(.38 * var(--bg-dim, 1))); }
   :root[data-theme="light"][data-bg="1"] { --bg-scrim: rgb(255 255 255 / calc(.34 * var(--bg-dim, 1))); }
 
   /* 壁纸遮罩: z-index -1 = 壁纸(body 绘制)之上、一切 UI 之下;
