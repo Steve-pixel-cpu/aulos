@@ -14,7 +14,7 @@
 [![CI](https://github.com/Steve-pixel-cpu/aulos/actions/workflows/ci.yml/badge.svg)](https://github.com/Steve-pixel-cpu/aulos/actions/workflows/ci.yml)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](#acknowledgements)
 
-A Claude Code–style AI coding assistant, fully open source. You describe a
+A terminal-native AI coding agent, fully open source. You describe a
 task in natural language; it reads files, edits code, runs commands and
 looks things up on its own until the job is done. Two frontends (terminal +
 desktop app), with a built-in permission system, automatic compaction of

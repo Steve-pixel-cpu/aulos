@@ -12,7 +12,7 @@
 [![CI](https://github.com/Steve-pixel-cpu/aulos/actions/workflows/ci.yml/badge.svg)](https://github.com/Steve-pixel-cpu/aulos/actions/workflows/ci.yml)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](#项目来源与致谢)
 
-一个 Claude Code 风格的 AI 编程助手，完整开源。你用自然语言下任务，它自己
+一个终端原生的 AI 编程 Agent，完整开源。你用自然语言下任务，它自己
 读文件、改代码、跑命令、查资料，直到把活干完。提供终端和桌面端两种用法，
 并内置：安全权限体系、长对话自动压缩、外部工具接入（MCP）、多 Agent 并行、
 自动化评测、会话保存与恢复。
