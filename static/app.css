@@ -252,10 +252,10 @@
    * + 悬停恢复/删除钮。条目间距拉开(mock 风格): 行间 4px 呼吸空间,
    * 标题行 12px / 项目子行 11px 层级对比, hover 整卡浅底 */
   .session-item.archived-item {
-    height: auto; min-height: 38px;
-    padding: 5px 8px 4px 12px;
+    height: auto; min-height: 44px;
+    padding: 7px 8px 6px 12px;
     flex-wrap: wrap;
-    margin: 2px 8px;
+    margin: 4px 8px;
     align-content: flex-start;
   }
   .session-item.archived-item .title {
@@ -268,7 +268,7 @@
   .session-item .s-workdir {
     flex-basis: 100%; display: flex; align-items: center; gap: 5px;
     font-size: calc(10.5px * var(--fs-ui)); color: var(--text-3);
-    margin-top: 3px; min-height: 20px;
+    margin-top: 4px; min-height: 20px;
     /* 子行与标题图标列对齐: 标题行的气泡图标 14px + gap 8px */
     padding-left: 22px;
     box-sizing: border-box;
