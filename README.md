@@ -40,8 +40,10 @@
 > Python 3.14 + FastAPI + Tauri 2。不绑定官方 API：任何兼容 Anthropic /
 > OpenAI 接口的模型服务都能用（接口地址、Key、模型均可自定义）。
 >
-> 本项目基于 [MiniCC](https://github.com/Louisym/MiniCC) 开发并扩展而来，
-> 详见[致谢](#项目来源与致谢)。
+> 38k 行 Python 内核 ｜ 1000+ 测试用例 ｜ 6 类评测任务 + 基线回归 ｜
+>
+> 本项目基于 [MiniCC](https://github.com/Louisym/MiniCC) 开发并扩展而来
+> （行级对比 92% 为重写/新增），详见[致谢](#项目来源与致谢)。
 
 <table>
   <tr>
@@ -76,9 +78,20 @@
 
 1. **MicroCompact**：把老旧的大段工具输出替换成占位说明（如「此处原有
    200 行文件内容」），纯字符串操作，不花钱不调模型
-2. **Session Memory**：后台线程持续把对话滚动总结成摘要，随用随取
+2. **Session Memory**：后台线程持续把对话滚动总结成摘要，随用随取；
+   增量消化（攒够一批才动、单飞行防并发）、消化失败指针不动下轮重试
 3. **Full Compact**：以上都不够时，专门调一次模型，把整段对话压成
-   结构化摘要（模型调用失败则按规则截断兜底，保证一定能压下去）
+   结构化摘要；滚动摘要已覆盖归档区时直接复用（零额外调用），
+   部分覆盖时只对增量做摘要
+
+可靠性设计：
+
+- **摘要漂移对冲**：LLM 滚动摘要多代接力，误差会单调累积——归档区
+  每次压缩时由代码（不经模型）从原文机械抽取助手结论逐字锚点，拼在
+  摘要之后。锚点永不经过模型改写，是摘要出错时的忠实底座
+- **熔断降级**：摘要 LLM 调用连续失败达到阈值，本会话自动停用 LLM
+  摘要、降级为规则摘要（统计 + 最近请求 + 待办 + 结论原文拼接），
+  压缩链路永远不会因为模型不可用而断供
 
 另有主上下文瘦身细节：工具输出过长时只保留开头几行、全文存到磁盘按需
 再取；同一文件没变化却被重复读取时自动去重；贴的截图自动缩小尺寸；
@@ -226,10 +239,11 @@ uv run python evals/run_evals.py                    # 跑全部, 有基线则自
 uv run python evals/run_evals.py --only fix-failing-test --save-baseline
 ```
 
-- 内置任务：数函数 / 修复失败测试 / 实现函数 / 跨文件重命名 /
-  审查问题代码 / 派子 Agent（count-functions、fix-failing-test、
-  implement-function、rename-across-files、review-buggy-code、
-  delegate-subagent）
+- 内置任务（6 类能力面）：数函数（count-functions）、修复失败测试
+  （fix-failing-test）、实现函数（implement-function）、跨文件重命名
+  （rename-across-files）、审查问题代码（review-buggy-code）、派子
+  Agent（delegate-subagent）——覆盖实现、调试、重构、审查、编排五类
+  典型 Agent 工作场景
 - 添加任务：在 `evals/tasks/<名字>/` 下放 `task.txt`（任务描述）+
   `project/`（示例项目）+ 可选的 `checks.py`（机械检查）/
   `judge.txt`（给评分模型的评分标准）。注意跑真任务会消耗 token，
