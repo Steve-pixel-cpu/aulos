@@ -17,7 +17,9 @@ from aulos.fsatomic import atomic_write_text, read_text_with_retry
 from aulos.models import Session, TextContentBlock
 from aulos.permissions import ALLOW_MODE, PermissionPolicy
 from aulos.runtime import ConversationRuntime
-from aulos.tools import ToolRegistry, bash_tool, read_tool, write_tool, powershell_tool
+from aulos.tools import (ToolRegistry, bash_tool, read_tool, write_tool,
+                         powershell_tool, grep_tool, glob_tool,
+                         web_search_tool, web_fetch_tool)
 
 TOOL_WHITELIST: dict[str, set[str]] = {
     # explore/plan: 调查三件套（read_file + grep + glob）——派出去的
@@ -132,6 +134,17 @@ SUBAGENT_TOOL_HANDLERS: dict[str, Callable] = {
     "powershell": powershell_tool,
     "read_file": read_tool,
     "write_file": write_tool,
+    # grep/glob 在 explore/plan 白名单里且规格会随请求发给 worker 模型
+    # （_tool_specs_for 从 TOOLS 取）——handler 缺席时 registry 静默跳过
+    # 注册, 模型调到未注册工具才吃 ToolError：2026-10 实锤, explore
+    # worker 只能 read_file 直读做不了内容搜索（跨会话多份调查报告
+    # 自报 grep/glob 不可用）。web_search/web_fetch 同型问题：general/
+    # explore_web 白名单包含它们但同样无 handler——注意这组修复让
+    # general 子代理"声明的能力"真正生效（此前名存实亡, 调到即报错）。
+    "grep": grep_tool,
+    "glob": glob_tool,
+    "web_search": web_search_tool,
+    "web_fetch": web_fetch_tool,
 }
 
 # 浏览器工具 handler: 懒加载（browser_tools 导入不触发 playwright 依赖),
@@ -216,8 +229,14 @@ def build_subagent_runtime(job: AgentJob) -> ConversationRuntime:
     registry = ToolRegistry()
     for tool_name in sorted(job.allowed_tools):
         handler = SUBAGENT_TOOL_HANDLERS.get(tool_name)
-        if handler is not None:
-            registry.register(name=tool_name, handler=handler)
+        if handler is None:
+            # 静默跳过 = 无声退化：规格照发、调用报错、worker 半盲跑完
+            # 才被发现（2026-10 grep/glob/web 事故）。组装期直接炸,
+            # 让配错在 spawn 当场失败进 FAILED, 而不是无声降级跑完全程。
+            raise ValueError(
+                f"subagent tool '{tool_name}' 在 SUBAGENT_TOOL_HANDLERS 里没有"
+                f" handler——白名单与 handler 表脱钩, 拒绝静默组装半盲 worker")
+        registry.register(name=tool_name, handler=handler)
 
     return ConversationRuntime(
         session=Session(),

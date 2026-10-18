@@ -16,12 +16,27 @@ from pathlib import Path
 import pytest
 
 from aulos.multi_agent import (
+    SUBAGENT_TOOL_HANDLERS,
     TOOL_WHITELIST,
     AgentJob,
     AgentManifest,
     AgentOrchestrator,
     allowed_tools_for_subagent,
 )
+
+
+def test_every_whitelisted_tool_has_a_handler():
+    """白名单里的工具名必须在 SUBAGENT_TOOL_HANDLERS 里有对应 handler,
+    且在 TOOLS 里有规格——否则 worker 组装时静默跳过注册, 模型调到
+    未注册工具才报错。实锤: grep/glob/web_search/web_fetch 曾长期缺席,
+    explore worker 全部退化成只能 read_file 直读。"""
+    from aulos.main import TOOLS
+    spec_names = {s["name"] for s in TOOLS}
+    for role, allowed in TOOL_WHITELIST.items():
+        missing_handler = allowed - set(SUBAGENT_TOOL_HANDLERS)
+        assert not missing_handler, f"{role} 白名单工具缺 handler: {missing_handler}"
+        missing_spec = allowed - spec_names
+        assert not missing_spec, f"{role} 白名单工具缺规格: {missing_spec}"
 
 
 # ------------------------------------------------------------
@@ -56,6 +71,25 @@ def test_explore_is_read_only():
     assert "read_file" in tools
     assert "bash" not in tools
     assert "write_file" not in tools
+
+
+def test_build_subagent_runtime_rejects_handlerless_whitelist_tool(monkeypatch, tmp_path):
+    """白名单含无 handler 的工具时组装必须当场炸, 不许静默跳过。
+    （配错进 FAILED 可被 L2 兜底接住并暴露错误, 无声降级则整场半盲。）"""
+    from aulos.multi_agent import AgentJob, AgentManifest, build_subagent_runtime
+    from aulos.runtime import ConversationRuntime
+    monkeypatch.setattr("aulos.multi_agent.make_api_client", lambda *a, **k: object())
+
+    manifest = AgentManifest(
+        agent_id="a-x", name="", description="d", subagent_type="explore",
+        status="running", output_file="",
+        created_at="2026-01-01T00:00:00+00:00",
+        started_at=None, completed_at=None, error=None,
+    )
+    job = AgentJob(manifest=manifest, prompt="p",
+                   allowed_tools={"read_file", "grep", "no_such_tool"})
+    with pytest.raises(ValueError, match="no_such_tool"):
+        build_subagent_runtime(job)
 
 
 def test_verification_gets_bash_but_not_write():
