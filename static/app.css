@@ -741,10 +741,13 @@
     margin-top: 14px;
   }
   .sug-chip {
-    padding: 10px 16px; border: 1px solid var(--border-strong); border-radius: var(--r-md);
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 9px 15px; border: 1px solid var(--border-strong); border-radius: var(--r-md);
     background: var(--surface); color: var(--text-2); font-size: calc(13px * var(--fs-ui));
     transition: all .15s;
   }
+  .sug-chip svg { flex: none; color: var(--text-3); }
+  .sug-chip:hover svg { color: var(--accent); }
   .sug-chip:hover {
     border-color: var(--accent-border); color: var(--accent);
     background: var(--accent-soft); transform: translateY(-1px);

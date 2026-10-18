@@ -1656,8 +1656,9 @@ function updateSendBtn() {
   btn.dataset.tip = stop ? "中断对话" : "发送";
 }
 function setBusyUi(busy) {
-  // 忙碌态占位符对齐 Claude.ai: 提示可以直接继续排队
-  $("input").placeholder = busy ? "继续输入以排队后续修改" : "提出后续修改要求";
+  // 草稿态没有"前序"可修改: 占位符提示描述任务; 忙碌态对齐 Claude.ai: 提示可以直接继续排队
+  $("input").placeholder = state.draft ? "描述你的任务，附文件也行…"
+    : busy ? "继续输入以排队后续修改" : "提出后续修改要求";
   updateSendBtn();
 }
 

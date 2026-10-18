@@ -701,10 +701,27 @@ async function selectSession(id) {
   scrollToBottom(true);
 }
 
-const SUGGESTIONS = [
-  "帮我看看这个项目的整体结构",
-  "解释一下核心模块的实现思路",
-  "跑一下全部测试并总结结果",
+/* 建议 chips: 图标 + 短分类名(参考截图风格), 点击填入完整指令。
+   没选工作区给本 app 独有能力, 选了给项目向任务 */
+const SUG_SVG = k => '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + ({
+  music: '<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>',
+  search: '<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>',
+  calendar: '<rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>',
+  wrench: '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>',
+  layers: '<polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/>',
+  play: '<circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/>',
+  eye: '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>',
+}[k]) + '</svg>';
+const SUGS_BLANK = [
+  { i: "music", t: "放首歌听", p: "放首《晴天》听听" },
+  { i: "search", t: "搜今日新闻", p: "搜一下今天的大模型新闻，简短总结" },
+  { i: "calendar", t: "周报总结", p: "总结一下我本周在这个应用里做的事，按天列出来" },
+];
+const SUGS_PROJECT = [
+  { i: "wrench", t: "报错修复", p: "帮我修复当前的报错：先定位原因，再给最小改动" },
+  { i: "layers", t: "梳理结构", p: "看看这个项目的整体结构，列出核心模块和依赖" },
+  { i: "play", t: "跑测试", p: "跑一下全部测试并总结结果" },
+  { i: "eye", t: "代码审查", p: "审查一下未提交的改动，指出潜在问题" },
 ];
 
 function showEmptyState() {
@@ -730,12 +747,22 @@ function renderDraftChrome() {
   }
   dock.innerHTML = "<button class='ws-chip' id='ws-chip'></button>";
   renderWsChip();
-  sug.innerHTML = SUGGESTIONS.map(s => `<button class='sug-chip'>${escapeHtml(s)}</button>`).join("");
-  sug.querySelectorAll(".sug-chip").forEach(chip => {
+  renderSugChips();
+}
+
+/* 建议 chips 随已选工作区切换两套文案; ws-chip 选择变化时也要重渲染 */
+function renderSugChips() {
+  const sug = $("sug-dock");
+  if (!state.draft) return;
+  const sugs = state.draftDir ? SUGS_PROJECT : SUGS_BLANK;
+  sug.innerHTML = sugs.map(s =>
+    `<button class='sug-chip'>${SUG_SVG(s.i)}<span>${escapeHtml(s.t)}</span></button>`).join("");
+  sug.querySelectorAll(".sug-chip").forEach((chip, i) => {
     chip.onclick = () => {
-      $("input").value = chip.textContent;
-      autoGrow($("input"));
-      $("input").focus();
+      const input = $("input");
+      input.value = sugs[i].p;   // 短标签背后填完整指令; 点击即覆盖输入框
+      autoGrow(input);
+      input.focus();
     };
   });
 }
@@ -756,6 +783,7 @@ function renderWsChip() {
       ev.stopPropagation();
       state.draftDir = null;
       renderWsChip();
+      renderSugChips();   // 清除项目: 建议 chips 换回通用文案
     };
   } else {
     chip.classList.remove("on");
@@ -795,6 +823,7 @@ function openWsPop(anchor) {
         state.draftDir = w;
         closeWsPop();
         renderWsChip();
+        renderSugChips();   // 选了项目: 建议 chips 换项目向文案
       };
     });
   };
@@ -804,7 +833,7 @@ function openWsPop(anchor) {
     closeWsPop();
     if (window.aulosPickFolder) {   // 桌面端: 原生文件夹对话框
       const dir = await pickNativeFolder();
-      if (dir) { addProject(dir); state.draftDir = dir; renderWsChip(); }
+      if (dir) { addProject(dir); state.draftDir = dir; renderWsChip(); renderSugChips(); }
       return;
     }
     openDirPop(anchor);             // 浏览器/预览: 页面内目录浏览兜底
@@ -813,6 +842,7 @@ function openWsPop(anchor) {
     state.draftDir = null;
     closeWsPop();
     renderWsChip();
+    renderSugChips();   // 清掉项目: 换回通用文案
   };
   // 定位: chip 下方优先, 放不下翻到上方; 两向都放不下时限高让列表内滚
   const r = anchor.getBoundingClientRect();
