@@ -27,12 +27,14 @@ class AulosCompleter:
                  commands: Sequence[str],
                  mode_names: Sequence[str],
                  thinking_levels: Sequence[str],
-                 skill_names: Sequence[str] = ()):
+                 skill_names: Sequence[str] = (),
+                 model_names: Sequence[str] = ()):
         self._commands = list(commands)
         self._skills = list(skill_names)
         self._second_level = {
             "mode": list(mode_names),
             "thinking": list(thinking_levels),
+            "model": list(model_names),
         }
 
     def candidates(self, text: str, cursor: Optional[int] = None) -> list[str]:

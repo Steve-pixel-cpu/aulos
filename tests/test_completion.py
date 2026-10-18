@@ -51,6 +51,12 @@ class TestSecondLevel:
         assert "prompt" in cands
         assert "read-only" in cands
 
+    def test_model_completes_names(self):
+        c = AulosCompleter(commands=["model"], mode_names=[], thinking_levels=[],
+                           skill_names=[], model_names=["glm-5.3-flash", "glm-5.3"])
+        assert candidates(c, "/model ") == ["glm-5.3", "glm-5.3-flash"]
+        assert candidates(c, "/model glm-5.3-f") == ["glm-5.3-flash"]
+
     def test_mode_prefix(self, completer):
         cands = candidates(completer, "/mode re")
         assert "read-only" in cands

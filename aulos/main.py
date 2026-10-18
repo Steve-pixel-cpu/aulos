@@ -543,6 +543,7 @@ class SlashCommand(Enum):
     RENAME = "rename"
     SKILLS = "skills"
     MEMORY = "memory"
+    MODEL = "model"
     EXIT = "exit"
     UNKNOWN = "unknown"
 
@@ -824,6 +825,35 @@ def switch_thinking(runtime: ConversationRuntime, level_name: str) -> None:
     runtime.set_thinking_level(level)
     print(f"思考等级已切换: {level}")
 
+def switch_model(runtime: "ConversationRuntime", model_name: str) -> None:
+    """/model: 切换本会话模型（同 provider 内 per-call 覆盖, 下一轮生效）。
+
+    不带参数 = 打印当前模型与可选值; 可选值来自 providers.json 的
+    active provider（读不到配置就只显示当前值）。"/model default" 清掉
+    覆盖, 回到启动时的模型。跨 provider 切换请重启时换环境变量/--model。
+    """
+    from aulos.config import load_providers
+    current = runtime.model() or "(跟随启动模型)"
+    if not model_name:
+        print(f"当前模型: {current}")
+        prov_cfg = load_providers()
+        active = prov_cfg.get("active") or {}
+        prov = next((p for p in prov_cfg.get("providers", [])
+                     if p.get("id") == active.get("provider")
+                     and p.get("enabled")), None)
+        models = [m.get("id") for m in (prov.get("models") or [])
+                  if m.get("id")] if prov else []
+        if models:
+            print(f"可选: {' | '.join(models)}")
+        return
+    name = model_name.strip()
+    if name == "default":
+        runtime.set_model(None)
+        print("模型覆盖已清除, 回到启动时的模型")
+        return
+    runtime.set_model(name)
+    print(f"模型已切换: {name}（下一轮生效）")
+
 def print_status(runtime: "ConversationRuntime") -> None:
     """打印当前会话的用量收据（与权限面板同一套对齐风格）。"""
     usage = runtime.usage().cumulative_usage()
@@ -1076,11 +1106,24 @@ def _build_prompt_session():
     except Exception:
         pass
 
+    try:
+        from aulos.config import load_providers
+        prov_cfg = load_providers()
+        active = prov_cfg.get("active") or {}
+        prov = next((p for p in prov_cfg.get("providers", [])
+                     if p.get("id") == active.get("provider")
+                     and p.get("enabled")), None)
+        model_names = [m.get("id") for m in (prov.get("models") or [])
+                      if m.get("id")] if prov else []
+    except Exception:
+        model_names = []
+
     completer = AulosCompleter(
         commands=[cmd.value for cmd in SlashCommand if cmd is not SlashCommand.UNKNOWN],
         mode_names=list(MODE_TO_NAME.values()),
         thinking_levels=list(THINKING_LEVELS),
         skill_names=skill_names,
+        model_names=model_names,
     )
 
     class _Adapter(Completer):
@@ -1222,6 +1265,9 @@ def run_repl(runtime: ConversationRuntime,
             elif cmd == SlashCommand.MEMORY:
                 memory_cmd_len = len(SlashCommand.MEMORY.value) + 1
                 do_memory(text[memory_cmd_len:])
+            elif cmd == SlashCommand.MODEL:
+                model_cmd_len = len(SlashCommand.MODEL.value) + 1
+                switch_model(runtime, text[model_cmd_len:])
 
         else:
             # 每轮对话开始: 只留一个空行分隔(Claude Code 同款留白, 不画横线);
