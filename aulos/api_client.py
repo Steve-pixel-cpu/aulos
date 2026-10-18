@@ -13,6 +13,8 @@ import openai
 from openai import OpenAI
 from pydantic import BaseModel
 
+from aulos.render import MarkdownStreamPrinter
+
 # 流式读超时拆分: connect 上限压到 15s——stalled 建连快速失败落入重试
 # 循环的 should_stop 轮询点, 打断立即生效（此前 connect/read 共用 300s,
 # 等首包最坏干等 5 分钟且不可打断）。read 即 idle watchdog: 两条流式事件
@@ -231,6 +233,7 @@ ANSI_DIM = "\033[2m"
 ANSI_RESET = "\033[0m"
 ANSI_CLEAR_LINE = "\033[K"   # 清除光标到行尾（配合 \r 原地更新）
 THINKING_MARKER = "✻ 思考中…"
+SPINNER_FRAMES = "✢ ✳ ✶ ✻"   # 加载动画帧序列(Claude Code 同款), 空格分隔
 
 # 思考等级 → thinking.budget_tokens。GLM-5.3-flash 强制思考无法关闭，只能调
 # 深浅；"max" 不传参数走模型默认（最高档）。budget 须 ≥1024 且 < max_tokens。
@@ -302,7 +305,10 @@ def _end_thinking_indicator(out, streaming_thinking: bool) -> bool:
 
 
 def _stop_text_line(out, streaming_text: bool) -> bool:
-    """正文流结束一处换行，防止指示器/下一块与正文挤同行。"""
+    """正文流结束一处换行，防止指示器/下一块与正文挤同行。
+
+    streaming_text 现在指"渲染器已开"(printer 持半行缓冲); 换行前由
+    调用方 flush 渲染缓冲。返回 False 恒定复位。"""
     if not streaming_text:
         return False
     out.write("\n")
@@ -311,21 +317,26 @@ def _stop_text_line(out, streaming_text: bool) -> bool:
 
 
 class _TerminalEcho:
-    """流式终端回显状态机（仅 ClaudeApiClient.stream 内使用）。
+    """流式终端回显状态机（仅 stream 内使用）。
 
     收拢解耦前散落在事件循环里的三块终端状态（正文行/思考指示器行/思考
-    字数）。emit=False 时全部 no-op。样式与换行行为与解耦前逐字节一致;
-    这里只管终端显示, 绝不影响 wire 事件与返回事件。"""
+    字数）。emit=False 时全部 no-op。这里只管终端显示, 绝不影响 wire
+    事件与返回事件。正文经 MarkdownStreamPrinter 按行渲染(粗体/列表/
+    代码块), 半行缓冲在 printer 内, 切块落在标记中间也安全。"""
     def __init__(self, emit: bool):
         self.enabled = emit
-        self.text_open = False       # 正在流式输出正式回复文本
+        self.text_open = False       # 渲染器已开(可能持有半行缓冲)
         self.thinking_open = False   # 思考指示器行正在原地刷新（仅终端，不进事件流）
         self.thinking_chars = 0      # 当前思考块累计字符数
         self.out = sys.stdout
+        self._printer = None         # 正文渲染器(首个 text delta 时建)
+        self._spinner = None         # 加载动画线程(建连/空档期, 首字节即停)
 
     def on_block_start(self):
         """新内容块开始：先收掉上一块的指示器/正文行，防样式泄漏与挤行"""
+        self.spinner_stop()      # 内容到了, 动画让位
         self.thinking_open = _end_thinking_indicator(self.out, self.thinking_open)
+        self._flush_printer()
         self.text_open = _stop_text_line(self.out, self.text_open)
 
     def on_text(self, text: str):
@@ -336,13 +347,63 @@ class _TerminalEcho:
         if not self.text_open:
             self.out.write("\n")
             self.text_open = True
-        self.out.write(text)
+            self._printer = MarkdownStreamPrinter(
+                emit=lambda s: (self.out.write(s + "\n"), self.out.flush()))
+        self._printer.feed(text)
+
+    def _flush_printer(self) -> None:
+        """把渲染器里未换行的半行冲出来(块切换/回合收束前)。"""
+        if self._printer is not None:
+            self._printer.flush()
+            self._printer = None
+
+    # --- 加载动画 (Claude Code 同款 ✢✳✶✻) ---
+    # 只覆盖"沉默空档": 建连/重试退避/首字节前/工具执行中。首个事件
+    # (thinking/text/工具块)到达时停转清行; 思考指示器随后接管该行。
+    def spinner_start(self, label: str = ""):
+        """启动动画线程。已开则先停旧的。非 tty 不转。"""
+        if not self.enabled:
+            return
+        self.spinner_stop()
+        if not self.out.isatty():
+            return
+        import threading, time
+        self._spinner_label = label
+        self._spinner_stop = threading.Event()
+        frames = SPINNER_FRAMES.split(" ")
+        started = time.monotonic()
+        out = self.out
+
+        def _spin():
+            i = 0
+            while not self._spinner_stop.wait(0.12):
+                secs = int(time.monotonic() - started)
+                tail = f" {label}" if label else ""
+                out.write("\r" + ANSI_CLEAR_LINE + ANSI_DIM
+                          + f"{frames[i % len(frames)]} {secs}s{tail}"
+                          + ANSI_RESET)
+                out.flush()
+                i += 1
+
+        t = threading.Thread(target=_spin, daemon=True)
+        t.start()
+        self._spinner = t
+
+    def spinner_stop(self):
+        """停转并清掉动画行。幂等。"""
+        if self._spinner is None:
+            return
+        self._spinner_stop.set()
+        self._spinner.join()
+        self._spinner = None
+        self.out.write("\r" + ANSI_CLEAR_LINE)
         self.out.flush()
 
     def on_thinking(self, text: str):
         """思考内容只驱动指示器（暗灰、\\r 原地刷新），不产生任何事件。"""
         if not self.enabled:
             return
+        self._flush_printer()
         self.text_open = _stop_text_line(self.out, self.text_open)
         if not self.thinking_open:
             self.out.write(ANSI_DIM)
@@ -361,12 +422,14 @@ class _TerminalEcho:
     def on_tool_end(self):
         if not self.enabled:
             return
+        self._flush_printer()
         self.text_open = _stop_text_line(self.out, self.text_open)
 
     def on_message_delta(self):
         if not self.enabled:
             return
         self.thinking_open = _end_thinking_indicator(self.out, self.thinking_open)
+        self._flush_printer()
         self.text_open = _stop_text_line(self.out, self.text_open)
 
     def max_tokens_notice(self):
@@ -375,7 +438,9 @@ class _TerminalEcho:
         self.out.write("输出被 max_tokens 截断!")
 
     def finish(self):
+        self.spinner_stop()
         self.thinking_open = _end_thinking_indicator(self.out, self.thinking_open)
+        self._flush_printer()
         self.text_open = _stop_text_line(self.out, self.text_open)
         if self.enabled:
             # 收尾无条件复位 ANSI 样式，防止灰色泄漏到正式输出
@@ -699,7 +764,7 @@ class ClaudeApiClient(ApiClient):
                                     include_tools=include_tools, model=model)
         emit = self.emit_output if emit_output is None else emit_output
         echo = _TerminalEcho(emit)
-        # token 用量: input 侧在 message_start，output 侧在 message_delta。
+        echo.spinner_start()   # 建连/退避/首字节前: 动画兜住沉默空档
         # output_tokens 含思考 tokens——思考文本不进历史，但用量进，循环层预算靠它。
         usage_acc: dict = {}
         stop_reason: Optional[str] = None   # message_delta 报 stop_reason, message_stop 落事件
@@ -905,6 +970,7 @@ class ClaudeApiClient(ApiClient):
                 ))
         finally:
             stack.close()
+            echo.spinner_stop()   # 异常路径(重试耗尽/连接失败)也要停转清行
 
         # 收尾补快照: 块级 ThinkingEvent 依赖 content_block_stop, 兼容层
         # 偶发不发块收尾(见循环前 thinking_acc 注释)→ 快照落空。这里用
@@ -1175,6 +1241,7 @@ class OpenAIApiClient(ApiClient):
                                     thinking_level=thinking_level, model=model)
         emit = self.emit_output if emit_output is None else emit_output
         echo = _TerminalEcho(emit)
+        echo.spinner_start()   # 建连/首字节前: 动画兜住沉默空档
         if emit and sys.stdout.isatty():
             _ensure_ansi()
 

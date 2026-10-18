@@ -18,6 +18,11 @@ dependencies = [
     "pillow>=12.3.0",
 ]
 
+[project.optional-dependencies]
+interactive = [
+    "prompt-toolkit>=3.0.53",
+]
+
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",

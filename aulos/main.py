@@ -440,47 +440,29 @@ TOOLS = (_TOOLS_BASE + [powershell_spec] if _ON_WINDOWS else _TOOLS_BASE) \
     + MEMORY_TOOL_SPECS + BROWSER_TOOL_SPECS + AGENT_TOOL_SPECS
 
 
-# --- 终端视觉规范: 调色板 + 版式 ---
-# 规则: ANSI 码只允许出现在 _paint 一处，所有颜色经 c_xxx() 成对包裹/重置，
+# --- 终端视觉规范: 调色板移至 aulos/render.py(单一来源), 这里只 re-export ---
+# 规则: ANSI 码只允许出现在 render._paint 一处，所有颜色经 c_xxx() 成对包裹/重置，
 # 任何异常路径都不可能把颜色泄漏到后续输出。
-
-_ANSI_RESET = "\033[0m"
-_ANSI_DIM = "\033[2m"
-_ANSI_RED = "\033[31m"
-_ANSI_YELLOW = "\033[33m"
-_ANSI_CYAN = "\033[36m"
-
-
-def _paint(code: str, text: str) -> str:
-    """成对包裹: code + text + reset。颜色只在这一处拼接。"""
-    return f"{code}{text}{_ANSI_RESET}"
-
-
-def c_dim(s: str) -> str:
-    """暗灰: 工具结果预览 / 分隔线。"""
-    return _paint(_ANSI_DIM, s)
-
-
-def c_red(s: str) -> str:
-    """红色: 错误信息（配 ✗ 前缀）。"""
-    return _paint(_ANSI_RED, s)
-
-
-def c_yellow(s: str) -> str:
-    """黄色: 权限询问。"""
-    return _paint(_ANSI_YELLOW, s)
-
-
-def c_cyan(s: str) -> str:
-    """青色: 工具调用提示（配 '⚙ 工具' 前缀）。"""
-    return _paint(_ANSI_CYAN, s)
-
+from aulos.render import (  # noqa: F401  (re-export: 本文件与其兄弟模块在用)
+    ANSI_RESET as _ANSI_RESET,
+    c_bold, c_cyan, c_dim, c_red, c_yellow,
+    strip_ansi,
+)
 
 SEPARATOR = "─" * 40        # 每轮对话开始的细分隔线
 PREVIEW_MAX_LINES = 3       # 工具结果预览: 最多行数
 PREVIEW_MAX_CHARS = 160     # 工具结果预览: 最多字符数
 LINE_MAX_CHARS = 80         # 单行内容（权限面板/工具提示）截断宽度
 FIELD_LABEL_WIDTH = 9       # 对齐字段的标签列宽（按终端显示宽度计）
+
+TOOL_CALLED_MARK = "⏺"      # 工具调用行前缀(Claude Code 视觉语言)
+TOOL_RESULT_MARK = "⎿"      # 工具结果行前缀
+PROMPT_MARK = "❯"           # 输入提示符
+
+
+def prompt_text() -> str:
+    """REPL 提示符: 粗体青 ❯。"""
+    return f"\033[1m\033[36m{PROMPT_MARK}\033[0m "
 
 
 def one_line(s: str) -> str:
@@ -693,18 +675,21 @@ class CliToolExecutor:
     def execute(self, tool_name: str, input: str, tool_use_id: str | None = None) -> str:
         desc = describe_tool_input(input)
         print(file=self._out)
-        print(c_cyan(f"⚙ 工具 {tool_name}" + (f"  {desc}" if desc else "")),
+        print(c_cyan(f"{TOOL_CALLED_MARK} {tool_name}"
+                     + (f"({desc})" if desc else "")),
               file=self._out)
-        print(file=self._out)
         try:
             output = self.registry.execute(tool_name, input)
         except Exception as e:
             # 终端看红 ✗；异常继续上抛，由 runtime 转 tool_result 给模型
-            print(c_red(f"✗ {tool_name} 失败: {truncate_line(one_line(str(e)))}"),
+            print(c_red(f"{TOOL_RESULT_MARK} {tool_name} 失败: {truncate_line(one_line(str(e)))}"),
                   file=self._out)
             print(file=self._out)
             raise
-        print(c_dim(indent_block(format_preview(output))), file=self._out)
+        # 结果预览: ⎿ 前缀 + dim 树状回显(Claude Code 视觉语言)
+        print(c_dim(indent_block(format_preview(output),
+                                 prefix=f"{TOOL_RESULT_MARK} ")),
+              file=self._out)
         print(file=self._out)
         return output
 
@@ -782,18 +767,17 @@ def resolve_permission_mode(runtime_config: RuntimeConfig) -> tuple:
     return DANGER_FULL_ACCESS_MODE, False
 
 BANNER_ART = r"""
-    _     _   _  _    ___   ___
-   / \   | | | | | |  / _ \ / __|
-  / _ \  | | | | | | | | | | \__ \
- / ___ \ | |_| | | | | |_| | ___) |
-/_/   \_\ \___/ |_|  \___/ |___/
+    _   _   _ _     ___  ____  
+   / \ | | | | |   / _ \/ ___| 
+  / _ \| | | | |  | | | \___ \ 
+ / ___ \ |_| | |__| |_| |___) |
+/_/   \_\___/|_____\___/|____/ 
 """
 def print_banner(name: str = "Aulos", width: int = 40) -> None:
     """Print an ASCII-art startup banner with the app name and help hint."""
-    print(BANNER_ART)
-    print(name)
-    print("/help 看命令")
-    print("=" * width)
+    print(c_cyan(BANNER_ART.rstrip("\n")))
+    print(f"{name}  ·  /help 看命令")
+    print(c_dim("─" * width))
 
 def _mode_status_text(runtime: ConversationRuntime) -> str:
     """/mode 与 /status 共用的模式回显: 基础模式 + 计划开关两个状态。"""
@@ -1071,6 +1055,65 @@ def do_skills(runtime: "ConversationRuntime", name_arg: str) -> None:
 
 
 # --- REPL ---
+def _build_prompt_session():
+    """可选交互增强: prompt_toolkit 的补全菜单 + 持久化历史。
+
+    未安装(optional 依赖组 interactive)或非 tty 场景返回 None,
+    调用方回退裸 input() —— headless/管道行为零变化。
+    """
+    try:
+        from prompt_toolkit import PromptSession
+        from prompt_toolkit.completion import Completer, Completion
+        from prompt_toolkit.formatted_text import ANSI
+        from prompt_toolkit.history import FileHistory
+    except ImportError:
+        return None
+    from aulos.completion import AulosCompleter
+
+    skill_names: list[str] = []
+    try:
+        skill_names = [s.name for s in discover_skills(Path.cwd(), USER_DIR)]
+    except Exception:
+        pass
+
+    completer = AulosCompleter(
+        commands=[cmd.value for cmd in SlashCommand if cmd is not SlashCommand.UNKNOWN],
+        mode_names=list(MODE_TO_NAME.values()),
+        thinking_levels=list(THINKING_LEVELS),
+        skill_names=skill_names,
+    )
+
+    class _Adapter(Completer):
+        """AulosCompleter(纯文本) → prompt_toolkit Completion 适配。"""
+
+        def get_completions(self, document, complete_event):
+            text, cursor = document.text, document.cursor_position
+            # 正在补的"词": 光标往前到最近空白(斜杠命令一级补全时空白在
+            # 行首之前, 词即整个 /xxx) —— 候选要替换这个词而非追加
+            word = text[text.rfind(" ") + 1:cursor]
+            for cand in completer.candidates(text, cursor):
+                yield Completion(cand, start_position=-len(word))
+
+    class _AnsiPrompt:
+        """PromptSession 薄包装: prompt_toolkit 对裸字符串不解析 ANSI 转义码
+        (会字面打出 ^[[36m), 含色码的提示符必须包成 ANSI 格式化文本。"""
+
+        def __init__(self, session):
+            self._session = session
+
+        def prompt(self, message, **kwargs):
+            return self._session.prompt(ANSI(message), **kwargs)
+
+    history_path = USER_DIR / "history"
+    try:
+        return _AnsiPrompt(PromptSession(
+            history=FileHistory(str(history_path)),
+            completer=_Adapter(),
+            complete_while_typing=True))
+    except Exception:
+        return None
+
+
 def run_repl(runtime: ConversationRuntime,
              prompter: PermissionPrompter,
              store: SessionStore,
@@ -1098,9 +1141,12 @@ def run_repl(runtime: ConversationRuntime,
                 break
     idx_before = len(existing) - 1
     ctrl_c_pending = False  # 连续两次 Ctrl+C 才退出, 第一次只提示
+    session = _build_prompt_session()   # 可选增强: 补全+历史; 没装则 None
     while True:
         try:
-            text = input("Aulos> ").strip()
+            raw = (session.prompt(prompt_text()) if session is not None
+                   else input(prompt_text()))
+            text = raw.strip()
             ctrl_c_pending = False
         except KeyboardInterrupt:
             if ctrl_c_pending:
@@ -1178,8 +1224,9 @@ def run_repl(runtime: ConversationRuntime,
                 do_memory(text[memory_cmd_len:])
 
         else:
-            # 每轮对话开始: 细分隔线；块与块之间靠各视觉块自带的空行隔开
-            print(c_dim(SEPARATOR))
+            # 每轮对话开始: 只留一个空行分隔(Claude Code 同款留白, 不画横线);
+            # 响应结束渲染器收尾自带换行, 轮次边界不会糊
+            print()
             summary = None
             try:
                 summary = runtime.run_turn(text, prompter)
@@ -1408,7 +1455,8 @@ def _assemble(session_store: SessionStore, session_id: str, *,
     for line in mcp_status_lines():
         print(line, file=out)
     if skills:
-        print(c_dim(f"  ✓ Skills: {', '.join(s.name for s in skills)}"), file=out)
+        print(c_dim(f"  ✓ Skills: {len(skills)} 个已加载（/skills 查看）"),
+              file=out)
 
     session_load = session_store.load_session(session_id)
     session_msgs = session_load[0]
