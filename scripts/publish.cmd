@@ -74,10 +74,10 @@ if errorlevel 1 (
 )
 
 set "NOTES=%~2"
-if "%NOTES%"=="" set "NOTES=aulos v%VER%"
+if "%NOTES%"=="" set "NOTES=Aulos v%VER%"
 
 echo [publish] Creating GitHub release v%VER% and uploading assets ...
-gh release create v%VER% "dist\%EXE%" "dist\%EXE%.sig" "%LATEST%" --title "aulos v%VER%" --notes "%NOTES%"
+gh release create v%VER% "dist\%EXE%" "dist\%EXE%.sig" "%LATEST%" --title "Aulos v%VER%" --notes "%NOTES%"
 if errorlevel 1 (
   echo [publish] gh failed - the release may already exist. Try:
   echo [publish]   gh release upload v%VER% dist\%EXE% dist\%EXE%.sig dist\latest.json --clobber

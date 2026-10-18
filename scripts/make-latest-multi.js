@@ -76,7 +76,10 @@ if (Object.keys(platforms).length === 0) {
 
 const manifest = {
   version,
-  notes: `aulos v${version}`,
+  // 品牌名用 productName（"Aulos"）——此前硬编码小写, 更新弹窗显示
+  // "aulos v5.3.0" 与标题栏 "Aulos" 不一致（本文件 L43 文件名已用
+  // productName, 唯独 notes 漏了）
+  notes: `${productName} v${version}`,
   pub_date: new Date().toISOString().replace(/\.\d+Z$/, "Z"),
   platforms,
 };
