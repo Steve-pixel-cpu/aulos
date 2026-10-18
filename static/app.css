@@ -248,19 +248,35 @@
   /* 归档视图: 隐藏 分组/项目 切换（X 关闭复用 tab-archive 再点） */
   #side-tabs-row.archive-mode .seg { display: none; }
   #side-tabs-row.archive-mode .seg-acts { flex: 1; justify-content: flex-end; }
-  #tab-archive.on { color: var(--accent); background: var(--accent-soft); }  /* 归档视图: 上下两行——标题+时间一行, 子行 workdir(无项目 default)
-   * + 悬停恢复/删除钮; 行高自适应 */
+  /* 归档视图: 上下两行——标题+时间一行, 子行 workdir(无项目 default)
+   * + 悬停恢复/删除钮。条目间距拉开(mock 风格): 行间 4px 呼吸空间,
+   * 标题行 12px / 项目子行 11px 层级对比, hover 整卡浅底 */
   .session-item.archived-item {
-    height: auto; min-height: 34px; padding-top: 4px; padding-bottom: 4px;
+    height: auto; min-height: 38px;
+    padding: 5px 8px 4px 12px;
     flex-wrap: wrap;
+    margin: 2px 8px;
+    align-content: flex-start;
   }
-  .session-item.archived-item .title { font-size: calc(12.5px * var(--fs-ui)); }
+  .session-item.archived-item .title {
+    font-size: calc(12.5px * var(--fs-ui));
+    line-height: 1.25;
+  }
+  .session-item.archived-item .meta {
+    font-size: calc(10.5px * var(--fs-ui));
+  }
   .session-item .s-workdir {
     flex-basis: 100%; display: flex; align-items: center; gap: 5px;
-    font-size: calc(11px * var(--fs-ui)); color: var(--text-3);
-    margin-top: 1px; min-height: 20px;
+    font-size: calc(10.5px * var(--fs-ui)); color: var(--text-3);
+    margin-top: 3px; min-height: 20px;
+    /* 子行与标题图标列对齐: 标题行的气泡图标 14px + gap 8px */
+    padding-left: 22px;
+    box-sizing: border-box;
   }
-  .session-item .s-workdir svg { flex: none; opacity: .8; }
+  .session-item.archived-item .s-ico {
+    align-self: flex-start; margin-top: 2px;   /* 两行布局: 图标顶对齐标题行 */
+  }
+  .session-item .s-workdir svg { flex: none; opacity: .7; }
   /* 恢复/删除: 靠右, 悬停整行时出现; 删除 hover 变红 */
   .session-item .s-workdir .s-unarc, .session-item .s-workdir .s-del {
     display: none; flex: none;
