@@ -183,6 +183,16 @@ def deep_merge(target: dict, source: dict) -> dict:
 class RuntimeFeatureConfig(BaseModel):
     hooks_pre_tool_use: list[str] = Field(default_factory=list)
     hooks_post_tool_use: list[str] = Field(default_factory=list)
+    # 生命周期 hook（通知性质, DENY 不阻断）: 回合开始/结束、worker 终态。
+    # 命令经 shell 执行, stdin 收 JSON 载荷（含事件字段）, 超时 30s。
+    hooks_turn_start: list[str] = Field(default_factory=list)
+    hooks_turn_end: list[str] = Field(default_factory=list)
+    hooks_subagent_done: list[str] = Field(default_factory=list)
+    # worker 预算（subagent 隔离加固）: 单任务后台线程, 预算远小于主对话
+    # （主对话 128 回合）——跑飞的 worker 只能靠用户手动杀, 上限必须收紧。
+    worker_max_iterations: int = 24
+    worker_turn_output_budget: int = 8000
+    worker_auto_compact_threshold: int = 60_000
     model: Optional[str] = None
     permission_mode: Optional[str] = None
     # 计划开关（与 permission_mode 独立叠加）: permissionMode 配成
@@ -263,6 +273,24 @@ class RuntimeConfig(BaseModel):
 
     def hooks_post(self) -> list[str]:
         return self.feature_config.hooks_post_tool_use
+
+    def hooks_turn_start(self) -> list[str]:
+        return self.feature_config.hooks_turn_start
+
+    def hooks_turn_end(self) -> list[str]:
+        return self.feature_config.hooks_turn_end
+
+    def hooks_subagent_done(self) -> list[str]:
+        return self.feature_config.hooks_subagent_done
+
+    def worker_max_iterations(self) -> int:
+        return self.feature_config.worker_max_iterations
+
+    def worker_turn_output_budget(self) -> int:
+        return self.feature_config.worker_turn_output_budget
+
+    def worker_auto_compact_threshold(self) -> int:
+        return self.feature_config.worker_auto_compact_threshold
 
     def model(self) -> Optional[str]:
         return self.feature_config.model
@@ -361,8 +389,14 @@ class ConfigLoader:
 
         pre = hooks.get("PreToolUse", [])
         post = hooks.get("PostToolUse", [])
-        if not isinstance(pre, list) or not isinstance(post, list):
-            raise ConfigError("hooks.PreToolUse/PostToolUse: must be arrays", kind="parse")
+        turn_start = hooks.get("TurnStart", [])
+        turn_end = hooks.get("TurnEnd", [])
+        subagent_done = hooks.get("SubagentDone", [])
+        hook_lists = (pre, post, turn_start, turn_end, subagent_done)
+        if not all(isinstance(h, list) for h in hook_lists):
+            raise ConfigError(
+                "hooks.PreToolUse/PostToolUse/TurnStart/TurnEnd/SubagentDone: "
+                "must be arrays", kind="parse")
 
         # permission_mode: CC 支持多种别名 (config.rs:511-518)
         # 只读模式已移除——配置值解析为 (基础模式名, 计划开关) 二元组。
@@ -487,6 +521,9 @@ class ConfigLoader:
         return RuntimeFeatureConfig(
             hooks_pre_tool_use=pre,
             hooks_post_tool_use=post,
+            hooks_turn_start=turn_start,
+            hooks_turn_end=turn_end,
+            hooks_subagent_done=subagent_done,
             model=merged.get("model"),
             permission_mode=permission_mode,
             permission_plan=permission_plan,

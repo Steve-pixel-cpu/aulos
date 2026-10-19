@@ -60,7 +60,9 @@ function handleServerMessage(msg, sid) {
     if (!msg.busy && run && run.busy && run.reconnected) {
       if (sid === state.sessionId) endTurnUiReset();
       else settleBackgroundTurnEnd(run, sid);
-    } else if (msg.busy && run && !run.busy) {
+    } else if (msg.busy && run && !run.busy && !run.stopping) {
+      // 停止收束窗口内重连: 后端权威 busy 还是 true（旧轮在收束）, 但本地
+      // 已提前定格「已停止」——不能把 busy 拉回, 否则空闲观感被推翻
       run.busy = true;
       renderSessionList();
     }
@@ -93,16 +95,13 @@ function handleServerMessage(msg, sid) {
     else if (msg.type === "turn_done" || msg.type === "error") {
       bumpUnread(sid);
       settleBackgroundTurnEnd(run, sid);
+      run.stopping = false;   // 权威收口: 提前定格窗口旗清零
       // 打断收口与前台 onTurnDone 一致: 「已停止」挂在本轮思考行上
-      if (msg.type === "turn_done" && msg.interrupted
-          && run.lastThinkRow && run.lastThinkRow.isConnected) {
-        const tag = document.createElement("span");
-        tag.className = "t-stopped";
-        tag.textContent = "已停止";
-        run.lastThinkRow.appendChild(tag);
-      }
+      // (markStoppedTag 自带去重: 提前定格过的不会重复挂)
+      if (msg.type === "turn_done" && msg.interrupted) markStoppedTag(run, sid);
     } else if (msg.type === "turn_started") {
       run.busy = true;               // 排队的后续消息接力开跑
+      run.stopping = false;          // 接力轮开跑: 旧轮的停止窗口旗作废
       run.lastThinkRow = null;
       settleRelayedMessages(msg, sid);
       beginOptimisticThinking(run, sid, colOf(sid));
@@ -906,11 +905,7 @@ const SUB_TYPE_LABEL = {
 };
 
 function saColOf(card) {
-  let col = card._saStream;
-  if (!col || !col.isConnected) {
-    col = card._saStream = card.querySelector(".sa-stream");
-  }
-  return col;
+  return card._saStream || null;   // 游离停泊也有效: 引用在, 列就在
 }
 
 /* ---------- 子智能体侧栏（对齐右侧计划面板的交互） ----------
@@ -972,22 +967,18 @@ function saRenderTabs(run) {
   }
 }
 
-function saHost(card, attach) {
-  // 列的当前宿主: 侧栏开着 → #sa-body; 否则 → 卡片后的 .sa-body
-  const body = card.nextElementSibling &&
-    card.nextElementSibling.classList.contains("sa-body")
-    ? card.nextElementSibling : null;
-  return attach ? $("sa-body") : body;
-}
-
 function saPlaceCol(card, attach) {
   const col = saColOf(card);
   if (!col) return;
-  const host = saHost(card, attach);
-  if (!host) return;
-  if (col.parentElement !== host) {
-    host.appendChild(col);
-    col.classList.toggle("hosted", attach);   // 面板内去定宽缩进, 全宽渲染
+  if (attach) {
+    const host = $("sa-body");
+    if (col.parentElement !== host) {
+      host.appendChild(col);
+      col.classList.add("hosted");   // 面板内去定宽缩进, 全宽渲染
+    }
+  } else {
+    col.classList.remove("hosted");
+    col.remove();   // 游离停泊: 节点保活在 card._saStream, 事件照常累积
   }
 }
 
@@ -1070,15 +1061,9 @@ function upgradeToSubagentCard(card, agentId) {
       setSaDesc(card, zh, d.description || "");
     }
   } catch (e) { /* 非法 JSON: 保留原描述 */ }
-  // 可折叠 body: 嵌套列收子代理的对话流（面板收起时的降级视图; 点击
-  // 卡片默认在右侧面板打开）
-  const body = document.createElement("div");
-  body.className = "sa-body";
-  body.hidden = true;
-  const stream = document.createElement("div");
-  stream.className = "sa-stream";
-  body.appendChild(stream);
-  card.insertAdjacentElement("afterend", body);
+  // 无内联降级视图: 卡片只是入口, 子代理执行流一律走右侧面板。
+  // 嵌套列由 saColFor 惰性建为游离节点（card._saStream 持引用）,
+  // 面板没开也照常累积事件, 打开即完整。
   card.classList.add("sa-toggle");
   card.onclick = (ev) => {
     if (ev.target.closest("button, a")) return;   // 不挡卡内交互
@@ -1154,7 +1139,7 @@ function onSubagentEvent(msg, sid) {
   const pseudo = "sub:" + msg.agent_id;
   switch (inner.type) {
     case "user_message":       // 任务输入: 子代理对话流以用户气泡开头
-      addUserBubble(String(inner.text || ""), null, colOf(pseudo)); break;
+      addSaTaskBubble(String(inner.text || ""), colOf(pseudo)); break;
     case "thinking_start":     onThinkingStart(inner, pseudo); break;
     case "thinking_delta":     onThinkingDelta(inner, pseudo); break;
     case "thinking_end":       onThinkingEnd(inner, pseudo); break;
@@ -1164,7 +1149,7 @@ function onSubagentEvent(msg, sid) {
     case "tool_result":        onToolResult(inner, pseudo); break;
     default: return;
   }
-  if (card.classList.contains("sa-open")) scrollToBottom();   // 内嵌展开时跟随滚动
+  if (card.classList.contains("sa-open")) scrollToBottom();   // 面板停泊时跟随主列滚动（防御性: 现已无内联展开路径）
   // 侧栏模式: 滚侧栏容器到底（仅当前会话且面板开着）
   if (_saOpenAgent === msg.agent_id && sid === state.sessionId) {
     const body = $("sa-body");
@@ -1172,27 +1157,59 @@ function onSubagentEvent(msg, sid) {
   }
 }
 
-/* 伪会话 id → 嵌套消息列: 惰性建在对应卡片的 .sa-body 里 */
+/* 伪会话 id → 消息列: 惰性建为游离节点（不挂 DOM）, 由 card._saStream
+ * 持引用; 面板打开时 saPlaceCol 整体搬进 #sa-body, 事件路由零改动。
+ * 游离期间 colOf(伪 id) 返回同一节点, 流式内容/工具卡照常累积, 不丢。 */
 function saColFor(pseudo) {
-  const agentId = pseudo.slice(4);
+  const agentId = pseudo.slice( 4);
   const card = saCardOf(runOf(state.sessionId), agentId);
   if (!card) return colOf(pseudo);   // 兜底: 顶层隐藏列, 事件不丢
   let col = card._saStream;
-  if (!col || !col.isConnected) {
+  if (!col) {
     col = document.createElement("div");
     col.className = "sa-stream";
     card._saStream = col;
-    const body = card.nextElementSibling;
-    if (body && body.classList.contains("sa-body")) {
-      body.appendChild(col);
-    } else {
-      const b = document.createElement("div");
-      b.className = "sa-body";
-      b.appendChild(col);
-      card.insertAdjacentElement("afterend", b);
-    }
   }
   return col;
+}
+
+/* ---------- 任务输入气泡折叠 ----------
+ * subagent 的任务提示往往极长（几百上千字的调研指令）, 一进来就把
+ * 侧栏/嵌套流顶满一屏, 真正想看的子代理执行过程被挤到视野外。
+ * 复用用户气泡但默认折叠: 限高 + 底部渐隐 + 「展开」胶囊（视觉与
+ * 长代码块折叠同语言）。短提示（≤8 行）不折叠, 保持原样。 */
+const SA_TASK_FOLD_MAX = 176;   // px, 约合 8 行正文
+
+function addSaTaskBubble(text, col) {
+  const bubble = addUserBubble(text, null, col);
+  const msgEl = bubble.closest(".msg");
+  if (!msgEl) return bubble;
+  // 气泡内容被渲染成多个节点（u-text/附件等）: 量 u-text 的高度
+  const uText = bubble.querySelector(".u-text");
+  if (!uText) return bubble;
+  requestAnimationFrame(() => {
+    if (uText.scrollHeight <= SA_TASK_FOLD_MAX + 40) return;   // 短任务: 不折叠
+    msgEl.classList.add("sa-task-folded");
+    uText.style.maxHeight = SA_TASK_FOLD_MAX + "px";
+    const fade = document.createElement("div");
+    fade.className = "sa-task-fade";
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "sa-task-expand";
+    btn.innerHTML = CHEVRON_SVG + "<span>展开</span>";
+    let open = false;
+    btn.addEventListener("click", ev => {
+      ev.stopPropagation();
+      open = !open;
+      msgEl.classList.toggle("sa-task-open", open);
+      btn.classList.toggle("open", open);
+      uText.style.maxHeight = open ? "none" : SA_TASK_FOLD_MAX + "px";
+      btn.querySelector("span").textContent = open ? "收起" : "展开";
+    });
+    bubble.appendChild(fade);
+    bubble.appendChild(btn);
+  });
+  return bubble;
 }
 
 function onSubagentDone(msg, sid) {
@@ -1222,6 +1239,16 @@ function onSubagentDone(msg, sid) {
   if (sid === state.sessionId) saRenderTabs(runOf(sid));
   // 嵌套流收口: sweep 悬空的内部工具卡（子代理崩溃时结果事件永远不来）
   sweepPendingToolCards(runOf("sub:" + msg.agent_id));
+  // 悬空的思考行/正文气泡同样要收口——worker 撞预算/崩溃被掐时
+  // WireThinkingEnd 与正文收尾事件不会到来, 伪会话的"思考中…"实时行
+  // 会永远冻在动画态, 而卡片头部已显示"已完成"（2026-10-19 现场:
+  // 探索面板最后一帧停在"思考中…"）。与 endTurnUiReset 同款兜底:
+  // 客户端起止计时, 半截正文气泡保留（与部分结果交付同精神）。
+  const pseudo = "sub:" + msg.agent_id;
+  const pr = runOf(pseudo);
+  flushAssistantBubble(pr);
+  collapseFinishedToolGroups(saColOf(card));
+  if (pr.curThinking) onThinkingEnd({}, pseudo);
 }
 
 /* 轮次收口: 把该会话所有还挂在"运行中"的工具卡统一闭合为"已中断"
@@ -1780,6 +1807,7 @@ function settleRelayedMessages(msg, sid) {
 function onTurnStarted(msg, sid) {
   const run = runOf(sid);
   run.busy = true;
+  run.stopping = false;      // 接力轮开跑: 旧轮的停止窗口旗作废
   run.awaiting = false;      // 新一轮: 上一轮的空窗状态作废, 等 await_output 重新点亮
   run.lastThinkRow = null;   // 新一轮开始: 打断标记只属于当前轮的思考行
   settleRelayedMessages(msg, sid);
@@ -1842,24 +1870,59 @@ function addUsageNote(usage) {
   addNoteBubble("usage", "本轮 token · " + parts.join(" · "));
 }
 
+/* 「已停止」终态标签: 挂在本轮思考行的胶囊里; 本轮没思考过（工具/正文
+ * 阶段打断）才落成独立提示行（落在该会话自己的列, 后台会话不进前台）。
+ * stopTagged = 本轮已提前定格过: turn_done 到达时据此去重（一次性消费,
+ * 不受收束期尾部思考行换锚点/接力轮 turn_started 影响）。 */
+function markStoppedTag(run, sid) {
+  if (!run) return;
+  const cur = run.stoppedTagEl;
+  if (cur && cur.isConnected && run.stopTagged) return;   // 本轮已定格: 去重
+  const row = run.lastThinkRow;
+  let el;
+  if (row && row.isConnected) {
+    el = document.createElement("span");
+    el.className = "t-stopped";
+    el.textContent = "已停止";
+    row.appendChild(el);
+  } else {
+    el = document.createElement("div");
+    el.className = "note stopped";
+    el.textContent = "已停止";
+    colOf(sid).appendChild(el);
+  }
+  run.stoppedTagEl = el;
+}
+
+/* 停止点恰逢轮次自然完成的 race: turn_done 说没被打断, 撤掉提前挂的标签 */
+function removeStoppedTag(run) {
+  if (run && run.stoppedTagEl) {
+    run.stoppedTagEl.remove();
+    run.stoppedTagEl = null;
+  }
+  if (run) run.stopTagged = false;
+}
+
 function onTurnDone(msg) {
-  endTurnUiReset();
-  addUsageNote(msg.usage);
-  if (msg.interrupted) {
-    // 「已停止」挂在本轮思考行的胶囊里; 本轮没思考过（工具/正文阶段打断）才落成独立提示行
-    const row = curRun()?.lastThinkRow;
-    if (row && row.isConnected) {
-      const tag = document.createElement("span");
-      tag.className = "t-stopped";
-      tag.textContent = "已停止";
-      row.appendChild(tag);
-    } else {
-      addNoteBubble("stopped", "已停止");
+  const run = curRun();
+  const early = !!(run && run.stopping);   // 提前定格过: 收束窗口已被前端走过
+  // 窗口内已续聊/接力轮在跑 → 只定格标签, 不重跑收口（busy 复位/胶囊
+  // 关闭会踢翻新轮）; 否则正常收口（endTurnUiReset 幂等, 重跑无害）
+  const relayRunning = !!(run && (run.busy || run.queued));
+  if (run) run.stopping = false;           // 权威收口: 窗口旗清零
+  if (early && relayRunning) {
+    markStoppedTag(run, state.sessionId);  // 旧轮 usage 已 partial, 跳过
+    if (run) run.stopTagged = false;       // 本轮收口完毕: 去重旗复位
+  } else {
+    endTurnUiReset();
+    if (msg.interrupted) markStoppedTag(run, state.sessionId);
+    else if (early) removeStoppedTag(run); // 停止点恰逢自然完成: 撤提前标签
+    if (run) run.stopTagged = false;       // 本轮收口完毕: 去重旗复位
+    addUsageNote(msg.usage);
+    if (!msg.interrupted && msg.budget_exhausted) addBudgetNote(msg.usage);
+    else if (!msg.interrupted && msg.iterations_exhausted) {
+      addNoteBubble("warn", `已达单轮最大迭代次数（${msg.iterations} 次调用），已提前收束本轮`);
     }
-  } else if (msg.budget_exhausted) {
-    addBudgetNote(msg.usage);
-  } else if (msg.iterations_exhausted) {
-    addNoteBubble("warn", `已达单轮最大迭代次数（${msg.iterations} 次调用），已提前收束本轮`);
   }
   // 刷新侧栏标题/消息数，标题可能被自动命名更新
   (async () => { await loadSessions(); refreshDocTitle(); })();
@@ -1917,6 +1980,8 @@ function onSessionUnarchived(msg) {
 function onError(msg) {
   // 错误也是本轮结束: 不复位 busy 的话输入框会永久锁死，看起来像卡死
   endTurnUiReset();
+  const run = curRun();
+  if (run) run.stopping = false;   // 错误也是权威收口: 停止窗口旗一并清零
   addNoteBubble("err", msg.message || "未知错误");
 }
 
@@ -1926,6 +1991,7 @@ function addNoteBubble(kind, text) {
   div.textContent = (kind === "err" ? "✗ " : kind === "warn" ? "⚠ " : "") + text;
   msgCol().appendChild(div);
   scrollToBottom();
+  return div;
 }
 
 /* ---------- 压缩续接消息: 模型指令, 非对话内容 ----------
@@ -1975,10 +2041,28 @@ function clearRateLimitNote(run) {
   }
 }
 
-/* ---------- 打断受理反馈: 静默窗口（退避/建连/长工具）内停止不是瞬时的,
- * 明确告诉用户"已受理、正在收束", 避免连点; 轮次收口自动清除 ---------- */
+/* ---------- 打断受理反馈 ----------
+ * reason=user_stop（用户手动停止）: 后端 request_stop 只置标志位, 真正的
+ * 收束（杀进程树/修历史/落盘）在原工作线程里秒级完成。前端不等它——
+ * 本地提前收口（endTurnUiReset + 「已停止」终态标签）, 让停止的观感
+ * 瞬时; 用户继续对话时 sendCurrent 自然走空闲分支 = 平时的发送体验,
+ * 消息进后端 pending, 收束完自动接力。迟到的 turn_done 只做标签去重,
+ * 绝不重跑收口踢翻可能在跑的新轮。
+ * reason=promote（排队插队）: 收束后待发送消息立即接力开跑, 不是终止——
+ * 保持"正在中断"过程提示, 不提前定格。 */
 function onTurnInterrupting(msg, sid) {
   const run = runOf(sid);
+  if (msg.reason === "user_stop") {
+    run.stopping = true;
+    if (sid === state.sessionId) {
+      endTurnUiReset();   // 与真收口完全同款: 关气泡/思考行、扫尾工具卡、指示灯灭
+    } else {
+      settleBackgroundTurnEnd(run, sid);
+    }
+    markStoppedTag(run, sid);
+    run.stopTagged = true;   // 本轮已定格: 迟到的 turn_done 按此去重
+    return;
+  }
   let el = run.rlNote;
   if (!el || !el.isConnected) {
     el = document.createElement("div");

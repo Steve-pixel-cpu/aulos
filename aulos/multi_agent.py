@@ -122,6 +122,10 @@ class AgentJob(BaseModel):
     # 同步路径（Leader turn 线程上）捕获好塞进来——worker 线程没有
     # dispatch 绑定, 取不到 contextvar, 必须显式传。
     event_sink: Optional[Callable[[dict], None]] = None
+    # 停止旗标（B3）: 返回 True = 用户请求停止。spawn 同步路径捕获好塞入
+    # （worker 线程同样取不到 contextvar）。build_subagent_runtime 接到
+    # runtime 的 set_cancel_check——run_turn 在迭代顶/工具批次前轮询。
+    cancel_check: Optional[Callable[[], bool]] = None
 
 
 def allowed_tools_for_subagent(subagent_type: str) -> set[str]:
@@ -338,7 +342,35 @@ def build_subagent_runtime(job: AgentJob) -> ConversationRuntime:
 
     event_sink = getattr(job, "event_sink", None)
     mirror = SubagentEventMirror(event_sink, job.manifest.agent_id) if event_sink else None
-    return ConversationRuntime(
+    # 权限层强制只读（B1）: explore/plan 的只读性不再只靠白名单 spec 约定
+    # （spec 过滤是"调不到", 权限档是"调了也拒"——防未来白名单配置失误
+    # 或工具规格泄漏）。general 是显式选择的信任档, 保持 ALLOW。
+    # 注意必须同时注册只读三件套的档位: 档位表查不到的工具 fallback 到
+    # DANGER_FULL_ACCESS（permissions.required_mode_for）, 不注册的话
+    # READ_ONLY 档下 read_file/grep/glob 会被全部拒绝——worker 瞎掉。
+    # 档位直接取自白名单本身: 白名单里的工具就是 worker 的合法业务,
+    # 都按 READ_ONLY 登记（白名单本就只含只读工具; general 走 ALLOW
+    # 快速路径, 档位表对其无影响）。
+    from aulos.permissions import READ_ONLY_MODE
+    if job.manifest.subagent_type in ("explore", "plan"):
+        permission_policy = PermissionPolicy(active_mode=READ_ONLY_MODE)
+        for tool_name in job.allowed_tools:
+            permission_policy.with_tool_requirement(tool_name, READ_ONLY_MODE)
+    else:
+        permission_policy = PermissionPolicy(active_mode=ALLOW_MODE)
+    # worker 预算（B2）: 单任务后台线程, 上限远小于主对话默认（128 回合）。
+    # run_turn 对超限已有终局处理（iterations_exhausted/budget_exhausted
+    # 记进 summary）, worker 线程体无需新增终止逻辑。
+    try:
+        from aulos.config import ConfigLoader, USER_DIR
+        cfg = ConfigLoader(cwd=Path.cwd(), config_home=USER_DIR).load()
+        worker_budget = dict(
+            max_iter=cfg.worker_max_iterations(),
+            output_budget=cfg.worker_turn_output_budget(),
+            compact_at=cfg.worker_auto_compact_threshold())
+    except Exception:
+        worker_budget = dict(max_iter=24, output_budget=8000, compact_at=60_000)
+    runtime = ConversationRuntime(
         session=Session(),
         api_client=make_api_client(
             protocol,
@@ -354,13 +386,21 @@ def build_subagent_runtime(job: AgentJob) -> ConversationRuntime:
         tool_executor=MirrorToolExecutor(
             registry=registry, workdir=job.workdir,
             event_sink=event_sink, agent_id=job.manifest.agent_id),
-        permission_policy=PermissionPolicy(active_mode=ALLOW_MODE),
+        permission_policy=permission_policy,
         system_prompt=[
             "You are a focused subagent worker. Complete exactly the task "
             "you were given, then report the result as text. Do nothing "
             "beyond the task.",
         ],
     )
+    # B3: 会话级停止旗标 → worker 的 cancel_check（run_turn 在迭代顶/
+    # 工具批次前轮询, 与主对话同一打断机制）。无绑定时 None = 不打断。
+    if getattr(job, "cancel_check", None) is not None:
+        runtime = runtime.set_cancel_check(job.cancel_check)
+    return (runtime
+            .with_max_iterations(worker_budget["max_iter"])
+            .with_turn_output_budget(worker_budget["output_budget"])
+            .with_auto_compact_threshold(worker_budget["compact_at"]))
 
 
 def final_text_of(summary) -> str:
@@ -507,6 +547,23 @@ class AgentOrchestrator:
         def _worker():  # ← 内层：线程的身体
             # 第 12 课: worker 本体 = 建 runtime → 跑一轮 → complete_agent
             runtime = None  # L2 要在 except 里读会话历史, 先占位防 NameError
+            def _notify_subagent_done(status: str) -> None:
+                # 生命周期 hook: subagent_done（通知性质, DENY 不阻断）。
+                # worker 本就是后台线程, 同步跑 hook 无碍; hook 列表为空
+                # 时零开销（_run_lifecycle_commands 直接短路）。
+                try:
+                    from aulos.hooks import HookRunner
+                    from aulos.config import ConfigLoader, USER_DIR
+                    cfg = ConfigLoader(cwd=Path.cwd(), config_home=USER_DIR).load()
+                    runner = HookRunner.from_config(cfg)
+                    res = runner.run_subagent_done(
+                        job.manifest.agent_id,
+                        getattr(job.manifest, "subagent_type", "") or "")
+                    for m in res.messages:
+                        if m:
+                            print(f"[hook:subagent_done] {m}")
+                except Exception as e:
+                    print(f"[WARN] subagent_done hook failed: {e}")
             try:
                 # 任务输入镜像: 子代理的对话流以"用户气泡"开头——前端把
                 # user_message 渲染成它收到的任务全文, 展开的会话才读得懂
@@ -526,6 +583,27 @@ class AgentOrchestrator:
                 runtime = build_subagent_runtime(job)
                 try:
                     summary = runtime.run_turn(job.prompt)
+                    if getattr(summary, "budget_exhausted", False) or getattr(
+                            summary, "iterations_exhausted", False):
+                        # 耗尽补写轮: run_turn 撞输出预算/迭代上限时"正常
+                        # 返回"——只在历史落一条 user 通知就 break, 最后一条
+                        # assistant 文本往往是工具调用前的过场话(2026-10-19
+                        # 现场: 「补齐精确行号（用 grep …）：」被当完整报告
+                        # 交付给调用方)。summary 里的耗尽标志就是为此记的:
+                        # 此刻给模型一次关工具的收尾机会, 让它把已有证据
+                        # 写成真正的结论(通知本身已告诉它"证据都在, 别重查",
+                        # 这里只是强制它落笔)。与 L1 同款限幅: 无工具+2 次。
+                        summary = (runtime.without_tools()
+                                   .with_max_iterations(2)
+                                   .run_turn(
+                                       "本轮因输出预算/迭代上限被提前收束——"
+                                       "你最后一条消息只是工具调用前的过场话,"
+                                       "不能作为任务结果交付。给你最后一次"
+                                       "收尾机会: 工具已关闭, 不要重新读文件"
+                                       "或跑命令, 基于对话里已有的证据直接"
+                                       "写出完整的结论文本(按任务要求交付"
+                                       "最终报告)。这是最后一轮, 只输出报告"
+                                       "本身。"))
                 except RuntimeError as exc:
                     # L1 续写兜底: 子代理最后一条消息只含 thinking/tool_use 而
                     # 无 text 时(GLM 兼容层会吞掉 thinking 事件, 见
@@ -547,6 +625,7 @@ class AgentOrchestrator:
                                    "这是最后一轮, 直接给文本, 不要再调用任何工具。"))
                 self.complete_agent(job.manifest.agent_id, final_text_of(summary))
                 _emit_done("completed")
+                _notify_subagent_done("completed")
             except Exception as exc:
                 # L2 部分结果回传: L1 总结轮也失败(或压根不是"无消息内容"类
                 # 异常, 如 API 中断)时, 不把工作打成 null——从会话历史提取
@@ -562,6 +641,7 @@ class AgentOrchestrator:
                             job.manifest.agent_id,
                             "[部分结果·子代理异常终止] " + str(exc) + "\n" + digest)
                         _emit_done("completed", str(exc))
+                        _notify_subagent_done("completed")
                         return
                     except Exception:
                         pass
@@ -570,6 +650,7 @@ class AgentOrchestrator:
                 except Exception:
                     pass
                 _emit_done("failed", str(exc))
+                _notify_subagent_done("failed")
 
         # 计时起点: spawn 点火时刻（worker 真正开跑可能有线程调度延迟,
         # 按用户感知的"派出去多久"口径计时）
@@ -581,6 +662,7 @@ class AgentOrchestrator:
                     workdir: Optional[str] = None,
                     api_config: Optional[tuple[str, Optional[str], str, str]] = None,
                     event_sink: Optional[Callable[[dict], None]] = None,
+                    cancel_check: Optional[Callable[[], bool]] = None,
                     _owner_pid: Optional[int] = None) -> AgentManifest:
         if description.strip() == "" or prompt.strip() == "":
             raise ValueError("description or prompt are null")
@@ -640,6 +722,7 @@ class AgentOrchestrator:
             workdir=workdir or self._workdir,
             api_config=api_config,
             event_sink=event_sink,
+            cancel_check=cancel_check,
         )
         # 卡片创建事件必须在点火之前发: worker 线程可能瞬间跑完（stub/
         # 极快任务）, 点火后才发的话镜像事件会跑到 started 前面, 前端按

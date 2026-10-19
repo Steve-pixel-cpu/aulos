@@ -415,6 +415,22 @@ def _subagent_event_sink(session_id: Optional[str]):
 set_subagent_event_bridge(_subagent_event_sink)
 
 
+def _session_stop_flag(session_id: str) -> Optional[Callable[[], bool]]:
+    """agent_tools 的 spawn 路径经此捕获当前会话的停止旗标（B3: 用户点
+    停止 → stop_requested=True → worker 的 run_cancel_check 打断）。
+
+    返回的 callable 可从 worker 线程调用（读布尔字段, 无锁安全）。
+    CLI 未设置 bridge, 不会走到这里。"""
+    if not session_id or session_id not in _sessions:
+        return None
+    web_session = _sessions[session_id]
+    return lambda: web_session.stop_requested
+
+
+from aulos.agent_tools import set_session_stop_bridge
+set_session_stop_bridge(_session_stop_flag)
+
+
 class EmittingToolRegistry(ToolRegistry):
     """委托真实 registry 执行；执行完把 tool_result 推给浏览器。
 
@@ -1215,7 +1231,9 @@ def request_stop(web_session: WebSession) -> None:
     web_session.stop_requested = True
     # 即时反馈: 打断请求已受理。静默窗口（退避/建连/工具执行）内不会立刻
     # 收尾, 不告诉用户"正在中断"就会被当成没点上而连点多次
-    web_session.broadcast({"type": "turn_interrupting"})
+    # reason=user_stop: 用户手动停止——前端据此提前定格「已停止」终态,
+    # 不等后端秒级收束; promote(插队)场景仍是"正在中断"过程提示
+    web_session.broadcast({"type": "turn_interrupting", "reason": "user_stop"})
     if web_session.pending:
         web_session.pending.clear()
         web_session.broadcast({"type": "turn_queue_cleared"})
@@ -1241,8 +1259,10 @@ def promote_pending(web_session: WebSession, qid: str) -> bool:
     web_session.pending.insert(0, web_session.pending.pop(idx))
     web_session.stop_requested = True
     # 受理反馈与 request_stop 对齐: 工具收束(杀树/泵排干)有秒级延迟,
-    # 不广播 turn_interrupting 前端就静默无反馈, 用户以为没点上而连点
-    web_session.broadcast({"type": "turn_interrupting"})
+    # 不广播 turn_interrupting 前端就静默无反馈, 用户以为没点上而连点。
+    # reason=promote: 排队插队场景——收束后待发送消息立即接力开跑,
+    # 前端保持"正在中断"过程文案, 不提前定格"已停止"终态
+    web_session.broadcast({"type": "turn_interrupting", "reason": "promote"})
     if web_session.prompter is not None:
         web_session.prompter.cancel()
     return True

@@ -1861,6 +1861,14 @@ class ConversationRuntime:
         curr_session.messages.append(
             Message.user_input(user_input, attachments))
         self._notify_iterate()   # 一致点: 用户消息已落定
+        # 生命周期 hook: turn_start（通知性质, DENY 不阻断）。stdout 作为
+        # system note 附加到用户消息尾部——模型本回合立刻看得见。
+        turn_start_res = self._hook_runner.run_turn_start()
+        if turn_start_res.messages:
+            note = "\n".join(m for m in turn_start_res.messages if m)
+            if note:
+                curr_session.messages[-1] = Message.user_input(
+                    f"{user_input}\n\n[System note] {note}")
         while True:
             # 打断检查点（一致点）: 用户消息/工具结果都已落定, 此刻抛出
             # 不留悬空 tool_use。打断优先于预算/迭代/压缩检查。
@@ -2078,6 +2086,25 @@ class ConversationRuntime:
         # 空闲点: 本轮已收束, 历史一致——后台把新增消息消化进滚动摘要,
         # 下次压缩就有机会零调用直接用
         self._kick_session_memory_update()
+
+        # 生命周期 hook: turn_end（通知性质, 返回前最后一步; summary 摘要
+        # 经 stdin 载荷下发, stdout 只记日志——回合已收束, 无处附加）。
+        try:
+            last_text = ""
+            for msg in reversed(assistant_messages):
+                blocks = getattr(msg, "content", None) or []
+                texts = [getattr(b, "text", "") for b in blocks
+                         if getattr(b, "type", "") == "text"]
+                joined = "\n".join(t for t in texts if t).strip()
+                if joined:
+                    last_text = joined
+                    break
+            turn_end_res = self._hook_runner.run_turn_end(last_text)
+            for m in turn_end_res.messages:
+                if m:
+                    print(f"[hook:turn_end] {m}")
+        except Exception as e:
+            print(f"[WARN] turn_end hook failed: {e}")
 
         return TurnSummary(
             assistant_messages=assistant_messages,

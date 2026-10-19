@@ -192,6 +192,117 @@ def test_worker_其他异常不触发总结轮_维持failed(tmp_path, monkeypatc
 
 
 # ------------------------------------------------------------
+# worker 层: 预算/迭代耗尽——run_turn「正常返回」但报告没写
+# 现场(2026-10-19): explore worker 撞输出预算, runtime 只往历史落一条
+# user 侧通知就 break 返回; 最后一条 assistant 文本是工具调用前的过场话
+# (「补齐精确行号（用 grep …）：」), 被 final_text_of 当成 result 交付,
+# manifest 记 completed——调用方拿到一行引导语当完整报告。
+# ------------------------------------------------------------
+
+class BudgetCutRuntime:
+    """stub: 首轮 run_turn 正常返回但 summary 带 budget_exhausted=True,
+    最后一条文本是过场话。补写轮(rescue)再被调用时返回真报告;
+    rescue_raises=True 时补写轮抛「无消息内容!」走 L2。"""
+
+    def __init__(self, exhausted=True, rescue_raises=False):
+        self.calls: list[str] = []
+        self.exhausted = exhausted
+        self.rescue_raises = rescue_raises
+        # L2 从这里挖部分结果: 模拟子代理干过活的会话历史
+        self.session = type("S", (), {"messages": []})()
+
+    def run_turn(self, prompt: str):
+        self.calls.append(prompt)
+        from aulos.models import Message, TextContentBlock
+
+        class _Summary:
+            pass
+        s = _Summary()
+        if len(self.calls) == 1:
+            s.assistant_messages = [Message(role="assistant", content=[
+                TextContentBlock(text="补齐精确行号（用 grep 拿到准确行号）：")])]
+            s.budget_exhausted = self.exhausted
+            s.iterations_exhausted = False
+            return s
+        if self.rescue_raises:
+            raise RuntimeError("无消息内容!")
+        s.assistant_messages = [Message(role="assistant", content=[
+            TextContentBlock(text="调查报告: 根因在 fake_orchestrator 夹具泄漏, "
+                                  "monkeypatch 修复后全绿。")])]
+        s.budget_exhausted = False
+        s.iterations_exhausted = False
+        return s
+
+    # 补写轮的链式调用(与 L1 同款)
+    def with_max_iterations(self, n):
+        return self
+
+    def without_tools(self):
+        return self
+
+
+def test_worker_预算耗尽_补写报告轮交付完整结论(tmp_path, monkeypatch):
+    """耗尽标志 → 不把过场话当 result, 起补写轮交付真报告。"""
+    rt = BudgetCutRuntime(exhausted=True)
+    monkeypatch.setattr(multi_agent, "build_subagent_runtime", lambda job: rt)
+    orch = AgentOrchestrator(tmp_path / "agents")
+    (tmp_path / "agents").mkdir(parents=True, exist_ok=True)
+    job = _make_job(tmp_path)
+
+    _seed_manifest(orch, job)
+    orch._default_spawn_fn(job)
+    manifest = _wait_terminal(orch, job.manifest.agent_id)
+
+    assert manifest.status == "completed", f"error={manifest.error}"
+    result = manifest.result or ""
+    assert "调查报告" in result            # 交付的是补写的报告
+    assert "补齐精确行号" not in result    # 过场话不再被当结果
+    assert len(rt.calls) == 2              # 补写轮真的跑了
+    assert "总结" in rt.calls[1] or "报告" in rt.calls[1]
+
+
+def test_worker_正常收束不触发补写轮(tmp_path, monkeypatch):
+    """exhausted 标志 False: 单轮交付最后文本, 行为与现状一致。"""
+    rt = BudgetCutRuntime(exhausted=False)
+    monkeypatch.setattr(multi_agent, "build_subagent_runtime", lambda job: rt)
+    orch = AgentOrchestrator(tmp_path / "agents")
+    (tmp_path / "agents").mkdir(parents=True, exist_ok=True)
+    job = _make_job(tmp_path)
+
+    _seed_manifest(orch, job)
+    orch._default_spawn_fn(job)
+    manifest = _wait_terminal(orch, job.manifest.agent_id)
+
+    assert manifest.status == "completed", f"error={manifest.error}"
+    assert "补齐精确行号" in (manifest.result or "")   # 原样交付
+    assert len(rt.calls) == 1                          # 没有补写轮
+
+
+def test_worker_预算耗尽且补写轮失败_回传部分结果(tmp_path, monkeypatch):
+    """补写轮也抛「无消息内容!」→ 落到 L2 部分结果(与 L1 失败同网)。"""
+    rt = BudgetCutRuntime(exhausted=True, rescue_raises=True)
+    from aulos.models import Message, ToolContentBlock
+
+    rt.session = type("S", (), {"messages": [
+        Message(role="assistant", content=[ToolContentBlock(
+            id="t1", name="write_file",
+            input=json.dumps({"path": "report.md",
+                              "content": "# 调查报告"}))]),
+    ]})()
+    monkeypatch.setattr(multi_agent, "build_subagent_runtime", lambda job: rt)
+    orch = AgentOrchestrator(tmp_path / "agents")
+    (tmp_path / "agents").mkdir(parents=True, exist_ok=True)
+    job = _make_job(tmp_path)
+
+    _seed_manifest(orch, job)
+    orch._default_spawn_fn(job)
+    manifest = _wait_terminal(orch, job.manifest.agent_id)
+
+    assert manifest.status == "completed", f"error={manifest.error}"
+    assert "部分结果" in (manifest.result or "")
+
+
+# ------------------------------------------------------------
 # L3: thinking-only 响应在 build_assistant_message 降级为文本(带标记)
 # ------------------------------------------------------------
 

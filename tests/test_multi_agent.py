@@ -483,3 +483,90 @@ def test_wait_failed_terminal_does_not_hang(tmp_path):
     out = orch.wait_agents([m.agent_id], timeout_s=10)
     assert out[0].status == "failed"
     assert out[0].error == "启动就炸"
+
+
+# ------------------------------------------------------------
+# B1: explore/plan 权限层强制只读（不只靠 spec 白名单约定）
+# ------------------------------------------------------------
+
+def _job_for_type(subagent_type: str, tmp_path) -> AgentJob:
+    from aulos.multi_agent import allowed_tools_for_subagent
+    manifest = AgentManifest(
+        agent_id="t12x", name="", description="d",
+        subagent_type=subagent_type, status="running",
+        output_file=str(tmp_path / "a.md"),
+        started_at="2026-01-01T00:00:00+00:00",
+        created_at="2026-01-01T00:00:00+00:00",
+        completed_at=None, error=None, owner_pid=None)
+    return AgentJob(manifest=manifest, prompt="p",
+                    allowed_tools=allowed_tools_for_subagent(subagent_type),
+                    workdir=str(tmp_path),
+                    api_config=("sk-t", None, "t-model", "anthropic"))
+
+
+def test_explore_worker_permission_policy_is_read_only(tmp_path):
+    """explore worker: 权限档位 READ_ONLY, 且只读三件套在权限层放行——
+    B1 曾漏注册档位（required_mode_for 对未注册工具 fallback
+    DANGER_FULL_ACCESS）, 把 read_file/grep/glob 全拒了, worker 瞎掉。"""
+    from aulos.multi_agent import build_subagent_runtime
+    from aulos.permissions import PermissionMode
+    rt = build_subagent_runtime(_job_for_type("explore", tmp_path))
+    assert rt._permission_policy.active_mode == PermissionMode.READ_ONLY
+    for tool in ("read_file", "grep", "glob"):
+        res = rt._permission_policy.authorize(tool, "{}")
+        assert res.decision.name == "ALLOW", f"{tool} 应放行: {res.reason}"
+
+
+def test_explore_worker_denies_out_of_whitelist_tools(tmp_path):
+    """B1 的另一半: 白名单外工具（bash/write_file/edit_file）在权限层
+    被拒——"调了也拒"的强制只读, 不依赖 spec 过滤。"""
+    from aulos.multi_agent import build_subagent_runtime
+    rt = build_subagent_runtime(_job_for_type("explore", tmp_path))
+    for tool in ("bash", "write_file", "edit_file", "powershell"):
+        res = rt._permission_policy.authorize(tool, "{}")
+        assert res.decision.name == "DENY", f"{tool} 应拒绝"
+
+
+def test_general_worker_permission_stays_allow(tmp_path):
+    """general 是显式选择的信任档: 权限层保持放行, 不被误伤。"""
+    from aulos.multi_agent import build_subagent_runtime
+    rt = build_subagent_runtime(_job_for_type("general", tmp_path))
+    # 只断言非只读档: general 允许写（具体 decision 结构不钉死）
+    assert "READ_ONLY" not in str(rt._permission_policy.active_mode)
+
+
+# ------------------------------------------------------------
+# B2: worker 预算接线（远小于主对话默认 128 回合）
+# ------------------------------------------------------------
+
+def test_worker_runtime_budget_wired(tmp_path):
+    from aulos.multi_agent import build_subagent_runtime
+    rt = build_subagent_runtime(_job_for_type("explore", tmp_path))
+    assert rt._max_iterations <= 32          # 远小于主对话 128
+    assert rt._turn_output_budget > 0
+    assert rt._auto_compact_threshold > 0
+
+
+# ------------------------------------------------------------
+# B3: stop 传播 — spawn 透传 cancel_check, job 携带进 runtime
+# ------------------------------------------------------------
+
+def test_spawn_accepts_cancel_check(tmp_path):
+    """spawn_agent(cancel_check=...) → job.cancel_check 原样透传给 spawn_fn。"""
+    flag = {"stopped": False}
+    orch, rec = make_orchestrator(tmp_path / "agents")
+    orch.spawn_agent("d", "p", cancel_check=lambda: flag["stopped"])
+    assert len(rec.jobs) == 1
+    assert rec.jobs[0].cancel_check is not None
+    assert rec.jobs[0].cancel_check() is False
+    flag["stopped"] = True
+    assert rec.jobs[0].cancel_check() is True
+
+
+def test_worker_runtime_wires_cancel_check(tmp_path):
+    """job.cancel_check 存在 → build_subagent_runtime 接到 runtime。"""
+    from aulos.multi_agent import build_subagent_runtime
+    job = _job_for_type("explore", tmp_path)
+    job.cancel_check = lambda: False
+    rt = build_subagent_runtime(job)
+    assert rt._cancel_check is not None and rt._cancel_check() is False

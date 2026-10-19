@@ -58,16 +58,23 @@ class RecordingSpawn:
 
 
 @pytest.fixture(autouse=True)
-def fake_orchestrator():
+def fake_orchestrator(monkeypatch):
     """每个用例: 单例换成假 spawn 的编排器 + 清空会话归属（不真正起线程）。
 
     spawn_fn 必须注入 no-op: 缺省会走 _default_spawn_fn——起真实 worker
     线程打真实 LLM, 且线程晚到的 FAILED 终态会覆盖用例刚写入的
     COMPLETED（随机翻转状态, 就是这批用例偶发红掉的第二个根因）。
-    这里所有用例都是自己调 complete_agent 模拟 worker 收尾, 不需要真线程。"""
+    这里所有用例都是自己调 complete_agent 模拟 worker 收尾, 不需要真线程。
+
+    单例替换必须走 monkeypatch（teardown 精确还原到 setup 前值）——
+    直接赋值不还原会把 no-op 假编排器泄漏给同进程后续文件: 后面任何
+    走真实 spawn 全链路的用例（如 test_subagent_events 的
+    test_spawn_emits_started_and_done）会经 get_orchestrator() 捡到它,
+    worker 线程根本不被创建, 只有同步路径的 subagent_started 事件,
+    断言必挂且与自身代码无关。"""
     tmp = tempfile.mkdtemp()
     orch = AgentOrchestrator(Path(tmp), spawn_fn=lambda job: None)
-    agent_tools._toolbox._orchestrator = orch
+    monkeypatch.setattr(agent_tools._toolbox, "_orchestrator", orch)
     _session_bindings.clear()
     yield orch
     _session_bindings.clear()
@@ -589,11 +596,13 @@ def test_reap_ready_ignores_delivered():
 # 9. API 配置工厂: 注入与回落
 # ------------------------------------------------------------
 
-def test_set_api_config_provider_overrides():
-    set_api_config_provider(lambda: ("k", "http://x", "m-1"))
-    from aulos.multi_agent import _api_config_provider
-    assert _api_config_provider() == ("k", "http://x", "m-1")
-    set_api_config_provider(_default_api_config)   # 还原
+def test_set_api_config_provider_overrides(monkeypatch):
+    """注入的全局工厂覆盖默认。monkeypatch 自动还原——手工 set/还原
+    会把中间态（3 元组/旧工厂）漏进后续用例的异步 worker 线程。"""
+    import aulos.multi_agent as ma
+    monkeypatch.setattr(ma, "_api_config_provider",
+                        lambda: ("k", "http://x", "m-1", "anthropic"))
+    assert ma._api_config_provider() == ("k", "http://x", "m-1", "anthropic")
 
 
 def test_default_api_config_tolerates_empty_key(monkeypatch):

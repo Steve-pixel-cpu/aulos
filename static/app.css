@@ -3747,10 +3747,49 @@ body.col-resizing, body.col-resizing * { cursor: col-resize !important; }
     color: var(--accent); font-weight: 600; cursor: pointer;
   }
   .tool-row.sa-card .sa-type:hover { text-decoration: underline; text-underline-offset: 3px; }
-  /* 嵌套对话流: 子代理自己的思考/工具调用, 缩进 + 左边线, 与工具分组同语言 */
-  .sa-body { margin: 2px 0 6px 9px; border-left: 2px solid var(--border); padding-left: 6px; }
+  /* 嵌套对话流: 子代理自己的思考/工具调用。无内联降级视图后列以游离
+   * 节点停泊（不挂 DOM）, 仅面板打开时进 #sa-body —— 但游离列同样
+   * 会被事件填充, .hosted 类在面板内去定宽缩进, 全宽渲染。 */
   .sa-stream { min-width: 0; }
   /* 嵌套流内的工具分组再收一层缩进, 视觉上归属子代理卡片 */
   .sa-stream .tool-group { margin-left: 24px; }
   .sa-stream .think-row { margin-left: 24px; }
   .sa-stream .msg { margin-left: 24px; }
+
+  /* ---------- 任务输入气泡折叠: 长任务提示默认收起, 点「展开」看全文 ----------
+   * 视觉与长代码块折叠同语言: 限高 + 底部渐隐 + 悬浮胶囊按钮。
+   * 挂在 .msg 上切换态, 限高作用在 .u-text（气泡本身有 padding）。 */
+  .sa-stream .msg.user.sa-task-folded { position: relative; }
+  .sa-stream .msg.user.sa-task-folded .bubble {
+    position: relative; overflow: hidden;
+  }
+  .sa-stream .msg.user.sa-task-folded .u-text {
+    max-height: 176px;
+    overflow: hidden;
+    transition: max-height .3s cubic-bezier(.16, 1, .3, 1);
+  }
+  .sa-stream .msg.user.sa-task-folded .sa-task-fade {
+    position: absolute; left: 1px; right: 1px; bottom: 1px; height: 56px;
+    background: linear-gradient(180deg, transparent,
+      color-mix(in srgb, var(--accent) 13%, var(--surface)) 78%);
+    pointer-events: none;
+    border-radius: 0 0 calc(var(--r-lg) - 1px) 6px;
+  }
+  .sa-stream .msg.user.sa-task-open .sa-task-fade { display: none; }
+  /* 展开胶囊: 底部居中, 同 .code-expand 的语言 */
+  .sa-task-expand {
+    position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%);
+    display: inline-flex; align-items: center; gap: 5px;
+    border: 1px solid var(--border-strong); border-radius: 999px;
+    padding: 4px 13px; font-size: calc(11.5px * var(--fs-ui)); color: var(--text-2);
+    background: var(--pop-bg);
+    -webkit-backdrop-filter: blur(12px) saturate(1.4); backdrop-filter: blur(12px) saturate(1.4);
+    box-shadow: var(--shadow-md);
+    cursor: pointer; font-family: inherit;
+    transition: all .15s;
+  }
+  .sa-task-expand:hover {
+    color: var(--accent); border-color: var(--accent-border); background: var(--accent-soft);
+  }
+  .sa-task-expand svg { transition: transform .25s cubic-bezier(.16, 1, .3, 1); }
+  .sa-task-expand.open svg { transform: rotate(180deg); }

@@ -143,6 +143,15 @@ def fake_worker(monkeypatch):
 
             def with_max_iterations(self, n):
                 return self
+
+            def with_turn_output_budget(self, n):
+                return self
+
+            def with_auto_compact_threshold(self, n):
+                return self
+
+            def set_cancel_check(self, fn):
+                return self
         return _Runtime()
 
     monkeypatch.setattr(ma, "build_subagent_runtime", fake_build)

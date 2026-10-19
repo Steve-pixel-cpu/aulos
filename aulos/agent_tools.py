@@ -287,7 +287,34 @@ def _current_event_sink() -> Optional[Callable]:
     if _event_bridge is None:
         return None
     try:
-        return _event_bridge(current_session_id())
+        # 无 turn 绑定（测试/CLI 线程）时用默认会话兜底: bridge 按 id 查
+        # 会话, 查不到自然返回 None——绑定缺席不该让 bridge 直接收 None。
+        return _event_bridge(current_session_id() or DEFAULT_SESSION)
+    except Exception:
+        return None
+
+
+# --- 会话停止旗标桥（B3: stop 传播到 worker）---
+
+# stop_flag_bridge(session_id) -> Callable[[], bool] 或 None。由宿主（Web
+# 端 server）注入, 与 _event_bridge 同款模式: spawn 同步路径捕获进
+# cancel_check 闭包, 用户点停止 → web_session.stop_requested=True →
+# worker 的 run_turn 在迭代顶/工具批次前打断。CLI 不设置 → 恒 None。
+_stop_flag_bridge: Optional[Callable] = None
+
+
+def set_session_stop_bridge(bridge: Optional[Callable]) -> None:
+    """宿主注入停止旗标桥。bridge(session_id) 须返回可调用旗标
+    （True = 用户已请求停止），取不到返回 None。"""
+    global _stop_flag_bridge
+    _stop_flag_bridge = bridge
+
+
+def _current_session_stop_check() -> Optional[Callable[[], bool]]:
+    if _stop_flag_bridge is None:
+        return None
+    try:
+        return _stop_flag_bridge(current_session_id() or DEFAULT_SESSION)
     except Exception:
         return None
 
@@ -312,6 +339,10 @@ def spawn_agent_tool(params: dict, workdir: Optional[str] = None) -> str:
             # 生效）; CLI / 无会话绑定时为 None → 回落全局工厂, 行为不变
             api_config=worker_api_config() or current_session_api_config(),
             event_sink=_current_event_sink(),
+            # B3: 会话级停止旗标 → worker 的 cancel_check。此刻仍在 Leader
+            # turn 线程、dispatch 绑定还在——按当前会话 id 取旗标捕获进闭包;
+            # CLI / 无会话绑定为 None（worker 不打断, 行为不变）。
+            cancel_check=_current_session_stop_check(),
         )
     except ValueError as e:
         return f"ERROR: {e}"
