@@ -6,8 +6,8 @@
 //   1. 终端工具参数到齐即预插 .to-term.closed 块（$ 命令全文 + 运行中占位）,
 //      紧邻工具行之后——分组折叠的 CSS 例外选择器依赖这个兄弟关系
 //   2. 运行中点击行即展开/收起（去掉 run 守卫）
-//   3. tool_result 落地: 占位就地替换为真实输出, 不重复建块; 成功不自动
-//      展开, 出错自动展开; 中断/拒绝时占位改口不留"运行中…"死文案
+//   3. tool_result 落地: 占位就地替换为真实输出, 不重复建块; 成功/出错
+//      均默认收起（点行展开）; 中断/拒绝时占位改口不留"运行中…"死文案
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
@@ -88,7 +88,7 @@ test("tool_result 落地: 占位替换为真实输出, 无重复块, 成功不�
   assert.equal(term.classList.contains("closed"), true, "成功默认收起");
 });
 
-test("tool_result 出错: 自动展开", () => {
+test("tool_result 出错: 默认收起, is-err 红样式保留", () => {
   const w = loadApp();
   const sid = "s-err";
   const card = addRunningTerminalCard(w, sid, "make bot foul");
@@ -96,7 +96,23 @@ test("tool_result 出错: 自动展开", () => {
   w.onToolResult({ id: "tu-live-1", output: "ERROR: boom", is_error: true }, sid);
   const term = card.nextElementSibling;
   assert.equal(card.dataset.state, "err");
-  assert.equal(term.classList.contains("closed"), false, "出错自动展开");
+  assert.equal(card.classList.contains("is-err"), true, "出错行保留 is-err 红样式标记");
+  assert.equal(term.classList.contains("closed"), true, "出错输出默认收起");
+});
+
+test("非终端工具: 结果输出面板新建即默认收起", () => {
+  const w = loadApp();
+  const sid = "s-nonterm";
+  w.__state().sessionId = sid;
+  const card = w.addToolCard({ id: "tu-nonterm-1", name: "grep",
+    input: JSON.stringify({ pattern: "foo", path: "." }),
+    result: { output: "match line 1\nmatch line 2" } }, w.colOf(sid));
+
+  assert.equal(card.dataset.state, "ok");
+  const term = card.nextElementSibling;
+  assert.ok(term, "输出面板已渲染");
+  assert.equal(term.classList.contains("to-term"), true);
+  assert.equal(term.classList.contains("closed"), true, "新建面板默认收起, 点行展开");
 });
 
 test("中断 (stopped): 占位改口为无输出, 不留运行中文案", () => {

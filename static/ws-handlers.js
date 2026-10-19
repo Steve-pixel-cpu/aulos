@@ -595,16 +595,17 @@ function completeToolCard(row, { is_error, denied, result_meta, output }) {
     renderTodoCard(row);
   } else {
     // 命令/工具输出面板: 输出非空即渲染（此前 output 只进历史, 界面上
-    // 无处可看——点卡片没有任何反应）。出错自动展开, 成功默认收起。
+    // 无处可看——点卡片没有任何反应）。一律默认收起, 点行展开查看;
+    // is-err 保留: 出错行状态与输出红色着色不受折叠影响。
     if (is_error && !denied) row.classList.add("is-err");
-    renderOutputPanel(row, output, !!is_error && !denied);
+    renderOutputPanel(row, output);
   }
 }
 
 /* ---------- 输出展示: 工具卡的统一输出面板 ----------
  * tool_result 的 output（命令 stdout/stderr、工具摘要）此前只进模型历史,
  * 界面无处可看。终端工具行本身即展开开关（行内展开, 不另设折叠头行）;
- * is_error 自动展开——出错时用户最关心的就是输出。纯 textContent,
+ * 一律默认收起, 点行展开（含出错输出——不自动撑高消息流）。纯 textContent,
  * 不走 markdown 渲染, 超长截断（完整输出在会话历史里）。 */
 const OUTPUT_PANEL_MAX = 20000;
 const TERMINAL_TOOLS = new Set(["bash", "powershell"]);
@@ -622,7 +623,7 @@ function terminalCommand(row) {
   return "";
 }
 
-function renderOutputPanel(row, outputText, autoOpen) {
+function renderOutputPanel(row, outputText) {
   const cmd = terminalCommand(row);
   const out = prepOutput(outputText);
   const existing = row.nextElementSibling &&
@@ -635,7 +636,7 @@ function renderOutputPanel(row, outputText, autoOpen) {
   let term = existing;
   if (!term) {
     term = document.createElement("div");
-    term.className = "to-term";
+    term.className = "to-term closed";   // 默认收起, 点工具行展开
     if (!cmd) {
       const pre = document.createElement("div");
       pre.className = "to-pre";
@@ -657,10 +658,6 @@ function renderOutputPanel(row, outputText, autoOpen) {
     outEl.textContent = out.hasOut ? out.text : "（无输出）";
   }
   wireTermToggle(row);
-  if (autoOpen) {
-    term.classList.remove("closed");
-    row.classList.add("open");
-  }
 }
 
 /* 输出文本预处理: 截断标记 + 行数统计（创建与运行中更新两条路径共用） */

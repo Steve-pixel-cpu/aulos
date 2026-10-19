@@ -2454,14 +2454,15 @@ body.col-resizing, body.col-resizing * { cursor: col-resize !important; }
  * ============================================================ */
 #music-dock {
   flex: none; display: flex; flex-direction: column;
-  border-top: 1px solid var(--border);
   background: var(--bg-side);
   padding-bottom: 2px;
 }
 #music-dock[hidden] { display: none; }
+/* 进度条贴播放条顶边通铺(网易云式), 自身充当与上方列表的分隔线,
+   不再需要 dock 的 border-top */
 .md-progress {
-  position: relative; height: 4px; margin: 3px 10px 1px; flex: none;
-  background: var(--border); border-radius: 999px; cursor: pointer;
+  position: relative; height: 4px; margin: 0; flex: none;
+  background: var(--border); border-radius: 0; cursor: pointer;
   transition: height .12s;
   /* 命中区加宽: 轨道上下各扩 4px, 细轨道不再难点准 */
   user-select: none; -webkit-user-select: none;
@@ -2473,7 +2474,7 @@ body.col-resizing, body.col-resizing * { cursor: col-resize !important; }
 .md-progress:hover, .md-progress.dragging { height: 5px; }
 #music-progress-fill {
   position: absolute; inset: 0 auto 0 0; width: 0%;
-  background: var(--accent); border-radius: 999px;
+  background: var(--accent); border-radius: 0;
 }
 /* 拖动手柄: 平时半透明小点, 悬停/拖拽时放大变实 —— 拖起来有「抓得住」的手感 */
 .md-progress-thumb {
