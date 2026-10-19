@@ -246,18 +246,29 @@ CONCLUSION_CHECKPOINT_TEXT = (
 # 与 repeat guard 的清零差异: 不随写入介入清零(委派预算管的是上下文预算,
 # 不是文件新鲜度), 仅新用户回合/压缩激活清零。
 DELEGATION_SOFT_CALLS = 5    # 软档: 本回合只读调用数 ≥ 此值 → 结果附提醒
-DELEGATION_HARD_CALLS = 10   # 硬档: 本回合只读调用数 ≥ 此值 → 拒绝执行
 DELEGATION_SOFT_FILES = 3    # 软档: 本回合去重触碰文件数 ≥ 此值 → 附提醒
-DELEGATION_HARD_FILES = 6    # 硬档: 本回合去重触碰文件数 ≥ 此值 → 拒绝执行
+# 硬档出厂关闭（0 = 不拒）: 中途 REFUSED 会把调研腰斩、已读内容白费——
+# 委派改由开场指引（DELEGATION_UPFRONT_TEXT, 本回合首次纯读必附）+
+# 模型自主权衡; settings.json 配非零可恢复旧硬拒行为。
+DELEGATION_HARD_CALLS = 0    # 硬档: 本回合只读调用数 ≥ 此值 → 拒绝执行
+DELEGATION_HARD_FILES = 0    # 硬档: 本回合去重触碰文件数 ≥ 此值 → 拒绝执行
 DELEGATION_WARN_TEXT = (
     "[System note] Delegation budget — this turn has now made {n} "
-    "read-only tool calls touching {f} distinct files. The hard rule for "
-    "this conversation: investigation expected to touch 3+ files or 5+ "
-    "search/read calls MUST be delegated to an explore subagent sweep; "
-    "the main conversation only receives its conclusions summary. "
-    "Delegate now (one agent_tool worker, self-contained prompt): from "
-    "{hc} calls or {hf} files this turn, read-only calls are refused by "
-    "the tool layer."
+    "read-only tool calls touching {f} distinct files. If the "
+    "investigation surface is still growing, consider delegating the "
+    "remaining sweep to an explore subagent (one agent_tool, "
+    "self-contained prompt) and collecting with a single agent_wait; "
+    "the main conversation works best on single-file deep reads."
+)
+DELEGATION_UPFRONT_TEXT = (
+    "[System note] Upfront delegation — this is the first read-only "
+    "call of the turn. If this task is non-trivial (likely to touch "
+    "more than this one file/question), the working mode is: spawn 1-3 "
+    "explore workers with agent_tool in the SAME message now (each "
+    "with a self-contained prompt), then collect all conclusions with "
+    "one agent_wait call. Serial inline grinding wastes context — "
+    "delegate the sweep first, then do targeted single-file reads on "
+    "what the conclusions point to."
 )
 DELEGATION_DENIED_TEXT = (
     "REFUSED — delegation budget exhausted for this turn: {n} read-only "
@@ -680,6 +691,9 @@ class ConversationRuntime:
         self._delegation_calls = 0
         self._touched_files: set[str] = set()
         self._delegation_warned = False   # 软档提醒每回合至多一条（防自身刷屏）
+        # 开场委派指引: 本回合首次纯读成功后附一次（同 poll 提醒的封顶设计
+        # ——提醒自身也会刷屏）。无条件附: 开局引导不依赖模型先做了什么。
+        self._upfront_nudged_turn = False
         self._guard_lock = threading.Lock()
         # 事件镜像钩子（Web 端工具卡片闭合用, CLI 默认 None 行为不变）:
         # - on_tool_finalized: 工具未经执行就被终局（权限拒绝 / hook 拦截 /
@@ -1136,23 +1150,40 @@ class ConversationRuntime:
         if repeat_n is not None and repeat_n >= REPEAT_DENY_FROM:
             # 拒绝执行: 结果已在历史里, 拒绝零损失。is_error 让模型把它
             # 当反馈读, 而不是当成又一次"成功但没看懂"的结果。
-            return Message.tool_result(
+            denied = Message.tool_result(
                 id = tool_block.id,
                 name = tool_block.name,
                 output = REPEAT_DENIED_TEXT,
                 is_error = True,
             )
+            # 同委派硬档: 绕过执行器的合成结果必须走终局回调补 WS 镜像,
+            # 否则前端工具卡永久"运行中"。
+            if self._on_tool_finalized is not None:
+                try:
+                    self._on_tool_finalized(tool_block, denied)
+                except Exception as e:
+                    print(f"[WARN] tool-finalized hook failed: {e}")
+            return denied
         d_calls, d_files, d_deny = self._register_delegation_call(
             tool_block.name, tool_block.input)
         if d_deny:
             # 委派预算硬档: 不执行, 指路 subagent sweep（与 repeat guard
             # 同款拒绝形态: is_error 的 tool_result, 不触达执行器）
-            return Message.tool_result(
+            denied = Message.tool_result(
                 id = tool_block.id,
                 name = tool_block.name,
                 output = DELEGATION_DENIED_TEXT.format(n=d_calls, f=d_files),
                 is_error = True,
             )
+            # 不触达执行器 ⟹ EmittingToolRegistry 的 WS 镜像看不到这条
+            # 结果——前端工具卡会永久停在"运行中"。与权限拒绝同路: 走
+            # on_tool_finalized 让镜像方补发（异常不阻断轮次）。
+            if self._on_tool_finalized is not None:
+                try:
+                    self._on_tool_finalized(tool_block, denied)
+                except Exception as e:
+                    print(f"[WARN] tool-finalized hook failed: {e}")
+            return denied
         if tool_block.name == "read_file":
             # 清掉 sink 里该 path 的旧指纹: 执行后 sink 里有档 ⟺ 这次执行
             # 真的全读成功——失败/部分读不能误刷新去重档案的时效。
@@ -1199,8 +1230,16 @@ class ConversationRuntime:
             # 防提醒自身刷屏稀释注意力——同 poll 提醒封顶的设计理由）
             self._delegation_warned = True
             output = (f"{output}\n\n" + DELEGATION_WARN_TEXT.format(
-                n=d_calls, f=d_files,
-                hc=self._delegation_hard_calls, hf=self._delegation_hard_files))
+                n=d_calls, f=d_files))
+        if (self._enforce_delegation_budget and not d_deny
+                and not self._upfront_nudged_turn
+                and tool_block.name in PURE_READ_TOOLS
+                and not is_tool_error and not post_res.denied):
+            # 开场委派指引: 本回合首次纯读成功执行后必附（硬性开局引导
+            # ——中途硬拒已出厂关闭, 委派的强制力就剩这一条）。与软档
+            # 同模式: 不改 is_error, 不新增消息, 每回合至多一条。
+            self._upfront_nudged_turn = True
+            output = f"{output}\n\n{DELEGATION_UPFRONT_TEXT}"
 
         # 轮询空转提醒: 同 id 连击达阈值且本回合配额未用完时附加（不拒绝
         # 不改 is_error——与 shell 重跑提醒同一模式）。写入介入不断连击。
@@ -1292,6 +1331,7 @@ class ConversationRuntime:
             self._delegation_calls = 0   # 压缩宽限期: 委派预算重新计
             self._touched_files.clear()
             self._delegation_warned = False
+            self._upfront_nudged_turn = False   # 开场指引随宽限期重新给一次
         if self._on_compacted is not None:
             try:
                 self._on_compacted()
@@ -1798,6 +1838,7 @@ class ConversationRuntime:
             self._delegation_calls = 0   # 委派预算随新回合重置（每回合一份预算）
             self._touched_files.clear()
             self._delegation_warned = False
+            self._upfront_nudged_turn = False   # 开场指引每回合一次
         budget_exhausted = False
         iterations_exhausted = False
         auto_compacted = False

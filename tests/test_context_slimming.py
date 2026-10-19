@@ -331,9 +331,19 @@ def test_oversized_image_slipped_through_run_turn(tmp_path, monkeypatch):
 
 def test_system_prompt_contains_delegation_rule():
     section = SystemPromptBuilder._subagents_section()
-    assert "3 or more files" in section
-    assert "5 or more search/read calls" in section
-    assert "MUST be delegated" in section
+    # 开局并行委派工作流: 第一步就派 worker, 一次 agent_wait 全收
+    assert "START with parallel investigation" in section
+    assert "agent_tool" in section
+    assert "agent_wait ONCE" in section
+    assert "SAME message" in section
+    # wait-first: 不再教轮询
+    assert "Prefer agent_wait over agent_status" in section
+    assert "Poll agent_status" not in section
+    # 旧中途硬拒口吻已废（委派不再靠拒绝倒逼, 由模型自主权衡）
+    assert "MUST be delegated" not in section
+    assert "3 or more files" not in section
+    assert "5 or more search/read calls" not in section
+    assert "refuses further read_file/grep/glob" not in section
     # 旧的抑制性表述不再出现
     assert "spawn workers only when" not in section
 

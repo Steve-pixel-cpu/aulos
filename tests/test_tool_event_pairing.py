@@ -9,10 +9,39 @@ import pytest
 from fastapi.testclient import TestClient
 
 import aulos.server as server
-from aulos.permissions import ALLOW_MODE, PermissionPolicy
+import aulos.runtime as runtime_mod
+from aulos.hooks import HookResult
+from aulos.models import Session, ToolContentBlock
+from aulos.permissions import ALLOW_MODE, PermissionMode, PermissionPolicy
+from aulos.runtime import ConversationRuntime
 from aulos.server import EmittingToolRegistry
 from aulos.storage import SessionStore
 from conftest import ws_connect
+
+
+class ScriptedClient:
+    """runtime 层单测用的假 client: stream 返回预置事件流。"""
+    def __init__(self, script=None):
+        self.script = list(script or [])
+        self.calls = 0
+        self.thinking_level = "medium"
+
+    def stream(self, system_prompt, messages, thinking_level=None, *,
+               model=None, include_tools=True, emit_output=None,
+               on_event=None):
+        events = (self.script[self.calls]
+                  if self.calls < len(self.script) else self.script[-1:])
+        self.calls += 1
+        return list(events)
+
+
+class _EchoExecutor:
+    def __init__(self):
+        self.executed = []
+
+    def execute(self, tool_name, input, tool_use_id=None, workdir=None):
+        self.executed.append((tool_name, input))
+        return f"result-for-{tool_name}"
 from aulos.tools import ToolRegistry
 
 
@@ -399,3 +428,61 @@ def test_tool_use_started_镜像先于tool_use(client, isolated_store, monkeypat
     assert started["name"] == "echo_test"
     assert "input" not in started or not started.get("input")   # 此刻参数还没传完
     _assert_pairing(events)                            # 原有配对语义不受影响
+
+
+# ------------------------------------------------------------
+# 守卫合成拒绝（不触达执行器）: 结果必须走 on_tool_finalized 镜像,
+# 否则前端工具卡永久"运行中"。修复前 _execute_tool 的两个守卫分支
+# 直接 return, 漏发——这是"运行中 n/m"卡死的真实根因。
+# 这里直接在 runtime 层测守卫分支的镜像行为: WS 集成路径上并行记账
+# 顺序与外部全局状态会让"哪个 id 撞线"变成调度竞态（全量跑时稳定
+# 复现）, 而守卫→回调这一步才是本修复的行为, runtime 层单测足以钉死。
+# ------------------------------------------------------------
+
+def _guard_runtime(monkeypatch):
+    """ALLOW 档 runtime + 终局回调记录器; echo_test 视为只读以进守卫记账。"""
+    import aulos.runtime as rt_mod
+    monkeypatch.setattr(rt_mod, "PURE_READ_TOOLS",
+                        frozenset({"read_file", "grep", "glob", "echo_test"}))
+    rt = ConversationRuntime(
+        session=Session(),
+        api_client=ScriptedClient([]),
+        tool_executor=_EchoExecutor(),
+        permission_policy=PermissionPolicy(PermissionMode.ALLOW),
+        system_prompt=["s"],
+    )
+    seen = []
+    rt.set_on_tool_finalized(lambda block, msg: seen.append((block.id, msg)))
+    return rt, seen
+
+
+def test_delegation_hard_denial_emits_mirror(monkeypatch):
+    """委派预算硬档: 达线的调用被合成拒绝结果, 且带显式 id 走终局镜像。"""
+    rt, seen = _guard_runtime(monkeypatch)
+    rt.with_delegation_budget(True, hard_calls=2)
+    blocks = [ToolContentBlock(id=f"g{i}", name="echo_test", input="{}")
+              for i in range(2)]
+    outs = [rt._execute_tool(b, HookResult(messages=[], denied=False))
+            for b in blocks]
+    denied = [m for m in outs if m.content[0].is_error]
+    assert len(denied) == 1                      # 第 2 个记账撞 hard=2
+    assert seen and seen[-1][0] == "g1"          # 终局镜像带显式 id
+    assert seen[-1][1] is denied[0]              # 镜像的就是落历史的那条
+    assert outs[0].content[0].is_error is False  # 第 1 个正常放行
+
+
+def test_repeat_guard_denial_emits_mirror(monkeypatch):
+    """重复只读护栏: 第 REPEAT_DENY_FROM 次同参数调用被拒且走终局镜像。"""
+    rt, seen = _guard_runtime(monkeypatch)
+    outs = []
+    for i in range(3):
+        b = ToolContentBlock(id=f"r{i}", name="echo_test", input='{"n":1}')
+        outs.append(rt._execute_tool(b, HookResult(messages=[], denied=False)))
+    denied = [m for m in outs if m.content[0].is_error]
+    assert len(denied) == 1                      # 恰好第 3 次被拒
+    assert len(seen) == 1
+    assert seen[0][0] == "r2"
+    assert seen[0][1] is denied[0]
+    assert outs[0].content[0].is_error is False
+
+

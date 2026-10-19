@@ -225,14 +225,16 @@ class RuntimeFeatureConfig(BaseModel):
     reread_dedup: bool = True
     # 委派预算护栏: 主对话只读工具(read_file/grep/glob)的本回合计数超软档
     # 附加一次委派提醒, 超硬档拒绝执行并指路 explore subagent sweep——
-    # 把系统提示里的"3+ 文件/5+ 检索必须委派"硬规则落到执行层。仅主对话
-    # 生效（worker 的只读探查是合法主业）; 0 = 关闭对应档位;
-    # delegationEnforce=false 一键关闭整个护栏。仅新用户回合/压缩激活清零。
+    # 把"开场并行委派"工作流落到执行层: 软档提醒 + 回合首次纯读必附的
+    # 开场指引（仅主对话生效, worker 的只读探查是合法主业; 0 = 关闭对应
+    # 档位; delegationEnforce=false 一键关闭整个护栏）。中途硬拒出厂关闭
+    # （hard 默认 0）——REFUSED 会把调研腰斩; settings 配非零可恢复。
+    # 仅新用户回合/压缩激活清零。
     delegation_enforce: bool = True
     delegation_soft_calls: int = 5
-    delegation_hard_calls: int = 10
+    delegation_hard_calls: int = 0
     delegation_soft_files: int = 3
-    delegation_hard_files: int = 6
+    delegation_hard_files: int = 0
     # 浏览器工具的可见性与节奏: headless=False 时 Chromium 以真实窗口启动
     # （用户能看到 AI 在点哪里）; browser_slow_mo 毫秒数会加在 Playwright
     # 每个动作之间——录演示视频/给人围观时放慢到 200~500 才看得清。
@@ -455,9 +457,9 @@ class ConfigLoader:
         delegation_thresholds = {}
         for key, camel, default in (
             ("soft_calls", "delegationSoftCalls", 5),
-            ("hard_calls", "delegationHardCalls", 10),
+            ("hard_calls", "delegationHardCalls", 0),   # 硬拒出厂关闭
             ("soft_files", "delegationSoftFiles", 3),
-            ("hard_files", "delegationHardFiles", 6),
+            ("hard_files", "delegationHardFiles", 0),   # 硬拒出厂关闭
         ):
             val = merged.get(camel, default)
             if not isinstance(val, int) or isinstance(val, bool) or val < 0:

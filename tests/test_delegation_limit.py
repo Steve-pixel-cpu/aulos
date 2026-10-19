@@ -55,16 +55,15 @@ def test_开关打开_阈值内全部放行():
     assert len(ex.executed) == 20
 
 
-def test_默认阈值下文件维度先到硬档():
-    """默认 soft_files=3/hard_files=6: 6 个不同文件即拒绝——文件维度
-    比调用维度（10）先触发。钉住真实默认行为。"""
+def test_默认阈值下硬档不触发():
+    """硬档出厂关闭（默认 hard 全 0）: 串行读 8 个文件全程放行——中途
+    REFUSED 已废, 委派靠开场指引引导 + 模型自主权衡。"""
     ex = RecordingExecutor()
     rt = _budget_runtime(ex)
     outs = _run_tools(rt, _calls_n(8))
-    assert outs[4].content[0].is_error is False
-    assert outs[5].content[0].is_error is True      # 第 6 个文件
-    assert "REFUSED" in outs[5].content[0].output
-    assert len(ex.executed) == 5
+    assert all(o.content[0].is_error is False for o in outs)
+    assert not any("REFUSED" in o.content[0].output for o in outs)
+    assert len(ex.executed) == 8               # 全部触达执行器
 
 
 # ------------------------------------------------------------
@@ -94,14 +93,51 @@ def test_软档双维度先到者触发_默认阈值下是文件维度():
                    for i, o in enumerate(outs) if i != 2)    # 封顶一条
 
 
-def test_软档文案含当前计数与硬档预告():
+def test_软档文案含当前计数_中性口吻():
     ex = RecordingExecutor()
     rt = _budget_runtime(ex, **_CALLS_ONLY)
     outs = _run_tools(rt, _calls_n(5))
     text = outs[4].content[0].output
     assert "5 read-only" in text
     assert "subagent" in text.lower()
-    assert "10" in text                        # 硬档预告
+    assert "agent_wait" in text
+    # 中性信息口吻: 不再有拒绝预告
+    assert "refused" not in text.lower()
+    assert "MUST" not in text
+
+
+# ------------------------------------------------------------
+# 开场委派指引: 本回合首次纯读成功后必附一次（硬性开局引导, 中途
+# 硬拒已出厂关闭后委派的唯一强制力）; 新回合/压缩宽限重新给
+# ------------------------------------------------------------
+
+def test_首读附开场指引_同回合只附一次():
+    ex = RecordingExecutor()
+    rt = _budget_runtime(ex, soft_calls=0, hard_calls=0,
+                         soft_files=0, hard_files=0)   # 关软档隔离本行为
+    outs = _run_tools(rt, _calls_n(4))
+    assert "Upfront delegation" in outs[0].content[0].output
+    assert outs[0].content[0].is_error is False        # 附加不改 is_error
+    assert not any("Upfront delegation" in o.content[0].output
+                   for o in outs[1:])                  # 封顶一条
+    assert len(ex.executed) == 4                       # 照常执行
+
+
+def test_开场指引随新回合重新给():
+    """清零点语义: _upfront_nudged_turn 归零后指引会重新附——钉住两个
+    清零点（新用户回合/压缩宽限）触碰的就是这个字段。"""
+    ex = RecordingExecutor()
+    rt = _budget_runtime(ex, soft_calls=0, hard_calls=0,
+                         soft_files=0, hard_files=0)
+    outs = _run_tools(rt, _calls_n(2))
+    assert "Upfront delegation" in outs[0].content[0].output
+    assert not any("Upfront delegation" in o.content[0].output
+                   for o in outs[1:])
+    # 模拟回合边界清零（与 run_turn/压缩宽限同字段）后重新给一次
+    with rt._guard_lock:
+        rt._upfront_nudged_turn = False
+    outs2 = _run_tools(rt, _calls_n(1, start=90))
+    assert "Upfront delegation" in outs2[0].content[0].output
 
 
 # ------------------------------------------------------------
