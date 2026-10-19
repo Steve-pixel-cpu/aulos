@@ -733,7 +733,13 @@ def build_runtime(session: Session,
                         hooks_config.thinking_auto_downshift(),
                         hooks_config.downshift_after_iterations())
                     .with_convergence_nudge(hooks_config.convergence_nudge_at())
-                    .with_reread_dedup(hooks_config.reread_dedup()))
+                    .with_reread_dedup(hooks_config.reread_dedup())
+                    .with_delegation_budget(
+                        hooks_config.delegation_enforce(),
+                        soft_calls=hooks_config.delegation_soft_calls(),
+                        hard_calls=hooks_config.delegation_hard_calls(),
+                        soft_files=hooks_config.delegation_soft_files(),
+                        hard_files=hooks_config.delegation_hard_files()))
     # 用户命令白名单: settings.json 持久规则, 启动即生效（CLI 与 Web 同源）。
     # setter 返回 None, 不能挂进上面的 builder 链尾。
     running_time.set_command_allowlist(load_command_allowlist())

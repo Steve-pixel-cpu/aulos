@@ -223,6 +223,16 @@ class RuntimeFeatureConfig(BaseModel):
     # 同文件重读去重: 文件未变时的整读只回一行 unchanged（带首次读取时刻）,
     # 任何写入介入或文件变化即失效; offset/limit/force=true 永远给全文。
     reread_dedup: bool = True
+    # 委派预算护栏: 主对话只读工具(read_file/grep/glob)的本回合计数超软档
+    # 附加一次委派提醒, 超硬档拒绝执行并指路 explore subagent sweep——
+    # 把系统提示里的"3+ 文件/5+ 检索必须委派"硬规则落到执行层。仅主对话
+    # 生效（worker 的只读探查是合法主业）; 0 = 关闭对应档位;
+    # delegationEnforce=false 一键关闭整个护栏。仅新用户回合/压缩激活清零。
+    delegation_enforce: bool = True
+    delegation_soft_calls: int = 5
+    delegation_hard_calls: int = 10
+    delegation_soft_files: int = 3
+    delegation_hard_files: int = 6
     # 浏览器工具的可见性与节奏: headless=False 时 Chromium 以真实窗口启动
     # （用户能看到 AI 在点哪里）; browser_slow_mo 毫秒数会加在 Playwright
     # 每个动作之间——录演示视频/给人围观时放慢到 200~500 才看得清。
@@ -293,6 +303,21 @@ class RuntimeConfig(BaseModel):
 
     def reread_dedup(self) -> bool:
         return self.feature_config.reread_dedup
+
+    def delegation_enforce(self) -> bool:
+        return self.feature_config.delegation_enforce
+
+    def delegation_soft_calls(self) -> int:
+        return self.feature_config.delegation_soft_calls
+
+    def delegation_hard_calls(self) -> int:
+        return self.feature_config.delegation_hard_calls
+
+    def delegation_soft_files(self) -> int:
+        return self.feature_config.delegation_soft_files
+
+    def delegation_hard_files(self) -> int:
+        return self.feature_config.delegation_hard_files
 
     def mcp_servers(self) -> list["McpServerConfig"]:
         return self.feature_config.mcp_servers
@@ -420,6 +445,27 @@ class ConfigLoader:
                 f"rereadDedup: expected boolean, got {raw_dedup!r}",
                 kind="parse",
             )
+        # delegation* : 委派预算护栏阈值（camelCase key, 见 RuntimeFeatureConfig）
+        delegation_enforce = merged.get("delegationEnforce", True)
+        if not isinstance(delegation_enforce, bool):
+            raise ConfigError(
+                f"delegationEnforce: expected boolean, got {delegation_enforce!r}",
+                kind="parse",
+            )
+        delegation_thresholds = {}
+        for key, camel, default in (
+            ("soft_calls", "delegationSoftCalls", 5),
+            ("hard_calls", "delegationHardCalls", 10),
+            ("soft_files", "delegationSoftFiles", 3),
+            ("hard_files", "delegationHardFiles", 6),
+        ):
+            val = merged.get(camel, default)
+            if not isinstance(val, int) or isinstance(val, bool) or val < 0:
+                raise ConfigError(
+                    f"{camel}: expected non-negative integer, got {val!r}",
+                    kind="parse",
+                )
+            delegation_thresholds[key] = val
         # browserHeadless / browserSlowMo: 浏览器工具可见性与动作节奏
         # （非法值在 RuntimeFeatureConfig 的 pydantic 校验层统一报错）
         browser_headless = merged.get("browserHeadless", True)
@@ -453,6 +499,11 @@ class ConfigLoader:
             convergence_nudge_at=nudge_at,
             tool_result_char_limit=raw_char_limit,
             reread_dedup=raw_dedup,
+            delegation_enforce=delegation_enforce,
+            delegation_soft_calls=delegation_thresholds["soft_calls"],
+            delegation_hard_calls=delegation_thresholds["hard_calls"],
+            delegation_soft_files=delegation_thresholds["soft_files"],
+            delegation_hard_files=delegation_thresholds["hard_files"],
             browser_headless=browser_headless,
             browser_slow_mo=browser_slow_mo,
             mcp_servers=_parse_mcp_servers(merged),
@@ -515,6 +566,11 @@ class ConfigLoader:
             "CLAUDE_CONVERGENCE_NUDGE_AT": ("convergenceNudgeAt", int),
             "CLAUDE_TOOL_RESULT_CHAR_LIMIT": ("toolResultCharLimit", int),
             "CLAUDE_REREAD_DEDUP": ("rereadDedup", _env_bool),
+            "CLAUDE_DELEGATION_ENFORCE": ("delegationEnforce", _env_bool),
+            "CLAUDE_DELEGATION_SOFT_CALLS": ("delegationSoftCalls", int),
+            "CLAUDE_DELEGATION_HARD_CALLS": ("delegationHardCalls", int),
+            "CLAUDE_DELEGATION_SOFT_FILES": ("delegationSoftFiles", int),
+            "CLAUDE_DELEGATION_HARD_FILES": ("delegationHardFiles", int),
         }
 
         for key, target in env_map.items():

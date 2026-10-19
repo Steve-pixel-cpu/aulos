@@ -170,6 +170,35 @@ def _read_guard_key(tool_name: str, tool_input: str):
     except Exception:
         return (tool_name, tool_input)
 
+def _delegation_file_key(tool_name: str, tool_input: str) -> Optional[str]:
+    """委派预算的去重文件键: 提不出的调用（grep/glob 无 path 参数、解析
+    失败）返回 None——它们只计调用数, 不计入触碰文件集合（保守: 漏记
+    一个文件只会晚触发, 不会误拦）。read_file 复用 _read_guard_key 的
+    规范化思路（normpath+normcase, 换写法重读同一文件同键）。"""
+    try:
+        params = json.loads(tool_input or "{}")
+    except Exception:
+        return None
+    if not isinstance(params, dict):
+        return None
+    if tool_name == "read_file":
+        raw = params.get("path")
+        if not isinstance(raw, str) or not raw:
+            return None
+        norm = os.path.normcase(os.path.normpath(raw))
+        if os.name == "nt":
+            norm = norm.replace("\\", "/")
+        return norm
+    if tool_name in ("grep", "glob"):
+        path = params.get("path")
+        if isinstance(path, str) and path:
+            norm = os.path.normcase(os.path.normpath(path))
+            if os.name == "nt":
+                norm = norm.replace("\\", "/")
+            return norm
+        return None            # 缺省 path=workdir: 无法归因到单个文件
+    return None
+
 def _poll_target_id(tool_input: str) -> str:
     """从轮询工具入参里提目标 id（agent_id/task_id/id）。解析失败回落
     整个输入串——同一目标必须落进同一计数键, 提不出去就保守全等。"""
@@ -203,6 +232,42 @@ CONCLUSION_CHECKPOINT_TEXT = (
     "grinding inline; its conclusions come back to you. Auxiliary "
     "certainty (side-quests) can wait or be skipped: the user asked "
     "one thing."
+)
+
+# --- 委派预算护栏: 把"broad 调研必须委派 subagent"从提示词下沉为执行层约束 ---
+# 观测到的失效模式(2026-10-19 会话): 系统提示写明 3+ 文件/5+ 检索必须委派
+# explore worker, 模型仍在主对话里串行 grep→read→再 grep 累计 30+ 次、
+# 11+ 文件。失败机理: 阈值是预测性的("expected to touch 3+ files")而违反
+# 是累积性的——每一步单独看都是一次 targeted read, 切香肠切到第 30 刀没有
+# 哪一刀自己看起来超标; 且模型对"本回合已累计调用几次"没有可靠感知。
+# 对策与 repeat guard 同款: 执行层记账, 软档提醒(照常执行)、硬档拒绝(不
+# 触达工具)。只挂主对话——runtime 按 _enforce_delegation_budget 开关区分
+# (worker 共用本管线, 组装时不打开, explore 的只读探查是合法主业)。
+# 与 repeat guard 的清零差异: 不随写入介入清零(委派预算管的是上下文预算,
+# 不是文件新鲜度), 仅新用户回合/压缩激活清零。
+DELEGATION_SOFT_CALLS = 5    # 软档: 本回合只读调用数 ≥ 此值 → 结果附提醒
+DELEGATION_HARD_CALLS = 10   # 硬档: 本回合只读调用数 ≥ 此值 → 拒绝执行
+DELEGATION_SOFT_FILES = 3    # 软档: 本回合去重触碰文件数 ≥ 此值 → 附提醒
+DELEGATION_HARD_FILES = 6    # 硬档: 本回合去重触碰文件数 ≥ 此值 → 拒绝执行
+DELEGATION_WARN_TEXT = (
+    "[System note] Delegation budget — this turn has now made {n} "
+    "read-only tool calls touching {f} distinct files. The hard rule for "
+    "this conversation: investigation expected to touch 3+ files or 5+ "
+    "search/read calls MUST be delegated to an explore subagent sweep; "
+    "the main conversation only receives its conclusions summary. "
+    "Delegate now (one agent_tool worker, self-contained prompt): from "
+    "{hc} calls or {hf} files this turn, read-only calls are refused by "
+    "the tool layer."
+)
+DELEGATION_DENIED_TEXT = (
+    "REFUSED — delegation budget exhausted for this turn: {n} read-only "
+    "calls touching {f} distinct files already ran. Broad investigation "
+    "(3+ files or 5+ search/read calls) MUST be delegated to a subagent "
+    "sweep; the main conversation only receives its conclusions summary. "
+    "Spawn one agent_tool (explore) worker now with a self-contained "
+    "prompt — list the exact files/questions, require file:line evidence "
+    "— and act on its summary. Read-only calls are available again on the "
+    "next user turn."
 )
 
 # --- MicroCompact: 旧工具结果清除（借鉴 Claude Code microCompact 设计）---
@@ -603,6 +668,18 @@ class ConversationRuntime:
         # 为本回合已附加的提醒条数(封顶 POLL_WARN_MAX_PER_TURN)。
         self._poll_calls: dict[tuple, int] = {}
         self._poll_warn_count = 0
+        # 委派预算护栏状态: 本回合只读调用数 + 去重触碰文件集合。仅主对话
+        # runtime 打开(_enforce_delegation_budget); worker 共用本管线但组装
+        # 时不打开——explore 的只读探查是合法主业, 拦它就是本末倒置。
+        # 不随写入介入清零: 管的是上下文预算, 不是文件新鲜度。
+        self._enforce_delegation_budget = False
+        self._delegation_soft_calls = DELEGATION_SOFT_CALLS
+        self._delegation_hard_calls = DELEGATION_HARD_CALLS
+        self._delegation_soft_files = DELEGATION_SOFT_FILES
+        self._delegation_hard_files = DELEGATION_HARD_FILES
+        self._delegation_calls = 0
+        self._touched_files: set[str] = set()
+        self._delegation_warned = False   # 软档提醒每回合至多一条（防自身刷屏）
         self._guard_lock = threading.Lock()
         # 事件镜像钩子（Web 端工具卡片闭合用, CLI 默认 None 行为不变）:
         # - on_tool_finalized: 工具未经执行就被终局（权限拒绝 / hook 拦截 /
@@ -700,6 +777,21 @@ class ConversationRuntime:
 
     def with_reread_dedup(self, enabled: bool) -> "ConversationRuntime":
         self._reread_dedup_enabled = enabled
+        return self
+
+    def with_delegation_budget(self, enforce: bool,
+                               soft_calls: int = DELEGATION_SOFT_CALLS,
+                               hard_calls: int = DELEGATION_HARD_CALLS,
+                               soft_files: int = DELEGATION_SOFT_FILES,
+                               hard_files: int = DELEGATION_HARD_FILES,
+                               ) -> "ConversationRuntime":
+        """委派预算护栏: 仅主对话 runtime 打开。阈值为 0 时对应档位关闭
+        （soft 关→只有硬档; hard 关→只有软档; 全关→纯记账）。"""
+        self._enforce_delegation_budget = enforce
+        self._delegation_soft_calls = max(0, int(soft_calls))
+        self._delegation_hard_calls = max(0, int(hard_calls))
+        self._delegation_soft_files = max(0, int(soft_files))
+        self._delegation_hard_files = max(0, int(hard_files))
         return self
 
     def set_log_tag(self, tag: Optional[str]) -> "ConversationRuntime":
@@ -915,6 +1007,26 @@ class ConversationRuntime:
                 self._mutation_seq += 1
         return None, 0
 
+    def _register_delegation_call(self, tool_name: str, tool_input: str) -> tuple[int, int, bool]:
+        """委派预算记账（护栏开关打开且纯读工具时）。返回 (calls, files,
+        deny): deny=True 表示已达硬档, _execute_tool 应拒绝执行。
+        纯读调用不清零（与写入介入无关——预算管的是上下文消耗, 不是文件
+        新鲜度）。与读取护栏共用 _guard_lock, 并行批次串行记账。"""
+        if (not self._enforce_delegation_budget
+                or tool_name not in PURE_READ_TOOLS):
+            return (0, 0, False)
+        fkey = _delegation_file_key(tool_name, tool_input)
+        with self._guard_lock:
+            self._delegation_calls += 1
+            if fkey is not None:
+                self._touched_files.add(fkey)
+            files = len(self._touched_files)
+            hard = (self._delegation_hard_calls > 0
+                    and self._delegation_calls >= self._delegation_hard_calls) or (
+                    self._delegation_hard_files > 0
+                    and files >= self._delegation_hard_files)
+            return (self._delegation_calls, files, hard)
+
     def _maybe_conclusion_checkpoint(self, msgs: List[Message],
                                      question: str) -> None:
         """结论检查点: 本回合调用时钟跨过 CONCLUSION_CHECKPOINT_EVERY 的
@@ -1030,6 +1142,17 @@ class ConversationRuntime:
                 output = REPEAT_DENIED_TEXT,
                 is_error = True,
             )
+        d_calls, d_files, d_deny = self._register_delegation_call(
+            tool_block.name, tool_block.input)
+        if d_deny:
+            # 委派预算硬档: 不执行, 指路 subagent sweep（与 repeat guard
+            # 同款拒绝形态: is_error 的 tool_result, 不触达执行器）
+            return Message.tool_result(
+                id = tool_block.id,
+                name = tool_block.name,
+                output = DELEGATION_DENIED_TEXT.format(n=d_calls, f=d_files),
+                is_error = True,
+            )
         if tool_block.name == "read_file":
             # 清掉 sink 里该 path 的旧指纹: 执行后 sink 里有档 ⟺ 这次执行
             # 真的全读成功——失败/部分读不能误刷新去重档案的时效。
@@ -1066,6 +1189,18 @@ class ConversationRuntime:
             output = (f"{output}\n\n" + (SHELL_REPEAT_STRONG_TEXT
                                          if shell_streak >= SHELL_REPEAT_STRONG_ON
                                          else SHELL_REPEAT_WARN_TEXT))
+        if (self._enforce_delegation_budget and not d_deny
+                and not self._delegation_warned
+                and ((self._delegation_soft_calls > 0
+                      and d_calls >= self._delegation_soft_calls)
+                     or (self._delegation_soft_files > 0
+                         and d_files >= self._delegation_soft_files))):
+            # 委派预算软档: 结果照常给, 附一次提醒（每回合至多一条,
+            # 防提醒自身刷屏稀释注意力——同 poll 提醒封顶的设计理由）
+            self._delegation_warned = True
+            output = (f"{output}\n\n" + DELEGATION_WARN_TEXT.format(
+                n=d_calls, f=d_files,
+                hc=self._delegation_hard_calls, hf=self._delegation_hard_files))
 
         # 轮询空转提醒: 同 id 连击达阈值且本回合配额未用完时附加（不拒绝
         # 不改 is_error——与 shell 重跑提醒同一模式）。写入介入不断连击。
@@ -1154,6 +1289,9 @@ class ConversationRuntime:
             self._checkpoint_mark = 0
             self._poll_calls.clear()   # 压缩宽限期: 轮询连击/提醒配额重置
             self._poll_warn_count = 0
+            self._delegation_calls = 0   # 压缩宽限期: 委派预算重新计
+            self._touched_files.clear()
+            self._delegation_warned = False
         if self._on_compacted is not None:
             try:
                 self._on_compacted()
@@ -1657,6 +1795,9 @@ class ConversationRuntime:
             self._checkpoint_mark = 0
             self._poll_calls.clear()     # 轮询连击/提醒配额随新回合重置
             self._poll_warn_count = 0
+            self._delegation_calls = 0   # 委派预算随新回合重置（每回合一份预算）
+            self._touched_files.clear()
+            self._delegation_warned = False
         budget_exhausted = False
         iterations_exhausted = False
         auto_compacted = False
