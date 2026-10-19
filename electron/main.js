@@ -9,7 +9,7 @@
 //      与开发/测试后端隔离, 两种形态可同时存活）
 //   - 否则拉起后端（.venv 里的 python server.py / 打包态冻结二进制）, 退出时整树杀掉
 //   - 窗口只加载本地服务; 外部链接一律转交系统浏览器, 防止窗口被带跑
-const { app, BrowserWindow, shell, dialog, Menu, ipcMain, session, clipboard } = require("electron");
+const { app, BrowserWindow, shell, dialog, Menu, ipcMain, session, clipboard, Notification } = require("electron");
 const { spawn } = require("child_process");
 const path = require("path");
 const fs = require("fs");
@@ -177,6 +177,10 @@ async function createWindow() {
     height: 900,
     minWidth: 960,
     minHeight: 600,
+    // 无边框: 去掉系统原生标题栏, 只留页面自绘的 #titlebar（与 Tauri 壳的
+    // decorations(false) 对齐, 避免"双顶栏"）。拖拽/双击最大化由 preload
+    // 注入的 -webkit-app-region 承担, 三个窗口按钮经 win-ctl IPC 走这里
+    frame: false,
     // 云母要求窗口底透明(spike 实证: 构造期透明底 + backgroundMaterial 生效;
     // 运行期 setBackgroundColor 的 alpha 在非 transparent 窗上不可靠)。
     // 窗口 show:false 到页面就绪, 不会闪白。老系统 backgroundMaterial 被忽略。
@@ -223,6 +227,33 @@ async function createWindow() {
   });
 
   win.on("closed", () => { win = null; });
+
+  // ---------- 自绘标题栏的窗口控制（frame:false 后自己实现） ----------
+  // preload 把共享前端的 Tauri 命令名映射到这里的 win-ctl:
+  //   minimize_main→minimize  toggle_maximize_main→maximize  close_main→close
+  ipcMain.handle("win-ctl", (_ev, cmd) => {
+    if (!win || win.isDestroyed()) return;
+    if (cmd === "minimize") win.minimize();
+    else if (cmd === "maximize") win.isMaximized() ? win.unmaximize() : win.maximize();
+    else if (cmd === "close") win.close();
+  });
+  // 最大化状态推给前端(html.dataset.max): CSS 圆角据此回方角, 同 Tauri 壳行为。
+  // 必须在 win 创建后挂（模块顶层挂的话 win 还是 null, .on 直接炸）
+  const pushMax = () => {
+    if (!win || win.isDestroyed()) return;
+    const max = win.isMaximized() ? "1" : "0";
+    win.webContents.executeJavaScript(
+      `document.documentElement.dataset.max='${max}'`).catch(() => {});
+  };
+  win.on("maximize", pushMax);
+  win.on("unmaximize", pushMax);
+  // 系统原生通知（preload 的 __TAURI_INTERNALS__ 垫片从 notify_desktop 转发来,
+  // 参数形状与 Tauri 侧一致 { title, body }）。不支持时静默, 前端 .catch 兜底
+  ipcMain.handle("notify-desktop", (_ev, { title, body } = {}) => {
+    if (!Notification.isSupported()) return false;
+    new Notification({ title: title || "Aulos", body: body || "" }).show();
+    return true;
+  });
 }
 
 // 单实例: 二次启动只把已有窗口带到前台
