@@ -4,6 +4,8 @@
 #   - push v* 标签 (如 v3.3.9): 三平台并行构建 → 创建 GitHub Release
 #     (Windows: NSIS 安装包; macOS: .dmg + 自动更新包 .app.tar.gz;
 #      Linux: AppImage; 均带更新签名, latest.json 含全部平台条目)
+#     Release 标题统一 "Aulos vX.Y.Z"; 若 release 已被先建 (本地脚本/网页),
+#     CI 只补传附件并用 edit 归一化标题
 #   - workflow_dispatch (手动): 只构建 + 传 workflow artifact, 不发 Release
 #
 # 平台矩阵:
@@ -207,5 +209,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes || true
+          # 标题统一 "Aulos vX.Y.Z" (与 publish.cmd / latest.json notes 同口径);
+          # create 已存在时靠 || true 吞掉, 随后 edit 兜底归一化标题 ——
+          # 无论 release 先由谁建出 (本地脚本/网页手动/CI), 最终标题都一致
+          gh release create "$GITHUB_REF_NAME" --title "Aulos ${GITHUB_REF_NAME}" --generate-notes || true
           gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+          gh release edit "$GITHUB_REF_NAME" --title "Aulos ${GITHUB_REF_NAME}"
