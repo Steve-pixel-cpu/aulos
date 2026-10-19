@@ -707,6 +707,7 @@ async function selectSession(id) {
   setBusyUi(run.busy);
   renderQueueCards();   // 待发送卡片跟随会话: 重绘为本会话的排队（无则清掉上个会话的残留）
   syncPlanPanelForActiveSession();   // 切回的会话若有未决计划: 恢复面板弹窗
+  syncSaPanelForActiveSession();     // 子代理面板: 跟随当前会话恢复/收起
   // 三设置回显: 会话运行值 → 会话列表缓存（/api/sessions 每项都带持久值/
   // 全局默认）→ 全局默认值。必须无条件 setValue: 否则下拉框残留上一个
   // 会话的显示值, 与本会话实际用的值不一致（"跟随全局"的会话尤其如此）。
@@ -929,6 +930,7 @@ function startDraft(draftDir = null) {
   setBusyUi(false);
   renderQueueCards();   // 草稿态没有会话队列: 清掉上个会话残留的待发送卡片
   syncPlanPanelForActiveSession();   // 草稿态没有未决计划: 收起面板
+  syncSaPanelForActiveSession();     // 草稿态: 收起子代理面板
   syncThinkingIndicator();     // 草稿态没有 run: 收掉从原会话带来的"思考中"转圈
                                  // （切走瞬间原会话正在 prefill 空窗, 否则没人再碰这个 DOM,
                                  //   后台轮次的空窗事件都带 sid 守卫, 不会点亮这里）

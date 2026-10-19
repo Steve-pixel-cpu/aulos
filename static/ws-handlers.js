@@ -632,6 +632,9 @@ function terminalCommand(row) {
 }
 
 function renderOutputPanel(row, outputText) {
+  // 子智能体卡片豁免: spawn 回执（agent_id/type/status 那段）对用户
+  // 没信息量, 点击卡片要留给"打开侧栏", 不能被终端展开语义抢走
+  if (row.classList.contains("sa-card")) return;
   const cmd = terminalCommand(row);
   const out = prepOutput(outputText);
   const existing = row.nextElementSibling &&
@@ -725,6 +728,7 @@ function buildTermCmdEl(cmd) {
  * 块里是预插的完整命令, 长命令不必等结果就能看全 */
 function wireTermToggle(row) {
   if (row._termToggle) return;
+  if (row.classList.contains("sa-card")) return;   // 子智能体卡片: 点击=开侧栏, 不接终端展开
   row._termToggle = true;
   row.classList.add("expandable");
   row.addEventListener("click", () => {
@@ -834,6 +838,11 @@ function onToolUse(msg, sid) {
 
 function onToolResult(msg, sid) {
   const run = runOf(sid);
+  // 被吸收为子智能体卡的 agent_tool 占位: 它的 spawn 回执直接吞掉
+  // （回执内容已无意义, 卡片由 started/done 事件全权负责）
+  if (msg.id && run.saAbsorbedToolIds && run.saAbsorbedToolIds.delete(msg.id)) {
+    return;
+  }
   // 聊天点播: music_play 的结果镜像带 result_meta.music, 转交电台开播。
   // 只在实时事件里播——历史回放（completeToolCard 的 result_meta 只渲染 diff）
   // 不重播旧歌, 刷新页面不会凭空响起来。
@@ -904,27 +913,165 @@ function saColOf(card) {
   return col;
 }
 
+/* ---------- 子智能体侧栏（对齐右侧计划面板的交互） ----------
+ * 点卡片: 流式列整体搬进 #sa-body（DOM 移动保留子节点, 事件路由零改动
+ * ——colOf(伪 id) 返回的还是同一个节点）, 侧栏头部出现对应选项卡。
+ * 多个子代理并行时各占一个 tab（状态点: 转圈/绿/红）, 点 tab 切换展示
+ * 的流, 互不混淆。再点当前 tab 或 ✕ 收起: 列搬回卡片内嵌位置。 */
+let _saOpenAgent = null;   // 侧栏当前展示的 agent_id
+let _saOpenCard = null;    // 对应卡片引用: 关闭/搬回按引用走, 不按会话查表（切会话后查表会找错卡片）
+
+function saTabLabel(card, agentId) {
+  const zh = SUB_TYPE_LABEL[card.dataset.saType] || card.dataset.saType || "";
+  const desc = (card.querySelector(".tdesc") || {}).textContent || "";
+  const text = (desc || agentId).trim();
+  // tdesc 本身已是 "类型 · 描述"（upgradeToSubagentCard 写入）: 已带前缀
+  // 就不重复拼; 兜底路径（无 tdesc）才拼类型
+  const labeled = zh && text.startsWith(zh + " · ");
+  return labeled ? text : (zh ? zh + " · " : "") + text;
+}
+
+/* 重建侧栏选项卡: 本会话所有已登记的子代理各一个, 状态点实时着色 */
+function saRenderTabs(run) {
+  const tabs = $("sa-tabs");
+  tabs.innerHTML = "";
+  const map = run.subagents || {};
+  for (const [agentId, card] of Object.entries(map)) {
+    if (!card || !card.isConnected) continue;
+    const full = saTabLabel(card, agentId.slice(0, 8));
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "sa-tab" + (agentId === _saOpenAgent ? " on" : "") +
+      (card.classList.contains("sa-done-ok") ? " done-ok" :
+       card.classList.contains("sa-done-err") ? " done-err" :
+       card.classList.contains("sa-card") ? " running" : "");
+    const dot = document.createElement("span");
+    dot.className = "sa-dot";
+    const label = document.createElement("span");
+    label.className = "sa-tab-label";
+    // 不设 title: 全局 tooltip 会接管原生 title, 加上 data-tip 风格的
+    // 自绘气泡会出现两个悬浮框; 截断省略 + 面板内容本身已可识别
+    // 两段式: 类型前缀弱化 + 摘要主体（无类型时整段都是主体）
+    const zh = SUB_TYPE_LABEL[card.dataset.saType] || card.dataset.saType || "";
+    if (zh && full.startsWith(zh + " · ")) {
+      const t = document.createElement("span");
+      t.className = "sa-tab-type";
+      t.textContent = zh + " · ";
+      label.appendChild(t);
+      label.appendChild(document.createTextNode(full.slice(zh.length + 3)));
+    } else {
+      label.textContent = full;
+    }
+    b.appendChild(dot);
+    b.appendChild(label);
+    b.onclick = () => {
+      if (_saOpenAgent === agentId) { closeSaPanel(); return; }
+      openSaPanel(agentId, card);
+    };
+    tabs.appendChild(b);
+  }
+}
+
+function saHost(card, attach) {
+  // 列的当前宿主: 侧栏开着 → #sa-body; 否则 → 卡片后的 .sa-body
+  const body = card.nextElementSibling &&
+    card.nextElementSibling.classList.contains("sa-body")
+    ? card.nextElementSibling : null;
+  return attach ? $("sa-body") : body;
+}
+
+function saPlaceCol(card, attach) {
+  const col = saColOf(card);
+  if (!col) return;
+  const host = saHost(card, attach);
+  if (!host) return;
+  if (col.parentElement !== host) {
+    host.appendChild(col);
+    col.classList.toggle("hosted", attach);   // 面板内去定宽缩进, 全宽渲染
+  }
+}
+
+function openSaPanel(agentId, cardRef) {
+  const card = cardRef || saCardOf(runOf(state.sessionId), agentId);
+  if (!card || !card.isConnected) return;
+  if (_saOpenAgent !== null && _saOpenAgent !== agentId &&
+      _saOpenCard && _saOpenCard.isConnected) {
+    saPlaceCol(_saOpenCard, false);          // 换 tab: 先把上一个流搬回卡片
+    _saOpenCard.classList.remove("sa-open-in-panel");
+  }
+  _saOpenAgent = agentId;
+  _saOpenCard = card;
+  const pane = $("pane");
+  pane.classList.add("sa-open");
+  pane.classList.remove("plan-open");   // 侧栏互斥: 打开子代理面板则收起计划面板
+  saPlaceCol(card, true);
+  card.classList.add("sa-open-in-panel");
+  saRenderTabs(runOf(state.sessionId));
+  const body = $("sa-body");
+  body.scrollTop = body.scrollHeight;   // 打开即看最新
+}
+
+function closeSaPanel() {
+  const card = _saOpenCard;
+  _saOpenAgent = null;
+  _saOpenCard = null;
+  $("pane").classList.remove("sa-open");
+  if (card && card.isConnected) {
+    saPlaceCol(card, false);
+    card.classList.remove("sa-open-in-panel");
+  }
+  if (state.sessionId) saRenderTabs(runOf(state.sessionId));
+}
+
+$("sa-close").onclick = () => closeSaPanel();
+
+/* 切会话时同步侧栏: 面板开着 → 先把列搬回原卡片（卡片留在原会话的
+ * 消息流里, 事件照常写入）, 面板收起; 切回该会话后用户可再点开。 */
+function syncSaPanelForActiveSession() {
+  if (_saOpenAgent) closeSaPanel();
+}
+
 /* agent_tool 工具卡 → 子智能体卡片升级: 建 head/body/stream 结构,
  * 登记 agent_id 路由。历史回放等无后续事件的场景保持原工具卡样子。 */
+function setSaDesc(card, zh, descText) {
+  // 描述两段式: 类型词强调色可点（开侧栏）, 描述正文弱色跟随
+  const desc = card.querySelector(".tdesc");
+  if (!desc) return;
+  desc.textContent = "";
+  if (zh) {
+    const t = document.createElement("span");
+    t.className = "sa-type";
+    t.textContent = zh;
+    t.onclick = (ev) => {
+      ev.stopPropagation();               // 行点击也是开面板: 不必冒泡
+      openSaPanel(card._saAgentId, card);
+    };
+    desc.appendChild(t);
+    desc.appendChild(document.createTextNode(" · " + descText));
+  } else {
+    desc.textContent = descText;
+  }
+}
+
 function upgradeToSubagentCard(card, agentId) {
   if (!card || card._saAgentId) return;
   card._saAgentId = agentId;
   card.classList.add("sa-card");
+  // 纯文本行(参考 zcode): 图标不参与, 直接摘掉
   const meta = card.querySelector(".t-ico");
-  if (meta) meta.classList.add("sa-spin-host");
-  const spin = document.createElement("span");
-  spin.className = "spin sa-spin";
-  card.insertBefore(spin, meta);
+  if (meta) meta.remove();
   const desc = card.querySelector(".tdesc");
   const input = card.dataset.input || "";
   try {
     const d = JSON.parse(input);
+    if (d && typeof d.subagent_type === "string") card.dataset.saType = d.subagent_type;
     if (desc && d && typeof d.subagent_type === "string") {
       const zh = SUB_TYPE_LABEL[d.subagent_type] || d.subagent_type;
-      desc.textContent = zh + " · " + (d.description || "");
+      setSaDesc(card, zh, d.description || "");
     }
   } catch (e) { /* 非法 JSON: 保留原描述 */ }
-  // 可折叠 body: 嵌套列收子代理的对话流
+  // 可折叠 body: 嵌套列收子代理的对话流（面板收起时的降级视图; 点击
+  // 卡片默认在右侧面板打开）
   const body = document.createElement("div");
   body.className = "sa-body";
   body.hidden = true;
@@ -935,9 +1082,8 @@ function upgradeToSubagentCard(card, agentId) {
   card.classList.add("sa-toggle");
   card.onclick = (ev) => {
     if (ev.target.closest("button, a")) return;   // 不挡卡内交互
-    body.hidden = !body.hidden;
-    card.classList.toggle("sa-open", !body.hidden);
-    if (!body.hidden) scrollToBottom();
+    if (_saOpenAgent === agentId) { closeSaPanel(); return; }
+    openSaPanel(agentId);
   };
   registerSubagentCard(runOf(state.sessionId), agentId, card);
 }
@@ -965,14 +1111,37 @@ function onSubagentStarted(msg, sid) {
   const run = runOf(sid);
   const existing = saCardOf(run, msg.agent_id);
   if (existing) return;
-  const card = addToolCard({ id: "sa-" + msg.agent_id, name: "agent_tool",
-    input: JSON.stringify({ subagent_type: msg.subagent_type,
-                            description: msg.description }) }, colOf(sid));
+  // 优先吸收: started 常比 agent_tool 的 tool_result 先到（后端在
+  // spawn 点火前就广播, 而工具结果要等 Leader 回合走完）——此时
+  // onToolUseStarted 已建了"接收参数中…"的占位卡。直接把它升级成
+  // 子智能体卡, 否则兜底新建的第二张卡会永远等不到自己的
+  // tool_result, 挂在运行中拖住工具组计数（"运行中 x/12"不落账）。
+  let card = null;
+  for (const [tid, c] of Object.entries(run.liveToolCards || {})) {
+    if (c.dataset.tool === "agent_tool" && !c._saAgentId) {
+      card = c;
+      delete run.liveToolCards[tid];
+      // 记下被吸收的 tool id: 稍后真正的 spawn tool_result 到达时直接
+      // 吞掉（onToolResult 配不上卡会兜底新建, 又是一张原始卡）
+      (run.saAbsorbedToolIds = run.saAbsorbedToolIds || new Set()).add(tid);
+      if (run.activeToolCard === c) run.activeToolCard = null;
+      break;
+    }
+  }
+  if (!card) {
+    card = addToolCard({ id: "sa-" + msg.agent_id, name: "agent_tool",
+      input: JSON.stringify({ subagent_type: msg.subagent_type,
+                              description: msg.description }) }, colOf(sid));
+  }
   upgradeToSubagentCard(card, msg.agent_id);
   // started 已带全量描述, 工具卡描述不再等 tool_use 事件来补
-  card.querySelector(".tdesc").textContent =
-    (SUB_TYPE_LABEL[msg.subagent_type] || msg.subagent_type || "") +
-    " · " + (msg.description || "");
+  setSaDesc(card, SUB_TYPE_LABEL[msg.subagent_type] || msg.subagent_type || "",
+            msg.description || "");
+  // 被吸收的占位卡等不到自己的 tool_result: 立即置完成收口, 否则
+  // 它挂 run 态拖住工具组头部计数
+  setToolState(card, "ok");
+  // 面板开着: 新代理立即出现在选项卡里
+  if (sid === state.sessionId && _saOpenAgent) saRenderTabs(runOf(sid));
 }
 
 /* 子代理内部事件 → 伪会话 id 复用现有渲染管线。colOf(伪 id) 被 app.js
@@ -984,6 +1153,8 @@ function onSubagentEvent(msg, sid) {
   const inner = msg.event || {};
   const pseudo = "sub:" + msg.agent_id;
   switch (inner.type) {
+    case "user_message":       // 任务输入: 子代理对话流以用户气泡开头
+      addUserBubble(String(inner.text || ""), null, colOf(pseudo)); break;
     case "thinking_start":     onThinkingStart(inner, pseudo); break;
     case "thinking_delta":     onThinkingDelta(inner, pseudo); break;
     case "thinking_end":       onThinkingEnd(inner, pseudo); break;
@@ -993,7 +1164,12 @@ function onSubagentEvent(msg, sid) {
     case "tool_result":        onToolResult(inner, pseudo); break;
     default: return;
   }
-  if (card.classList.contains("sa-open")) scrollToBottom();   // 展开时才跟随滚动
+  if (card.classList.contains("sa-open")) scrollToBottom();   // 内嵌展开时跟随滚动
+  // 侧栏模式: 滚侧栏容器到底（仅当前会话且面板开着）
+  if (_saOpenAgent === msg.agent_id && sid === state.sessionId) {
+    const body = $("sa-body");
+    body.scrollTop = body.scrollHeight;
+  }
 }
 
 /* 伪会话 id → 嵌套消息列: 惰性建在对应卡片的 .sa-body 里 */
@@ -1024,11 +1200,12 @@ function onSubagentDone(msg, sid) {
   const card = saCardOf(run, msg.agent_id);
   if (!card) return;
   card.classList.remove("sa-running");
+  const ok = msg.status === "completed";
+  card.classList.add(ok ? "sa-done-ok" : "sa-done-err");
   const spin = card.querySelector(".sa-spin");
   if (spin) spin.remove();
   const st = card.querySelector(".tstate");
   if (st) {
-    const ok = msg.status === "completed";
     st.className = "tstate " + (ok ? "ok" : "err");
     st.textContent = ok ? "已完成" : "失败";
     if (typeof msg.duration_s === "number") {
@@ -1041,6 +1218,8 @@ function onSubagentDone(msg, sid) {
   if (desc && !ok && msg.error) {
     desc.textContent = desc.textContent + " — " + String(msg.error).slice(0, 80);
   }
+  // 侧栏开着: 选项卡状态点同步翻转（当前 tab 着色）
+  if (sid === state.sessionId) saRenderTabs(runOf(sid));
   // 嵌套流收口: sweep 悬空的内部工具卡（子代理崩溃时结果事件永远不来）
   sweepPendingToolCards(runOf("sub:" + msg.agent_id));
 }

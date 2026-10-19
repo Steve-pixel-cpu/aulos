@@ -275,6 +275,19 @@
     <footer id="plan-actions"></footer>
   </aside>
 
+  <!-- ============ 右侧子智能体面板: 点子智能体卡片展开其内部对话流 ============ -->
+  <aside id="sa-panel" hidden>
+    <!-- 拖拽调宽手柄: 贴左边缘的透明竖条, 拖动改 --sa-w, 双击复位 -->
+    <div id="sa-resize" data-tip="拖动调整宽度，双击复位"></div>
+    <header id="sa-head">
+      <div id="sa-tabs"></div>
+      <button type="button" id="sa-close" data-tip="收起面板" data-tip-pos="below">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </header>
+    <div id="sa-body"></div>
+  </aside>
+
     <!-- ============ 初始化引导页 = 欢迎页: 全屏只显示这张卡片 ============ -->
     <div id="onboarding-page">
       <div class="ob-card">

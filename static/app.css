@@ -2324,6 +2324,109 @@
 #pane.plan-open > #scroll-btn { right: calc(var(--plan-w, min(440px, 44%)) + 34px); }
 #pane.plan-open > #msg-scrollbar { right: calc(var(--plan-w, min(440px, 44%)) + 10px); }
 
+/* ============ 右侧子智能体面板: 点卡片在侧栏展开其内部对话流 ============
+   与计划面板同一套网格/拖宽模式: #pane.sa-open 时主区切两栏, 流式列
+   从卡片内嵌节点整体搬进 #sa-body（DOM 移动保留全部子节点与事件路由,
+   subagent_event 继续按伪会话 id 渲染进该列, 无需任何事件层改动）。 */
+#pane.sa-open {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--sa-w, min(480px, 46%));
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+#pane.sa-open > #doc-header { grid-column: 1; grid-row: 1; }
+#pane.sa-open > #messages { grid-column: 1; grid-row: 2; }
+#pane.sa-open > #composer { grid-column: 1; grid-row: 3; }
+#pane.sa-open > #scroll-btn { right: calc(var(--sa-w, min(480px, 46%)) + 34px); }
+#pane.sa-open > #msg-scrollbar { right: calc(var(--sa-w, min(480px, 46%)) + 10px); }
+
+#sa-panel {
+  display: none;
+  min-width: 0;
+}
+#pane.sa-open > #sa-panel {
+  grid-column: 2;
+  grid-row: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  min-width: 0;
+  border-left: 1px solid var(--border-strong);
+  background: var(--bg);
+  animation: msg-in .22s ease;
+}
+/* 拖拽调宽手柄: 与 #plan-resize 同款 */
+#sa-resize {
+  position: absolute; top: 0; bottom: 0; width: 7px;
+  cursor: col-resize; z-index: 70; touch-action: none; left: -4px;
+}
+#sa-resize::after {
+  content: ""; position: absolute; top: 0; bottom: 0; width: 2px;
+  background: transparent; transition: background .12s; left: 2px;
+}
+#sa-resize:hover::after, #sa-resize.dragging::after {
+  background: var(--accent);
+}
+#sa-head {
+  display: flex; align-items: flex-end; gap: 8px;
+  padding: 0 10px 0 6px; border-bottom: 1px solid var(--border);
+  flex: none; min-width: 0;
+}
+/* ---- 多选项卡: 每个子代理一个 tab, 状态点 + 类型/描述摘要 ---- */
+#sa-tabs {
+  flex: 1; min-width: 0; display: flex; gap: 6px;
+  padding: 8px 8px 0;
+  overflow-x: auto; scrollbar-width: none;
+}
+#sa-tabs::-webkit-scrollbar { display: none; }
+.sa-tab {
+  flex: 0 1 auto; min-width: 0; max-width: 300px;
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 7px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  cursor: pointer;
+  color: var(--text-2); font-size: 12.5px; font-weight: 500;
+  font-family: inherit; white-space: nowrap;
+  transition: color .12s, background .12s, border-color .12s, box-shadow .12s;
+}
+.sa-tab:hover { color: var(--text-1); background: var(--hover); }
+.sa-tab.on {
+  color: var(--text-1); background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  box-shadow: 0 1px 4px rgba(0,0,0,.05);
+}
+.sa-tab .sa-tab-label {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* 类型前缀弱化: 类型字重轻一档, 摘要主体跟随 tab 颜色 */
+.sa-tab .sa-tab-type { color: var(--text-3); font-weight: 500; }
+.sa-tab.on .sa-tab-type { color: var(--text-2); }
+.sa-tab .sa-dot {
+  flex: none; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--text-3); opacity: .45;
+}
+/* 状态点着色: 运行中转圈 / 完成 绿 / 失败 红 */
+.sa-tab.running .sa-dot {
+  background: transparent; opacity: 1;
+  border: 2px solid var(--border-strong); border-top-color: var(--ok);
+  animation: spin .8s linear infinite;
+}
+.sa-tab.done-ok .sa-dot { background: var(--ok); opacity: 1; }
+.sa-tab.done-err .sa-dot { background: var(--err); opacity: 1; }
+#sa-close {
+  flex: none; display: inline-flex; align-items: center;
+  border: none; background: none; cursor: pointer;
+  color: var(--text-3); padding: 6px; border-radius: 6px;
+  margin-bottom: 6px;
+}
+#sa-close:hover { color: var(--text-1); background: var(--hover); }
+/* 面板体: 内部对话流滚动区; 列搬进来后去掉主列的定宽居中 */
+#sa-body { flex: 1; overflow-y: auto; min-height: 0; }
+#sa-body .sa-stream.hosted {
+  width: auto; margin: 0; padding: 14px 16px 18px;
+}
+
 #plan-panel {
   display: none;
   min-width: 0;
@@ -3632,17 +3735,18 @@ body.col-resizing, body.col-resizing * { cursor: col-resize !important; }
   }
   .tool-group:not(.collapsed) .tg-head { margin-bottom: 2px; }
 
-  /* ============ 子智能体卡片（agent_tool 派出的 subagent） ============ */
-  /* 卡片行: 在普通工具行上加左侧竖色条 + 可点展开的手感 */
-  .tool-row.sa-card { cursor: pointer; border-left: 2px solid var(--accent); padding-left: 7px; }
-  .tool-row.sa-card .tname2 { color: var(--accent); }
-  .tool-row.sa-card.sa-open { border-left-color: var(--accent); }
-  /* 运行中转圈: 插在图标左侧, 结束时移除 */
-  .sa-spin {
-    flex: none; width: 11px; height: 11px; border-radius: 50%;
-    border: 2px solid var(--border-strong); border-top-color: var(--accent);
-    animation: spin .8s linear infinite;
+  /* ============ 子智能体卡片（agent_tool 派出的 subagent） ============
+   * v3 纯文本行(参考 zcode): 无图标无框, 与"思考"胶囊同一语言;
+   * 类型词(探索/验证/通用)用强调色且可点(开侧栏), 描述弱色跟随;
+   * 状态/耗时仍在行尾。整行可点开侧栏, 类型词是显式入口。 */
+  .tool-row.sa-card { cursor: pointer; border-left: none; padding-left: 9px; }
+  .tool-row.sa-card:hover { background: color-mix(in srgb, var(--text) 6%, transparent); }
+  .tool-row.sa-card .tname2 { color: var(--text-2); }
+  .tool-row.sa-card .tdesc { color: var(--text-3); }
+  .tool-row.sa-card .sa-type {
+    color: var(--accent); font-weight: 600; cursor: pointer;
   }
+  .tool-row.sa-card .sa-type:hover { text-decoration: underline; text-underline-offset: 3px; }
   /* 嵌套对话流: 子代理自己的思考/工具调用, 缩进 + 左边线, 与工具分组同语言 */
   .sa-body { margin: 2px 0 6px 9px; border-left: 2px solid var(--border); padding-left: 6px; }
   .sa-stream { min-width: 0; }

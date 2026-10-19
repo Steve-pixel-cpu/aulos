@@ -18,6 +18,7 @@
  * ============================================================ */
 const SIDE_W = { min: 200, max: 480, reserve: 420, key: "xc-side-w", prop: "--side-w" };
 const PLAN_W = { min: 300, max: 720, reserve: 420, key: "xc-plan-w", prop: "--plan-w" };
+const SA_W = { min: 300, max: 720, reserve: 420, key: "xc-sa-w", prop: "--sa-w" };
 
 function applyColWidth(pref, px) {
   const clamped = Math.max(pref.min,
@@ -62,8 +63,10 @@ function attachColResize(handle, panel, pref, dir) {
 }
 restoreColWidth(SIDE_W);
 restoreColWidth(PLAN_W);
+restoreColWidth(SA_W);
 attachColResize($("side-resize"), $("sidebar"), SIDE_W, +1);
 attachColResize($("plan-resize"), $("plan-panel"), PLAN_W, -1);
+attachColResize($("sa-resize"), $("sa-panel"), SA_W, -1);
 
 /* ============================================================
  * 自动更新（仅桌面壳, 经 window.aulosDesktopUpdater 桥调 Rust 命令）:

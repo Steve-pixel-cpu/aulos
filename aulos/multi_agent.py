@@ -508,6 +508,21 @@ class AgentOrchestrator:
             # 第 12 课: worker 本体 = 建 runtime → 跑一轮 → complete_agent
             runtime = None  # L2 要在 except 里读会话历史, 先占位防 NameError
             try:
+                # 任务输入镜像: 子代理的对话流以"用户气泡"开头——前端把
+                # user_message 渲染成它收到的任务全文, 展开的会话才读得懂
+                # （否则第一眼看到的就是子代理自顾自的思考/工具调用）。
+                # 镜像装饰品原则: 失败不影响任务执行。
+                try:
+                    sink = getattr(job, "event_sink", None)
+                    if sink is not None:
+                        # 必须走 subagent_event 信封: 前端只分派这个类型,
+                        # 事件本体在 event 字段里（与其他镜像事件同构）
+                        sink({"type": "subagent_event",
+                              "agent_id": job.manifest.agent_id,
+                              "event": {"type": "user_message",
+                                        "text": job.prompt}})
+                except Exception:
+                    pass
                 runtime = build_subagent_runtime(job)
                 try:
                     summary = runtime.run_turn(job.prompt)

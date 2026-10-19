@@ -28,7 +28,10 @@ function tipShow(el) {
   tip.classList.add("show");
   const r = el.getBoundingClientRect();
   const x = Math.max(8, Math.min(r.left + r.width / 2 - tip.offsetWidth / 2, window.innerWidth - tip.offsetWidth - 8));
-  let y = r.top - tip.offsetHeight - 7;   // 默认在元素上方
+  // 默认在元素上方; data-tip-pos="below" 强制朝下（贴窗口顶缘的按钮,
+  // 上方是系统标题栏按钮区, 朝上会叠上去）; 顶部放不下也自动翻下方
+  const below = el.getAttribute("data-tip-pos") === "below";
+  let y = below ? r.bottom + 7 : r.top - tip.offsetHeight - 7;
   if (y < 8) y = r.bottom + 7;            // 顶部放不下: 移到下方
   tip.style.left = x + "px";
   tip.style.top = y + "px";
