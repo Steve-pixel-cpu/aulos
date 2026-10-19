@@ -1,8 +1,8 @@
 """把 AgentOrchestrator 包装成 Leader 可调用的工具（接线层）。
 
 multi_agent.py 提供编排能力，但 Leader（LLM）只能通过工具调它 —— 本模块
-就是中间那根线: agent_tool / agent_status / agent_reap / agent_list 四个
-工具的 spec、handler 与注册函数。CLI 和 Web 共用同一份。
+就是中间那根线: agent_tool / agent_status / agent_wait / agent_reap /
+agent_list 五个工具的 spec、handler 与注册函数。CLI 和 Web 共用同一份。
 
 命名说明: 工具名是 agent_tool / agent_status / agent_reap / agent_list
 （不是 spawn_agent），Leader 视角这是"操作 subagent 的工具"，动词放前缀
@@ -11,7 +11,9 @@ multi_agent.py 提供编排能力，但 Leader（LLM）只能通过工具调它 
 滤"（multi_agent._tool_specs_for），不靠名字。
 
 并发模型: spawn 只起 daemon 线程立刻返回，Leader 可在对话中途并行派多个
-worker，稍后用 agent_status 轮询；没轮到的由 agent_reap 在收尾时收割。
+worker。取结果优先 agent_wait——一次调用阻塞到终态、结果直达（等待发生
+在 Python 层，不烧模型回合）；agent_status 用于非阻塞偷看；没等到、没
+轮到的由 agent_reap 在收尾时收割。
 """
 import threading
 from pathlib import Path
@@ -93,6 +95,45 @@ agent_status_spec = {
             },
         },
         "required": ["agent_id"],
+    },
+}
+
+agent_wait_spec = {
+    "name": "agent_wait",
+    "description": (
+        "Block until one or more spawned subagents reach a terminal state "
+        "(completed/failed), then return their manifests — completed "
+        "results come back in full within this single call. This replaces "
+        "polling agent_status in a loop: each poll is a whole LLM turn, "
+        "while the waiting here happens in a cheap blocking call. "
+        "mode=all (default) waits for every id; mode=any returns as soon "
+        "as the first one finishes. On timeout returns the current "
+        "running snapshot (no error) — call again or use agent_status. "
+        "After collecting results, call agent_reap to inject them into "
+        "the conversation as tool-result blocks."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "agent_ids": {
+                "type": "string",
+                "description": "Comma-separated agent ids to wait for, "
+                               "e.g. \"a1b2,c3d4\".",
+            },
+            "timeout_s": {
+                "type": "number",
+                "description": "Max seconds to wait (default 180, "
+                               "clamped to 1-600).",
+            },
+            "mode": {
+                "type": "string",
+                "enum": ["all", "any"],
+                "description": "all (default): wait until every agent "
+                               "finishes; any: first terminal state "
+                               "returns.",
+            },
+        },
+        "required": ["agent_ids"],
     },
 }
 
@@ -251,7 +292,9 @@ def spawn_agent_tool(params: dict, workdir: Optional[str] = None) -> str:
         f"agent_id: {manifest.agent_id}\n"
         f"type: {manifest.subagent_type}\n"
         f"status: {manifest.status}\n"
-        f"Poll agent_status with this agent_id to collect the result."
+        f"Call agent_wait with this agent_id to block until it finishes "
+        f"and get the result in one call (preferred). Use agent_status "
+        f"only for a non-blocking peek while doing other work."
     )
 
 
@@ -267,6 +310,38 @@ def agent_status_tool(params: dict, workdir: Optional[str] = None) -> str:
     body = _fmt_manifest(manifest)
     if manifest.status == "running":
         body += "\n(Still running — call agent_status again later.)"
+    return body
+
+
+def agent_wait_tool(params: dict, workdir: Optional[str] = None) -> str:
+    """阻塞等待到终态。终态 → manifest 全文（结果随本次调用直达）;
+    超时 → running 快照 + 重试指引。等待发生在 Python 阻塞层,
+    不消耗模型回合——这是它优于 agent_status 轮询的全部理由。"""
+    orch = get_orchestrator()
+    raw_ids = (params.get("agent_ids") or "").strip()
+    if not raw_ids:
+        return "ERROR: agent_ids is required (comma-separated ids)"
+    agent_ids = [a.strip() for a in raw_ids.split(",") if a.strip()]
+    try:
+        timeout_s = float(params.get("timeout_s") or 180.0)
+    except (TypeError, ValueError):
+        return "ERROR: timeout_s must be a number"
+    timeout_s = max(1.0, min(600.0, timeout_s))
+    mode = params.get("mode") or "all"
+    try:
+        manus = orch.wait_agents(agent_ids, timeout_s=timeout_s, mode=mode)
+    except FileNotFoundError as e:
+        return f"ERROR: {e}"
+    except ValueError as e:
+        return f"ERROR: {e}"
+    blocks = [_fmt_manifest(m) for m in manus]
+    body = "\n\n".join(blocks)
+    if any(m.status in ("running", "pending") for m in manus):
+        body += ("\n(timeout reached, still running — call agent_wait "
+                 "again, or agent_status for a non-blocking peek)")
+    else:
+        body += ("\nAll reached terminal state — call agent_reap to "
+                 "inject results into the conversation.")
     return body
 
 
@@ -312,14 +387,15 @@ def agent_list_tool(params: dict, workdir: Optional[str] = None) -> str:
     return "\n".join(lines)
 
 
-AGENT_TOOL_SPECS = [spawn_agent_spec, agent_status_spec,
+AGENT_TOOL_SPECS = [spawn_agent_spec, agent_status_spec, agent_wait_spec,
                     agent_reap_spec, agent_list_spec]
 
 
 def register_agent_tools(registry):
-    """把四个 agent 工具注册进 ToolRegistry（供 main.build_registry 调用）。"""
+    """把五个 agent 工具注册进 ToolRegistry（供 main.build_registry 调用）。"""
     return (registry
             .register(name="agent_tool", handler=spawn_agent_tool)
             .register(name="agent_status", handler=agent_status_tool)
+            .register(name="agent_wait", handler=agent_wait_tool)
             .register(name="agent_reap", handler=reap_ready_tool)
             .register(name="agent_list", handler=agent_list_tool))

@@ -2,6 +2,7 @@ import json
 import os
 import sys
 import threading
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from enum import Enum
@@ -314,6 +315,75 @@ class AgentOrchestrator:
         self._store_dir = store_dir
         self._workdir = workdir   # 派生的 worker 工具共用的工作目录（Leader 会话的项目）
         self._spawn_fn = spawn_fn if spawn_fn else self._default_spawn_fn
+        # 完成通知: agent_id → Event。spawn 时登记, 终态写入时 set——
+        # wait_agents 据此阻塞等待, 替代 Leader 逐轮 agent_status 轮询
+        # （每轮轮询 = 一整次 LLM 推理; 等待应发生在 Python 阻塞层）。
+        # 跨进程/重启后 Event 不在内存里, wait_agents 回落读盘兜底轮询。
+        self._events: dict[str, threading.Event] = {}
+        self._events_lock = threading.Lock()
+
+    def _event_for(self, agent_id: str) -> threading.Event:
+        """取（或补建）agent 的 Event。补建只为兜底路径的读侧安全:
+        spawn 必经登记, 缺口只出现在跨进程 manifest 上。"""
+        with self._events_lock:
+            ev = self._events.get(agent_id)
+            if ev is None:
+                ev = threading.Event()
+                self._events[agent_id] = ev
+            return ev
+
+    def _signal_terminal(self, agent_id: str) -> None:
+        """终态写入后唤醒所有等待者。Event 补建安全: 即使 wait 侧先建了
+        Event、本进程从未 spawn, set 一样送达。"""
+        self._event_for(agent_id).set()
+
+    # 等待切片: Event.wait 的单次上限（秒）。切片而 sleep 不是一次等满:
+    # 兜底读盘路径靠切片周期性检查磁盘终态; Event 路径切片只增加可忽略
+    # 的唤醒延迟（≤0.2s）。
+    _WAIT_SLICE_S = 0.2
+    # 无 Event（跨进程 manifest）时的读盘兜底周期（秒）。
+    _WAIT_DISK_POLL_S = 0.3
+
+    def wait_agents(self, agent_ids: list[str], timeout_s: float = 180.0,
+                    mode: str = "all") -> list["AgentManifest"]:
+        """阻塞等待一批 agent 到终态（completed/failed）, 返回最新 manifest 快照。
+
+        - 有内存 Event（本进程 spawn 的）: Event.wait 切片阻塞, 零轮询
+        - 无 Event（跨进程/重启后的 manifest）: 按 _WAIT_DISK_POLL_S 读盘兜底
+        - mode="all"（缺省）: 全部到终态才返回; mode="any": 任一到终态即返回
+        - 到时未满足条件: 返回当前状态快照（running 也是合法返回, 不抛错）
+        - 未知 id: 与 get_status 同口径抛 FileNotFoundError
+        """
+        if mode not in ("all", "any"):
+            raise ValueError(f"mode 必须是 all/any, 收到: {mode!r}")
+        deadline = time.monotonic() + max(0.0, float(timeout_s))
+        events = [self._event_for(a) for a in agent_ids]
+
+        def _snapshot() -> list[AgentManifest]:
+            return [self.get_status(a) for a in agent_ids]
+
+        def _terminal(ids_done: list[bool]) -> bool:
+            if mode == "any":
+                return any(ids_done)
+            return all(ids_done)
+
+        def _done_flags(manus: list[AgentManifest]) -> list[bool]:
+            terminal = (AgentStatus.COMPLETED.value, AgentStatus.FAILED.value)
+            return [m.status in terminal for m in manus]
+
+        manus = _snapshot()   # 先查一遍: 已终态的立即满足, 不进等待循环
+        while not _terminal(_done_flags(manus)):
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return manus   # 到时: 返回快照, 不抛错
+            # 同进程 Event + 跨进程读盘双通道: Event.wait 切片醒来的间隙
+            # 顺带查一次盘——兜底覆盖"Event 永不来"的场景（worker 在别的
+            # 进程跑/上次进程崩溃）, 也让混合批次（部分本进程部分外部）
+            # 用同一个循环工作。Event 缺席时 wait(slice) 纯当 sleep 用。
+            for ev in events:
+                ev.wait(min(self._WAIT_SLICE_S, remaining))
+            manus = _snapshot()
+        return manus
 
     def _default_spawn_fn(self, job: AgentJob):
         def _worker():  # ← 内层：线程的身体
@@ -416,6 +486,10 @@ class AgentOrchestrator:
         # 原子写: 其他会话的 reap/list 可能此刻正 glob *.json, 直写会让
         # 读者看到半截 JSON（解析失败被吞, agent 凭空消失）
         atomic_write_text(json_path, manifest_content)
+        # 登记 Event 供 wait_agents 阻塞等待。必须在 spawn_fn 之前:
+        # worker 可能瞬间跑完（_persist_terminal_state 会 set 一个尚不
+        # 存在的 Event, 虽然补建安全, 但先登记让 wait 一开始就拿到正主）。
+        self._event_for(agent_id)
 
         # workdir / api_config: 调用方显式传入优先（Web 按会话传）, 否则用
         # 编排器默认（workdir）/ 全局工厂（api_config → CLI 行为）
@@ -489,6 +563,10 @@ class AgentOrchestrator:
         })
         json_path = self._store_dir / f"{manifest.agent_id}.json"
         atomic_write_text(json_path, new_manifest.model_dump_json())
+        # 终态落盘后唤醒等待者（wait_agents）。放在原子替换之后: 等待者
+        # 醒来读到的必然是完整的新 manifest。成功/失败/部分结果三条收尾
+        # 路径都经此处, 单点覆盖。
+        self._signal_terminal(manifest.agent_id)
 
 
     def complete_agent(self, agent_id: str, result:str):

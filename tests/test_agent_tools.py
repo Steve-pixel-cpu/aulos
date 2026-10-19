@@ -26,6 +26,7 @@ from aulos.agent_tools import (
     DEFAULT_SESSION,
     agent_list_tool,
     agent_status_tool,
+    agent_wait_tool,
     bind_agent_to_session,
     get_orchestrator,
     reap_ready_tool,
@@ -77,11 +78,12 @@ def fake_orchestrator():
 # 1. spec ↔ registry ↔ 白名单 一致性
 # ------------------------------------------------------------
 
-def test_tools_include_agent_quartet():
+def test_tools_include_agent_quintet():
     from aulos.skills import sync_skill_tools
     sync_skill_tools(TOOLS, [])   # 归零技能 spec: server 导入时可能已同步真实技能
     names = [s["name"] for s in TOOLS]
-    assert names[-4:] == ["agent_tool", "agent_status", "agent_reap", "agent_list"]
+    assert names[-5:] == ["agent_tool", "agent_status", "agent_wait",
+                          "agent_reap", "agent_list"]
 
 
 def test_agent_tool_specs_match_registry_handlers():
@@ -93,7 +95,8 @@ def test_agent_tool_specs_match_registry_handlers():
 def test_agent_tools_absent_from_worker_whitelists():
     """递归防护: 任何角色的白名单都不含 agent 工具（名字层面）。"""
     for role, tools in TOOL_WHITELIST.items():
-        for t in ("agent_tool", "agent_status", "agent_reap", "agent_list"):
+        for t in ("agent_tool", "agent_status", "agent_wait",
+                  "agent_reap", "agent_list"):
             assert t not in tools, f"{role}/{t}"
 
 
@@ -599,3 +602,107 @@ def test_default_api_config_tolerates_empty_key(monkeypatch):
     from aulos.multi_agent import _default_api_config
     key, url, model = _default_api_config()
     assert key == ""
+
+
+# ------------------------------------------------------------
+# 10. agent_wait 工具层: 阻塞等待 + 终态直接返回结果
+#     动机: Leader 逐轮 agent_status 轮询 = 每轮一整次 LLM 推理。
+#     agent_wait 把等待压进一次工具调用的 Python 阻塞里。
+# ------------------------------------------------------------
+
+def _spawn_only(description="等待目标", prompt="p"):
+    out = spawn_agent_tool({"description": description, "prompt": prompt})
+    return out.split("agent_id: ")[1].split("\n")[0]
+
+
+def test_wait_tool_spec_in_specs_and_registry():
+    """spec ↔ handler ↔ 注册三方一致（与既有四件套同口径）。"""
+    from aulos.main import build_registry
+    names = [s["name"] for s in AGENT_TOOL_SPECS]
+    assert names == ["agent_tool", "agent_status", "agent_wait",
+                     "agent_reap", "agent_list"]
+    registry = build_registry()
+    assert "agent_wait" in registry._handlers
+
+
+def test_wait_tool_absent_from_worker_whitelists():
+    """递归防护: 白名单不含 agent_wait。"""
+    from aulos.multi_agent import TOOL_WHITELIST
+    for role, tools in TOOL_WHITELIST.items():
+        assert "agent_wait" not in tools, f"{role}"
+
+
+def test_wait_tool_returns_completed_result_directly():
+    """已完成 → 一次调用直接拿到 result 全文（无需再 status/reap）。"""
+    agent_id = _spawn_and_complete(result="终态结果原文")
+    out = agent_wait_tool({"agent_ids": agent_id, "timeout_s": 10})
+    assert '"status": "completed"' in out
+    assert "终态结果原文" in out
+    # 引导 Leader 收尾: 结果注入对话仍走 reap
+    assert "agent_reap" in out
+
+
+def test_wait_tool_blocks_until_terminal():
+    """running 起步 → 中途 completed → wait 返回时已是终态。"""
+    import threading, time as _t
+    agent_id = _spawn_only()
+    orch = agent_tools._toolbox._orchestrator
+
+    def _late():
+        _t.sleep(0.3)
+        orch.complete_agent(agent_id, "迟到但完整")
+
+    threading.Thread(target=_late, daemon=True).start()
+    out = agent_wait_tool({"agent_ids": agent_id, "timeout_s": 10})
+    assert '"status": "completed"' in out
+    assert "迟到但完整" in out
+
+
+def test_wait_tool_timeout_returns_running_with_retry_hint():
+    """超时 → running 快照 + 明确的可重试指引, 不抛错。"""
+    agent_id = _spawn_only("慢任务")
+    out = agent_wait_tool({"agent_ids": agent_id, "timeout_s": 1})
+    assert '"status": "running"' in out
+    assert "agent_wait" in out   # 提示可以再次 wait
+
+
+def test_wait_tool_multiple_ids_and_mode_any():
+    """多 id: 逗号分隔字符串; mode=any 任一终态即返回。"""
+    fast = _spawn_only("快")
+    slow = _spawn_only("慢")
+    orch = agent_tools._toolbox._orchestrator
+    orch.complete_agent(fast, "快的结果")
+    out = agent_wait_tool({"agent_ids": f"{slow},{fast}",
+                           "timeout_s": 10, "mode": "any"})
+    assert '"status": "completed"' in out
+    assert "快的结果" in out
+
+
+def test_wait_tool_requires_ids():
+    assert "ERROR" in agent_wait_tool({})
+
+
+def test_wait_tool_rejects_bad_mode():
+    agent_id = _spawn_only()
+    out = agent_wait_tool({"agent_ids": agent_id, "timeout_s": 1,
+                           "mode": "sometimes"})
+    assert "ERROR" in out
+
+
+def test_wait_tool_timeout_clamped():
+    """timeout_s 钳制到 [1, 600]: 传 0 不炸, 传负数也不炸。"""
+    agent_id = _spawn_only()
+    out = agent_wait_tool({"agent_ids": agent_id, "timeout_s": 0})
+    assert "agent_id" in out   # 正常返回（running 快照或终态）, 非 ERROR
+
+
+def test_wait_tool_unknown_id_errors():
+    out = agent_wait_tool({"agent_ids": "ghost", "timeout_s": 1})
+    assert "ERROR" in out and "ghost" in out
+
+
+def test_spawn_text_now_recommends_wait_not_poll():
+    """spawn 返回文案教 Leader 用 agent_wait（不再教轮询）。"""
+    out = spawn_agent_tool({"description": "d", "prompt": "p"})
+    assert "agent_wait" in out
+    assert "Poll agent_status" not in out

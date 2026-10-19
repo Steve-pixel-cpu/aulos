@@ -11,6 +11,8 @@
 """
 
 import json
+import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -354,3 +356,130 @@ def test_complete_agent_cannot_overwrite_failed(tmp_path):
     status = orch.get_status(m.agent_id)
     assert status.status == "failed"
     assert status.error == "先到的失败"
+
+
+# ------------------------------------------------------------
+# 9. wait_agents（阻塞等待终态 — agent_wait 工具的编排层基座）
+#    动机: Leader（LLM）每轮 agent_status 轮询 = 一整轮模型推理。
+#    等待应发生在最便宜的层（Python 阻塞）, 而不是最贵的层（LLM 回合）。
+# ------------------------------------------------------------
+
+def test_wait_returns_immediately_when_already_completed(tmp_path):
+    """终态已写入（Event 已 set）→ 立即返回 completed manifest, 不等满 timeout。"""
+    orch, _ = make_orchestrator(tmp_path / "agents")
+    m = orch.spawn_agent("d", "p")
+    orch.complete_agent(m.agent_id, "结论: bug 在 auth.py:42")
+
+    t0 = time.monotonic()
+    out = orch.wait_agents([m.agent_id], timeout_s=10)
+    elapsed = time.monotonic() - t0
+
+    assert elapsed < 5          # 立即返回, 不是睡满 timeout
+    assert len(out) == 1
+    assert out[0].status == "completed"
+    assert out[0].result == "结论: bug 在 auth.py:42"
+
+
+def test_wait_unblocks_when_worker_completes_mid_wait(tmp_path):
+    """等待中途 worker 写终态 → Event 触发解除阻塞（不是靠超时兜底返回）。"""
+    orch, _ = make_orchestrator(tmp_path / "agents")
+    m = orch.spawn_agent("d", "p")
+
+    def _late_complete():
+        time.sleep(0.3)
+        orch.complete_agent(m.agent_id, "迟来的结果")
+
+    threading.Thread(target=_late_complete, daemon=True).start()
+    out = orch.wait_agents([m.agent_id], timeout_s=10)
+
+    assert out[0].status == "completed"
+    assert out[0].result == "迟来的结果"
+
+
+def test_wait_timeout_returns_running_snapshot(tmp_path):
+    """到时未完 → 返回 running 快照, 不抛错。"""
+    orch, _ = make_orchestrator(tmp_path / "agents")
+    m = orch.spawn_agent("慢任务", "p")
+
+    out = orch.wait_agents([m.agent_id], timeout_s=1)
+
+    assert len(out) == 1
+    assert out[0].status == "running"
+
+
+def test_wait_falls_back_to_disk_poll_without_event(tmp_path):
+    """无内存 Event（模拟跨进程/重启后的 manifest）→ 读盘兜底轮询也能等到终态。"""
+    orch, _ = make_orchestrator(tmp_path / "agents")
+    m = orch.spawn_agent("d", "p")
+    # 模拟"不是本进程派的": 清掉本进程 Event, 只留磁盘 manifest
+    orch._events.clear()
+
+    def _late_complete():
+        time.sleep(0.3)
+        # 直接写终态文件, 模拟另一进程的 worker 收尾
+        fresh = orch.get_status(m.agent_id)
+        from aulos.multi_agent import AgentStatus
+        orch._persist_terminal_state(
+            manifest=fresh, status=AgentStatus.COMPLETED.value,
+            result="别的进程写的结果", error=None)
+
+    threading.Thread(target=_late_complete, daemon=True).start()
+    out = orch.wait_agents([m.agent_id], timeout_s=10)
+
+    assert out[0].status == "completed"
+    assert out[0].result == "别的进程写的结果"
+
+
+def test_wait_mode_any_returns_on_first_terminal(tmp_path):
+    """mode=any: 两个 agent, 一个先到终态就立即返回（两个都在结果里）。"""
+    orch, _ = make_orchestrator(tmp_path / "agents")
+    slow = orch.spawn_agent("慢", "p")
+    fast = orch.spawn_agent("快", "p")
+    orch.complete_agent(fast.agent_id, "先完成")
+
+    t0 = time.monotonic()
+    out = orch.wait_agents([slow.agent_id, fast.agent_id],
+                           timeout_s=10, mode="any")
+    elapsed = time.monotonic() - t0
+
+    assert elapsed < 5
+    by_id = {m.agent_id: m for m in out}
+    assert by_id[fast.agent_id].status == "completed"
+    assert by_id[slow.agent_id].status == "running"
+
+
+def test_wait_mode_all_waits_for_every_agent(tmp_path):
+    """mode=all（缺省）: 全部到终态才返回。"""
+    orch, _ = make_orchestrator(tmp_path / "agents")
+    a = orch.spawn_agent("a", "p")
+    b = orch.spawn_agent("b", "p")
+    orch.complete_agent(a.agent_id, "done")
+
+    def _late():
+        time.sleep(0.3)
+        orch.fail_agent(b.agent_id, "炸了")
+
+    threading.Thread(target=_late, daemon=True).start()
+    out = orch.wait_agents([a.agent_id, b.agent_id], timeout_s=10)  # 缺省 all
+
+    by_id = {m.agent_id: m for m in out}
+    assert by_id[a.agent_id].status == "completed"
+    assert by_id[b.agent_id].status == "failed"   # failed 也是终态, 等它
+
+
+def test_wait_unknown_id_raises(tmp_path):
+    """wait 不存在的 id: 与 get_status 同口径, 抛 FileNotFoundError。"""
+    orch, _ = make_orchestrator(tmp_path / "agents")
+    with pytest.raises(FileNotFoundError):
+        orch.wait_agents(["ghost"], timeout_s=1)
+
+
+def test_wait_failed_terminal_does_not_hang(tmp_path):
+    """终态是 failed（Event 同样 set）→ 立即返回, 不挂到超时。"""
+    orch, _ = make_orchestrator(tmp_path / "agents")
+    m = orch.spawn_agent("d", "p")
+    orch.fail_agent(m.agent_id, "启动就炸")
+
+    out = orch.wait_agents([m.agent_id], timeout_s=10)
+    assert out[0].status == "failed"
+    assert out[0].error == "启动就炸"
