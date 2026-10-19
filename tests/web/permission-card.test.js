@@ -125,6 +125,18 @@ test("死卡兜底: 登记被清但卡未定格时, 迟到点击把卡就地定�
   assert.ok(card.classList.contains("allowed"), "标记为本次点击的方向");
 });
 
+test("折叠分组隐藏组内审批卡: 定格后的审批卡随工具行一起折进组里", () => {
+  // 2026-10-20 用户实测: 两条 bash 审批（允许/拒绝）批复定格后轮次收口,
+  // 分组折叠但审批卡没跟着折进组——折叠隐藏清单（.tool-row/.think-row/
+  // .td-wrap/.to-term/.todo-list）漏了 .perm-row, 已定格的审批卡游离在
+  // 折叠头下方。契约: 折叠组隐藏组内一切过程记录, 审批卡（含定格态）
+  // 与其工具行同进退。jsdom 不计算样式, 就 app.css 源文断言选择器契约。
+  const css = fs.readFileSync(path.join(STATIC, "app.css"), "utf-8");
+  assert.match(css,
+    /\.tool-group\.collapsed[^{}]*\.perm-row[^{}]*\{[^{}]*display:\s*none/,
+    "折叠隐藏清单需包含 .perm-row（组内审批卡随折叠隐藏）");
+});
+
 test("无工具卡时审批卡退回列尾（不挂分组）", () => {
   const window = boot();
   const api = window.__api;

@@ -1018,9 +1018,13 @@
     margin: 2px 0 6px 9px; padding: calc(3px * var(--density)) 9px;
     font-size: calc(11.5px * var(--fs-ui)); opacity: .85;
   }
-  /* 折叠: 收起已结束的行与附属面板（diff/输出/todo/思考行）, 运行中的行保持可见 */
+  /* 折叠: 收起已结束的行与附属面板（diff/输出/todo/思考行）, 运行中的行保持可见。
+   * 审批卡(.perm-row)与其工具行同进退: 历史上它落在 .tg-body 内紧跟工具行,
+   * 但不在隐藏清单里——轮次收口折叠后"已允许/已拒绝"卡游离在折叠头下方
+   * (2026-10-20 实测)。等审批的分组本来就强制展开, 这里只影响定格态。 */
   .tool-group.collapsed .tg-body .tool-row:not([data-state="run"]),
   .tool-group.collapsed .tg-body .think-row,
+  .tool-group.collapsed .tg-body .perm-row,
   .tool-group.collapsed .td-wrap,
   .tool-group.collapsed .to-term,
   .tool-group.collapsed .todo-list { display: none; }
