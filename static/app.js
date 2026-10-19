@@ -413,6 +413,35 @@ function renderMd(text) {
 const COPY_SVG = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg>';
 const CHECK_SVG = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12.5l5 5 10-11"/></svg>';
 
+/* 长代码块折叠: 超高时限高 + 底部渐隐, 点击展开。
+ * 幂等: 每个 pre 只跑一次(data-dec 挡在外层);
+ * 展开方向: 高度变化发生在 wrap 上, scrollHeight 由 pre 提供 */
+const CODE_COLLAPSE_MAX = 420;
+function setupCollapse(wrap, pre) {
+  requestAnimationFrame(() => {
+    if (pre.scrollHeight <= CODE_COLLAPSE_MAX + 80) return;  // 短块不折叠, 80px 缓冲避免"刚超一点就折叠"的尴尬
+    wrap.classList.add("folded");
+    pre.style.maxHeight = CODE_COLLAPSE_MAX + "px";
+    if (wrap.querySelector(".code-expand")) return;  // 流式重建 DOM 后重复保护
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "code-expand";
+    btn.innerHTML = CHEVRON_SVG + "<span>展开</span>";
+    const fade = document.createElement("div");
+    fade.className = "code-body-fade";
+    wrap.appendChild(fade);
+    let open = false;
+    btn.addEventListener("click", () => {
+      open = !open;
+      wrap.classList.toggle("open", open);
+      btn.classList.toggle("open", open);
+      btn.querySelector("span").textContent = open ? "收起" : "展开";
+    });
+    wrap.appendChild(btn);
+  });
+}
+const CHEVRON_SVG = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
+
 function decorateCode(root) {
   if (!root || !root.querySelectorAll) return;
   root.querySelectorAll("pre:not([data-dec])").forEach(pre => {
@@ -428,6 +457,7 @@ function decorateCode(root) {
     }
     const wrap = document.createElement("div");
     wrap.className = "code-wrap";
+    wrap.dataset.lang = (lang || "text").toLowerCase();
     const head = document.createElement("div");
     head.className = "code-head";
     head.innerHTML =
@@ -451,6 +481,7 @@ function decorateCode(root) {
     pre.replaceWith(wrap);
     wrap.appendChild(head);
     wrap.appendChild(pre);
+    setupCollapse(wrap, pre);
   });
 }
 

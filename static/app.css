@@ -884,6 +884,7 @@
   .code-wrap {
     border: 1px solid var(--border); border-radius: var(--r-md);
     overflow: hidden; margin: .6em 0; background: var(--code-bg);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, .10), 0 4px 14px rgba(0, 0, 0, .07);
   }
   .code-head {
     display: flex; align-items: center; justify-content: space-between;
@@ -905,12 +906,22 @@
   .code-copy.copied { color: var(--ok); }
   .bubble pre {
     background: var(--code-bg); margin: 0; border-radius: 0;
-    padding: 13px 15px; overflow-x: auto;
+    padding: 14px 16px; overflow-x: auto;
+    transition: max-height .3s cubic-bezier(.16, 1, .3, 1);
   }
   .bubble pre code {
     background: none; border: none; padding: 0;
-    font-size: calc(12.5px * var(--fs-chat)); line-height: 1.6; color: var(--text);
+    font-size: calc(12.5px * var(--fs-chat)); line-height: 1.65; color: var(--text);
   }
+  /* 长代码块折叠态: 限高 + 底部渐隐暗示, 展开由 .open 解除 */
+  .code-wrap { position: relative; }
+  .code-wrap.folded .code-body-fade {
+    position: absolute; left: 1px; right: 1px; bottom: 1px; height: 56px;
+    background: linear-gradient(180deg, transparent, var(--code-bg) 78%);
+    pointer-events: none; border-radius: 0 0 calc(var(--r-md) - 1px) calc(var(--r-md) - 1px);
+  }
+  .code-wrap.open pre { max-height: none; }
+  .code-wrap.open .code-body-fade { display: none; }
   /* hljs 语法配色（跟随主题令牌） */
   .hljs-comment, .hljs-quote { color: var(--hl-comment); font-style: italic; }
   .hljs-keyword, .hljs-selector-tag, .hljs-literal, .hljs-doctag, .hljs-formula { color: var(--hl-keyword); }
@@ -3342,10 +3353,28 @@ body.col-resizing, body.col-resizing * { cursor: col-resize !important; }
   }
   .code-lang { display: inline-flex; align-items: center; gap: 7px; }
   .code-lang::before {
-    content: ""; width: 8px; height: 8px; border-radius: 2.5px;
-    background: linear-gradient(135deg, var(--accent), var(--accent-deep));
+    content: ""; width: 8px; height: 8px; border-radius: 50%;
+    background: var(--lang-dot, var(--accent));
+    box-shadow: 0 0 6px color-mix(in srgb, var(--lang-dot, var(--accent)) 60%, transparent);
     flex: none;
   }
+  /* 语言→徽标色: 低饱和同系色相区分, 与深浅色主题都兼容 */
+  .code-wrap[data-lang="markdown"], .code-wrap[data-lang="md"],
+  .code-wrap[data-lang="text"], .code-wrap[data-lang="txt"] { --lang-dot: #7c8cf8; }
+  .code-wrap[data-lang="python"], .code-wrap[data-lang="py"] { --lang-dot: #4fb8a8; }
+  .code-wrap[data-lang="javascript"], .code-wrap[data-lang="js"],
+  .code-wrap[data-lang="typescript"], .code-wrap[data-lang="ts"] { --lang-dot: #d9a84e; }
+  .code-wrap[data-lang="json"], .code-wrap[data-lang="yaml"], .code-wrap[data-lang="yml"],
+  .code-wrap[data-lang="toml"] { --lang-dot: #c98b5f; }
+  .code-wrap[data-lang="html"], .code-wrap[data-lang="xml"],
+  .code-wrap[data-lang="css"], .code-wrap[data-lang="scss"] { --lang-dot: #d977a0; }
+  .code-wrap[data-lang="bash"], .code-wrap[data-lang="shell"], .code-wrap[data-lang="sh"],
+  .code-wrap[data-lang="powershell"], .code-wrap[data-lang="ps1"] { --lang-dot: #8bbf5f; }
+  .code-wrap[data-lang="sql"] { --lang-dot: #6fb3d9; }
+  .code-wrap[data-lang="go"] { --lang-dot: #6fc9c0; }
+  .code-wrap[data-lang="rust"], .code-wrap[data-lang="rs"] { --lang-dot: #d98b6f; }
+  .code-wrap[data-lang="java"] { --lang-dot: #c97b7b; }
+  .code-wrap[data-lang="c"], .code-wrap[data-lang="cpp"], .code-wrap[data-lang="h"] { --lang-dot: #7b9bc9; }
   .code-copy {
     border: 1px solid var(--border); border-radius: 6px;
   }
@@ -3354,6 +3383,24 @@ body.col-resizing, body.col-resizing * { cursor: col-resize !important; }
     color: var(--accent);
     background: var(--accent-soft);
   }
+  /* 展开按钮: 底部居中悬浮胶囊, 盖在渐隐遮罩上 */
+  .code-expand {
+    position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%);
+    display: inline-flex; align-items: center; gap: 5px;
+    border: 1px solid var(--border-strong); border-radius: 999px;
+    padding: 4px 13px; font-size: calc(11.5px * var(--fs-ui)); color: var(--text-2);
+    background: var(--pop-bg);
+    -webkit-backdrop-filter: blur(12px) saturate(1.4); backdrop-filter: blur(12px) saturate(1.4);
+    box-shadow: var(--shadow-md);
+    transition: all .15s;
+  }
+  .code-expand:hover {
+    border-color: var(--accent-border); color: var(--accent);
+    background: var(--accent-soft);
+  }
+  .code-expand svg { transition: transform .25s cubic-bezier(.16, 1, .3, 1); }
+  .code-expand.open svg { transform: rotate(180deg); }
+  .code-wrap.open .code-body-fade { opacity: 0; transition: opacity .2s; }
 
   /* ---------- ⑤ 欢迎页: 水印光晕 + 渐变问候语 + 建议 chips ---------- */
   .empty-state .watermark {
