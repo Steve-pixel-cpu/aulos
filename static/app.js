@@ -1116,6 +1116,13 @@ function makeDropdown(trigger, opts) {
         pop.appendChild(s);
         continue;
       }
+      if (it.head) {
+        const h = document.createElement("div");
+        h.className = "dd-opt dd-head plain";
+        h.textContent = it.head;
+        pop.appendChild(h);
+        continue;
+      }
       const o = document.createElement("button");
       o.type = "button";
       o.className = "dd-opt" + (it.desc ? " rich" : "") + (it.on ? " on" : "");
@@ -1364,7 +1371,12 @@ function modelItems() {
   const items = [];
   for (const p of (state.providerCfg?.providers || [])) {
     if (p.enabled === false) continue;
-    for (const m of (p.models || [])) {
+    const ms = p.models || [];
+    if (!ms.length) continue;
+    // 按供应商分组: 组头（品牌名）+ 组内模型, 多供应商时不再平铺成一锅粥
+    if (items.length) items.push({ sep: true });
+    items.push({ head: p.name || "未命名供应商" });
+    for (const m of ms) {
       items.push({
         value: p.id + "|" + m.id,
         label: m.name || prettyModel(m.id),   // 只显示模型名, 不带供应商前缀
