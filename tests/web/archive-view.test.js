@@ -19,6 +19,15 @@ function sess(id, { archived = false, workdir = null, title = null } = {}) {
    经真实 loadSessions 灌入 state（顶层数据通道, 零旁路） */
 async function bootWith(sessions, fetchCalls) {
   const { window } = loadApp();
+  /* 桩掉 WebSocket: loadSessions 成功 → init 自动 selectSession → connectWs。
+   * 不桩的话 jsdom 会真实 TCP 连 127.0.0.1:8000, 失败后 scheduleReconnect
+   * 指数退避 40 次(单次最长 10s), 事件循环被 timer 链吊住——13 个用例
+   * 几百毫秒跑完, 进程却要再挂几分钟才退出（npm run test:web 超时的真因）。 */
+  window.WebSocket = class {
+    constructor() {}
+    close() {}
+    send() {}
+  };
   window.fetch = async (url, opt = {}) => {
     fetchCalls.push({ url: String(url), opt: opt || {} });
     const isList = String(url).includes("/api/sessions")
