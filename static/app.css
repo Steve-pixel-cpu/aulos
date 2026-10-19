@@ -3631,3 +3631,22 @@ body.col-resizing, body.col-resizing * { cursor: col-resize !important; }
     border-left-color: color-mix(in srgb, var(--text) 11%, transparent);
   }
   .tool-group:not(.collapsed) .tg-head { margin-bottom: 2px; }
+
+  /* ============ 子智能体卡片（agent_tool 派出的 subagent） ============ */
+  /* 卡片行: 在普通工具行上加左侧竖色条 + 可点展开的手感 */
+  .tool-row.sa-card { cursor: pointer; border-left: 2px solid var(--accent); padding-left: 7px; }
+  .tool-row.sa-card .tname2 { color: var(--accent); }
+  .tool-row.sa-card.sa-open { border-left-color: var(--accent); }
+  /* 运行中转圈: 插在图标左侧, 结束时移除 */
+  .sa-spin {
+    flex: none; width: 11px; height: 11px; border-radius: 50%;
+    border: 2px solid var(--border-strong); border-top-color: var(--accent);
+    animation: spin .8s linear infinite;
+  }
+  /* 嵌套对话流: 子代理自己的思考/工具调用, 缩进 + 左边线, 与工具分组同语言 */
+  .sa-body { margin: 2px 0 6px 9px; border-left: 2px solid var(--border); padding-left: 6px; }
+  .sa-stream { min-width: 0; }
+  /* 嵌套流内的工具分组再收一层缩进, 视觉上归属子代理卡片 */
+  .sa-stream .tool-group { margin-left: 24px; }
+  .sa-stream .think-row { margin-left: 24px; }
+  .sa-stream .msg { margin-left: 24px; }

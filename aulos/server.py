@@ -139,7 +139,7 @@ from aulos.skills import (SkillError, delete_user_skill, discover_skills,
                     match_skill_command, register_skill_tools,
                     render_skills_section, skill_info, sync_skill_tools)
 from aulos.multi_agent import set_api_config_provider
-from aulos.agent_tools import get_orchestrator
+from aulos.agent_tools import get_orchestrator, set_subagent_event_bridge
 import aulos.radio.music as _music
 import aulos.radio.bilibili as _bili
 
@@ -392,6 +392,27 @@ def _reconcile_orphan_agents() -> None:
 
 
 app.router.add_event_handler("startup", _reconcile_orphan_agents)
+
+
+def _subagent_event_sink(session_id: Optional[str]):
+    """agent_tools 的 spawn 路径经此捕获当前会话的事件 sink（Web 端）。
+
+    返回的 callable 可从任意线程调用（worker 线程事件镜像）: 逐个 emit
+    包 try/except, 单个连接断开不影响其余订阅者。CLI 未设置 bridge,
+    不会走到这里。"""
+    if not session_id or session_id not in _sessions:
+        return None
+    web_session = _sessions[session_id]
+    if not web_session.emits:
+        return None
+
+    def _sink(payload: dict) -> None:
+        web_session.broadcast(payload)
+
+    return _sink
+
+
+set_subagent_event_bridge(_subagent_event_sink)
 
 
 class EmittingToolRegistry(ToolRegistry):

@@ -76,6 +76,7 @@ function runOf(id) {
       reconnected: false,     // 当前连接是否重连（busy_sync 的 busy=false 校正只信重连）
       rlNote: null,           // 限流退避提示行（原地更新, 轮次有进展/收口即撤）
       awaiting: false,        // 忙碌中且正处于等待模型输出的空窗（await_output 起止）
+      subagents: {},          // 子智能体卡片路由: agent_id → 卡片（subagent_event 按 id 落进对应卡片的嵌套流）
     };
   }
   return state.runs[id];
@@ -319,6 +320,7 @@ let pinnedCol = null;   // 历史回放期间固定写入列（JS 单线程, 用
 let pinnedRun = null;   // 回放期间 toolResultIndex 写入的目标 run
 
 function colOf(id) {
+  if (typeof id === "string" && id.startsWith("sub:")) return saColFor(id);
   let col = document.getElementById("msg-col-" + id);
   if (!col) {
     col = document.createElement("div");

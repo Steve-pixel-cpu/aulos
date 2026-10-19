@@ -17,7 +17,7 @@ worker。取结果优先 agent_wait——一次调用阻塞到终态、结果直
 """
 import threading
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 from aulos.multi_agent import AgentOrchestrator
 
@@ -45,8 +45,10 @@ spawn_agent_spec = {
         "explore/plan workers are read-only and stay available in plan "
         "mode — delegate investigation there instead of grinding inline.\n"
         "The worker cannot spawn further subagents. Returns immediately "
-        "with the agent id; check agent_status later to collect the result "
-        "(do useful local work in between — do not poll in a tight loop)."
+        "with the agent id. For parallel investigation, issue several "
+        "agent_tool calls in the SAME message, then collect them all "
+        "with a single agent_wait call listing every id (preferred — "
+        "one blocking call instead of a poll loop)."
     ),
     "input_schema": {
         "type": "object",
@@ -265,11 +267,39 @@ def _fmt_manifest(m) -> str:
     return json.dumps(d, ensure_ascii=False, indent=2)
 
 
+# --- 前端事件桥: spawn 同步路径上捕获当前 turn 的事件 sink ---
+
+# bridge(session_id) -> sink 或 None。由宿主（Web 端 server）注入; CLI 不
+# 设置 → 恒 None → job.event_sink=None → worker 完全静默（行为不变）。
+# 放 agent_tools 而非 multi_agent: 与 set_api_config_provider 同款"宿主
+# 注入钩子"模式, 且 spawn_agent_tool 是唯一组装 job 的接线点。
+_event_bridge: Optional[Callable] = None
+
+
+def set_subagent_event_bridge(bridge: Optional[Callable]) -> None:
+    """宿主注入事件桥。bridge(session_id) 须返回当前会话的事件 sink
+    （callable(dict)），取不到（无连接/无绑定）返回 None。"""
+    global _event_bridge
+    _event_bridge = bridge
+
+
+def _current_event_sink() -> Optional[Callable]:
+    if _event_bridge is None:
+        return None
+    try:
+        return _event_bridge(current_session_id())
+    except Exception:
+        return None
+
+
 def spawn_agent_tool(params: dict, workdir: Optional[str] = None) -> str:
     orch = get_orchestrator()
     # workdir 由调用点按次传入: CLI = None（进程 cwd）; Web = 当前会话的项目
     # 目录（EmittingToolRegistry 从 dispatch.current_workdir() 取）。走参数
     # 而非先 set_workdir 再 spawn: orchestrator 跨会话共享, 参数传递无竞态。
+    # 事件 sink 同样在此捕获（此刻仍在 Leader turn 线程、dispatch 绑定
+    # 还在; worker 线程没有绑定, 取不到 contextvar, 必须显式传）。
+    manifest = None
     try:
         manifest = orch.spawn_agent(
             description=params.get("description", ""),
@@ -281,6 +311,7 @@ def spawn_agent_tool(params: dict, workdir: Optional[str] = None) -> str:
             # worker 跟随派生会话的模型/供应商（会话专属模型对子代理同样
             # 生效）; CLI / 无会话绑定时为 None → 回落全局工厂, 行为不变
             api_config=worker_api_config() or current_session_api_config(),
+            event_sink=_current_event_sink(),
         )
     except ValueError as e:
         return f"ERROR: {e}"
@@ -309,7 +340,7 @@ def agent_status_tool(params: dict, workdir: Optional[str] = None) -> str:
         return f"ERROR: no such agent: {agent_id}"
     body = _fmt_manifest(manifest)
     if manifest.status == "running":
-        body += "\n(Still running — call agent_status again later.)"
+        body += "\n(Still running — prefer agent_wait to block until it finishes.)"
     return body
 
 

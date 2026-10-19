@@ -131,6 +131,9 @@ function handleServerMessage(msg, sid) {
     case "thinking_changed":   onThinkingChanged(msg, sid); break;
     case "model_changed":      onModelChanged(msg, sid); break;
     case "turn_done":          onTurnDone(msg); break;
+    case "subagent_started":   onSubagentStarted(msg, sid); break;
+    case "subagent_event":     onSubagentEvent(msg, sid); break;
+    case "subagent_done":      onSubagentDone(msg, sid); break;
     case "session_renamed":    onSessionRenamed(msg); break;
     case "session_unarchived": onSessionUnarchived(msg); break;
     case "error":              onError(msg); break;
@@ -205,6 +208,11 @@ const TOOL_META = {
   todo: { label: "任务清单", icon: ICON_TODO },
   grep: { label: "搜索内容", icon: ICON_SEARCH },
   glob: { label: "查找文件", icon: ICON_GLOB },
+  agent_tool:  { label: "子智能体",   icon: ICON_TOOL },
+  agent_status:{ label: "子代理状态", icon: ICON_TOOL },
+  agent_wait:  { label: "等待子代理", icon: ICON_TOOL },
+  agent_reap:  { label: "收割子代理", icon: ICON_TOOL },
+  agent_list:  { label: "子代理列表", icon: ICON_TOOL },
 };
 
 function fmtDuration(ms) {
@@ -866,6 +874,175 @@ function onToolResult(msg, sid) {
   }
   // （msg.result_meta 由 completeToolCard 消费: write_file 的 diff 面板）
   if (run.activeToolCard === card) run.activeToolCard = null;
+  // agent_tool 的结果文本里带 agent_id: 登记路由表, 后续 subagent_event 按 id 找卡
+  if (card && card.dataset.tool === "agent_tool" && !msg.is_error && msg.output) {
+    const m = /agent_id:\s*([A-Za-z0-9_-]+)/.exec(String(msg.output));
+    if (m) registerSubagentCard(run, m[1], card);
+  }
+}
+
+/* ============================================================
+ * 子智能体卡片: agent_tool 派出的 subagent 在主对话流里渲染成
+ * 一张专属卡片（图标 + 子智能体 · 类型 · 任务描述 + 转圈）, 点头部
+ * 展开查看子代理自己的对话流（思考/工具调用, 事件经后端镜像推送）。
+ *
+ * 实现关键: 子代理内部事件走伪会话 id（"sub:" + agent_id）直接复用
+ * 现有 onTextDelta、onThinking 等全套机制——runOf(伪 id) 惰性
+ * 建立独立运行态（独立 curBubble/curThinking/liveToolCards）, 事件
+ * 写进卡片 body 里的嵌套 .sa-stream 列, 与主会话的流式指针互不干扰;
+ * 切会话显隐只作用于顶层 .msg-col, 嵌套列不受影响。
+ * ============================================================ */
+const SUB_TYPE_LABEL = {
+  explore: "探索", plan: "规划", general: "通用", verification: "验证",
+};
+
+function saColOf(card) {
+  let col = card._saStream;
+  if (!col || !col.isConnected) {
+    col = card._saStream = card.querySelector(".sa-stream");
+  }
+  return col;
+}
+
+/* agent_tool 工具卡 → 子智能体卡片升级: 建 head/body/stream 结构,
+ * 登记 agent_id 路由。历史回放等无后续事件的场景保持原工具卡样子。 */
+function upgradeToSubagentCard(card, agentId) {
+  if (!card || card._saAgentId) return;
+  card._saAgentId = agentId;
+  card.classList.add("sa-card");
+  const meta = card.querySelector(".t-ico");
+  if (meta) meta.classList.add("sa-spin-host");
+  const spin = document.createElement("span");
+  spin.className = "spin sa-spin";
+  card.insertBefore(spin, meta);
+  const desc = card.querySelector(".tdesc");
+  const input = card.dataset.input || "";
+  try {
+    const d = JSON.parse(input);
+    if (desc && d && typeof d.subagent_type === "string") {
+      const zh = SUB_TYPE_LABEL[d.subagent_type] || d.subagent_type;
+      desc.textContent = zh + " · " + (d.description || "");
+    }
+  } catch (e) { /* 非法 JSON: 保留原描述 */ }
+  // 可折叠 body: 嵌套列收子代理的对话流
+  const body = document.createElement("div");
+  body.className = "sa-body";
+  body.hidden = true;
+  const stream = document.createElement("div");
+  stream.className = "sa-stream";
+  body.appendChild(stream);
+  card.insertAdjacentElement("afterend", body);
+  card.classList.add("sa-toggle");
+  card.onclick = (ev) => {
+    if (ev.target.closest("button, a")) return;   // 不挡卡内交互
+    body.hidden = !body.hidden;
+    card.classList.toggle("sa-open", !body.hidden);
+    if (!body.hidden) scrollToBottom();
+  };
+  registerSubagentCard(runOf(state.sessionId), agentId, card);
+}
+
+function registerSubagentCard(run, agentId, card) {
+  if (!run.subagents) run.subagents = {};
+  const prev = run.subagents[agentId];
+  if (prev && prev !== card && prev.isConnected) return;   // 已登记别卡: 不抢
+  run.subagents[agentId] = card;
+}
+
+function saCardOf(run, agentId) {
+  if (!run) return null;
+  if (!run.subagents) run.subagents = {};
+  let card = run.subagents[agentId];
+  if (card && !card.isConnected) card = run.subagents[agentId] = null;
+  return card || null;
+}
+
+/* subagent_started: 兜底建卡。正常时序里 spawn 的 agent_tool 工具卡先
+ * 出现、tool_result 登记路由; 这里处理事件先于工具卡到达的乱序——
+ * 主列没有卡时直接建一张完整卡片, agent_tool 的工具卡稍后到达时因
+ * registerSubagentCard 的"不抢"规则不会覆盖。 */
+function onSubagentStarted(msg, sid) {
+  const run = runOf(sid);
+  const existing = saCardOf(run, msg.agent_id);
+  if (existing) return;
+  const card = addToolCard({ id: "sa-" + msg.agent_id, name: "agent_tool",
+    input: JSON.stringify({ subagent_type: msg.subagent_type,
+                            description: msg.description }) }, colOf(sid));
+  upgradeToSubagentCard(card, msg.agent_id);
+  // started 已带全量描述, 工具卡描述不再等 tool_use 事件来补
+  card.querySelector(".tdesc").textContent =
+    (SUB_TYPE_LABEL[msg.subagent_type] || msg.subagent_type || "") +
+    " · " + (msg.description || "");
+}
+
+/* 子代理内部事件 → 伪会话 id 复用现有渲染管线。colOf(伪 id) 被 app.js
+ * 分流到 saColFor(): 节点直接落进卡片的嵌套流列。 */
+function onSubagentEvent(msg, sid) {
+  const run = runOf(sid);
+  const card = saCardOf(run, msg.agent_id);
+  if (!card) return;   // 乱序兜底: started 会建卡; 没卡就丢（子代理结果仍经 agent_wait 可见）
+  const inner = msg.event || {};
+  const pseudo = "sub:" + msg.agent_id;
+  switch (inner.type) {
+    case "thinking_start":     onThinkingStart(inner, pseudo); break;
+    case "thinking_delta":     onThinkingDelta(inner, pseudo); break;
+    case "thinking_end":       onThinkingEnd(inner, pseudo); break;
+    case "text_delta":         onTextDelta(inner, pseudo); break;
+    case "tool_use_started":   onToolUseStarted(inner, pseudo); break;
+    case "tool_use":           onToolUse(inner, pseudo); break;
+    case "tool_result":        onToolResult(inner, pseudo); break;
+    default: return;
+  }
+  if (card.classList.contains("sa-open")) scrollToBottom();   // 展开时才跟随滚动
+}
+
+/* 伪会话 id → 嵌套消息列: 惰性建在对应卡片的 .sa-body 里 */
+function saColFor(pseudo) {
+  const agentId = pseudo.slice(4);
+  const card = saCardOf(runOf(state.sessionId), agentId);
+  if (!card) return colOf(pseudo);   // 兜底: 顶层隐藏列, 事件不丢
+  let col = card._saStream;
+  if (!col || !col.isConnected) {
+    col = document.createElement("div");
+    col.className = "sa-stream";
+    card._saStream = col;
+    const body = card.nextElementSibling;
+    if (body && body.classList.contains("sa-body")) {
+      body.appendChild(col);
+    } else {
+      const b = document.createElement("div");
+      b.className = "sa-body";
+      b.appendChild(col);
+      card.insertAdjacentElement("afterend", b);
+    }
+  }
+  return col;
+}
+
+function onSubagentDone(msg, sid) {
+  const run = runOf(sid);
+  const card = saCardOf(run, msg.agent_id);
+  if (!card) return;
+  card.classList.remove("sa-running");
+  const spin = card.querySelector(".sa-spin");
+  if (spin) spin.remove();
+  const st = card.querySelector(".tstate");
+  if (st) {
+    const ok = msg.status === "completed";
+    st.className = "tstate " + (ok ? "ok" : "err");
+    st.textContent = ok ? "已完成" : "失败";
+    if (typeof msg.duration_s === "number") {
+      const dur = card.querySelector(".t-dur");
+      if (dur) dur.textContent = msg.duration_s >= 1
+        ? Math.round(msg.duration_s) + " 秒" : "不到 1 秒";
+    }
+  }
+  const desc = card.querySelector(".tdesc");
+  if (desc && !ok && msg.error) {
+    desc.textContent = desc.textContent + " — " + String(msg.error).slice(0, 80);
+  }
+  // 嵌套流收口: sweep 悬空的内部工具卡（子代理崩溃时结果事件永远不来）
+  sweepPendingToolCards(runOf("sub:" + msg.agent_id));
 }
 
 /* 轮次收口: 把该会话所有还挂在"运行中"的工具卡统一闭合为"已中断"

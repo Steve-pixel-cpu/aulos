@@ -13,7 +13,10 @@ from typing import Optional, Callable
 from dotenv import load_dotenv
 from pydantic import BaseModel
 
-from aulos.api_client import ClaudeApiClient, make_api_client
+from aulos.api_client import (ClaudeApiClient, make_api_client,
+                              WireTextDelta, WireThinkingStart,
+                              WireThinkingDelta, WireThinkingEnd,
+                              WireToolStart, WireToolEnd)
 from aulos.fsatomic import atomic_write_text, read_text_with_retry
 from aulos.models import Session, TextContentBlock
 from aulos.permissions import ALLOW_MODE, PermissionPolicy
@@ -113,6 +116,12 @@ class AgentJob(BaseModel):
     # 会话继承——会话专属模型/供应商对子代理同样生效。None = 跟随全局
     # _api_config_provider（CLI 旧行为）。
     api_config: Optional[tuple[str, Optional[str], str, str]] = None
+    # 前端事件镜像 sink（Web 端注入）: 存在时 worker 的线级事件（思考/
+    # 正文/工具调用/结果）会翻译后推送, 供"子智能体卡片 + 可展开对话流"
+    # 渲染。None = 完全静默（CLI 行为, 也是历史行为）。由宿主在 spawn
+    # 同步路径（Leader turn 线程上）捕获好塞进来——worker 线程没有
+    # dispatch 绑定, 取不到 contextvar, 必须显式传。
+    event_sink: Optional[Callable[[dict], None]] = None
 
 
 def allowed_tools_for_subagent(subagent_type: str) -> set[str]:
@@ -177,6 +186,91 @@ class SilentToolExecutor:
         return self.registry.execute(tool_name, input, workdir=self.workdir)
 
 
+# --- 前端事件镜像（Web 端"子智能体卡片 + 可展开对话流"的数据源） ---
+
+def _subagent_event_envelope(event: dict, agent_id: str) -> dict:
+    """子代理内部事件 → 前端信封。type 用 subagent_event 与主对话事件
+    区分开, 前端按 agent_id 路由进对应卡片的嵌套对话流, 绝不混入 Leader
+    自己的流式状态。"""
+    return {"type": "subagent_event", "agent_id": agent_id, "event": event}
+
+
+class SubagentEventMirror:
+    """把 worker 的线级事件（WireEvent）翻译成前端同构事件并推给 sink。
+
+    与 server_common._wire_to_frontend 同一套翻译语义（协议中立: 新增
+    OpenAI 协议时这里零改动），差异只有一点——工具结果的 id 由 wire 事件
+    天然携带（runtime 直传 tool_use_id）, 无需 TurnEmitter 式的 FIFO 补齐。
+    sink 自身的异常一律吞掉: 镜像是装饰品, 绝不能炸掉 worker 的任务线程。
+    """
+
+    def __init__(self, sink: Callable[[dict], None], agent_id: str):
+        self._sink = sink
+        self._agent_id = agent_id
+
+    def __call__(self, event) -> None:
+        try:
+            self._observe(event)
+        except Exception:
+            pass
+
+    def _observe(self, event) -> None:
+        agent_id = self._agent_id
+        sink = self._sink
+        etype = type(event)
+        if etype is WireTextDelta:
+            sink(_subagent_event_envelope(
+                {"type": "text_delta", "text": event.text}, agent_id))
+        elif etype is WireToolStart:
+            sink(_subagent_event_envelope(
+                {"type": "tool_use_started", "id": event.id, "name": event.name},
+                agent_id))
+        elif etype is WireToolEnd:
+            sink(_subagent_event_envelope(
+                {"type": "tool_use", "id": event.id, "name": event.name,
+                 "input": event.input_json}, agent_id))
+        elif etype is WireThinkingStart:
+            sink(_subagent_event_envelope({"type": "thinking_start"}, agent_id))
+        elif etype is WireThinkingDelta:
+            sink(_subagent_event_envelope(
+                {"type": "thinking_delta", "text": event.text}, agent_id))
+        elif etype is WireThinkingEnd:
+            sink(_subagent_event_envelope({"type": "thinking_end"}, agent_id))
+        # WireUsage / WireStop 不镜像: 前端卡片不消费, 省带宽
+
+
+class MirrorToolExecutor(SilentToolExecutor):
+    """SilentToolExecutor + 事件镜像: 每次工具执行完把 tool_result 推给
+    sink（事件形状与 server.EmittingToolRegistry 一致）。工具抛异常时
+    先镜像 is_error 事件再原样上抛——worker 的 L1/L2 兜底照常工作。
+    注意与 multi_agent 无关的宿主（CLI）不传 sink, 走 SilentToolExecutor
+    原路径, 行为不变。"""
+
+    def __init__(self, registry: ToolRegistry, workdir: Optional[str] = None,
+                 event_sink: Optional[Callable[[dict], None]] = None,
+                 agent_id: str = ""):
+        super().__init__(registry=registry, workdir=workdir)
+        self._event_sink = event_sink
+        self._agent_id = agent_id
+
+    def execute(self, tool_name: str, input: str, tool_use_id: str | None = None) -> str:
+        try:
+            result = self.registry.execute(tool_name, input, workdir=self.workdir)
+        except Exception as e:
+            if self._event_sink is not None:
+                self._event_sink(_subagent_event_envelope(
+                    {"type": "tool_result", "id": tool_use_id, "name": tool_name,
+                     "input": input, "output": str(e), "is_error": True},
+                    self._agent_id))
+            raise
+        if self._event_sink is not None:
+            self._event_sink(_subagent_event_envelope(
+                {"type": "tool_result", "id": tool_use_id, "name": tool_name,
+                 "input": input, "output": str(result), "is_error": False},
+                self._agent_id))
+        return result
+
+
 # worker 的 API 客户端工厂: 返回 (api_key, base_url, model)。
 # 可被宿主（Web 端）注入以跟随其运行期供应商配置; 缺省回落 .env +
 # main.DEFAULT_MODEL（CLI 的连接方式）。可插拔是为了不让 multi_agent
@@ -223,6 +317,9 @@ def build_subagent_runtime(job: AgentJob) -> ConversationRuntime:
       可以被询问，权限模式在这里没有意义
     - 递归防护: 工具规格经 _tool_specs_for 过滤，agent 工具永远不在
       worker 的请求里（TOOL_WHITELIST 亦不含, 双保险）
+    - 事件镜像: job.event_sink 存在时（Web 端）worker 的线级事件经
+      SubagentEventMirror 推给前端（子智能体卡片）; None 时完全静默
+      （CLI 行为不变）
     """
     # 连接信息: 会话自带（Web 多会话各选各的模型）优先, 否则全局工厂（CLI）
     api_key, base_url, model, protocol = job.api_config or _api_config_provider()
@@ -239,6 +336,8 @@ def build_subagent_runtime(job: AgentJob) -> ConversationRuntime:
                 f" handler——白名单与 handler 表脱钩, 拒绝静默组装半盲 worker")
         registry.register(name=tool_name, handler=handler)
 
+    event_sink = getattr(job, "event_sink", None)
+    mirror = SubagentEventMirror(event_sink, job.manifest.agent_id) if event_sink else None
     return ConversationRuntime(
         session=Session(),
         api_client=make_api_client(
@@ -248,8 +347,13 @@ def build_subagent_runtime(job: AgentJob) -> ConversationRuntime:
             base_url=base_url,
             tools=_tool_specs_for(job.allowed_tools),
             emit_output=False,
+            # 有 sink 才挂观察者（每次开流时调用 mirror 拿观察者）; 无
+            # sink 传 None = 完全静默（CLI/测试旧行为, 零额外开销）
+            on_event_provider=(lambda: mirror) if mirror else None,
         ),
-        tool_executor=SilentToolExecutor(registry=registry, workdir=job.workdir),
+        tool_executor=MirrorToolExecutor(
+            registry=registry, workdir=job.workdir,
+            event_sink=event_sink, agent_id=job.manifest.agent_id),
         permission_policy=PermissionPolicy(active_mode=ALLOW_MODE),
         system_prompt=[
             "You are a focused subagent worker. Complete exactly the task "
@@ -386,6 +490,20 @@ class AgentOrchestrator:
         return manus
 
     def _default_spawn_fn(self, job: AgentJob):
+        def _emit_done(status: str, error: Optional[str] = None) -> None:
+            # 终态信封: 前端据此翻转卡片状态（转圈→✓/✗ + 耗时）。
+            # 镜像装饰品原则: sink 异常绝不影响 worker 收尾。
+            sink = getattr(job, "event_sink", None)
+            if sink is None:
+                return
+            try:
+                sink({"type": "subagent_done", "agent_id": job.manifest.agent_id,
+                      "status": status,
+                      "duration_s": round(time.monotonic() - _t0, 1),
+                      "error": error})
+            except Exception:
+                pass
+
         def _worker():  # ← 内层：线程的身体
             # 第 12 课: worker 本体 = 建 runtime → 跑一轮 → complete_agent
             runtime = None  # L2 要在 except 里读会话历史, 先占位防 NameError
@@ -413,6 +531,7 @@ class AgentOrchestrator:
                                    "(做了什么、写了哪些文件、结果如何)。"
                                    "这是最后一轮, 直接给文本, 不要再调用任何工具。"))
                 self.complete_agent(job.manifest.agent_id, final_text_of(summary))
+                _emit_done("completed")
             except Exception as exc:
                 # L2 部分结果回传: L1 总结轮也失败(或压根不是"无消息内容"类
                 # 异常, 如 API 中断)时, 不把工作打成 null——从会话历史提取
@@ -427,6 +546,7 @@ class AgentOrchestrator:
                         self.complete_agent(
                             job.manifest.agent_id,
                             "[部分结果·子代理异常终止] " + str(exc) + "\n" + digest)
+                        _emit_done("completed", str(exc))
                         return
                     except Exception:
                         pass
@@ -434,13 +554,18 @@ class AgentOrchestrator:
                     self._persist_terminal_state(job.manifest, status=AgentStatus.FAILED.value, result=None, error=str(exc))
                 except Exception:
                     pass
+                _emit_done("failed", str(exc))
 
+        # 计时起点: spawn 点火时刻（worker 真正开跑可能有线程调度延迟,
+        # 按用户感知的"派出去多久"口径计时）
+        _t0 = time.monotonic()
         thread = threading.Thread(target=_worker, name=f"agent-{job.manifest.agent_id}", daemon=True)  # ← 外层：target=_worker（注意没有括号！）
         thread.start()  # ← 点火，立刻返回
 
     def spawn_agent(self, description: str, prompt: str, name: Optional[str] = None, subagent_type: str = "general",
                     workdir: Optional[str] = None,
                     api_config: Optional[tuple[str, Optional[str], str, str]] = None,
+                    event_sink: Optional[Callable[[dict], None]] = None,
                     _owner_pid: Optional[int] = None) -> AgentManifest:
         if description.strip() == "" or prompt.strip() == "":
             raise ValueError("description or prompt are null")
@@ -499,7 +624,20 @@ class AgentOrchestrator:
             allowed_tools=white_tools.copy(),
             workdir=workdir or self._workdir,
             api_config=api_config,
+            event_sink=event_sink,
         )
+        # 卡片创建事件必须在点火之前发: worker 线程可能瞬间跑完（stub/
+        # 极快任务）, 点火后才发的话镜像事件会跑到 started 前面, 前端按
+        # agent_id 路由时卡片还不存在。有 sink（Web）才发, CLI 静默。
+        if job.event_sink is not None:
+            try:
+                job.event_sink({"type": "subagent_started",
+                                "agent_id": agent_id,
+                                "subagent_type": subagent_type,
+                                "name": name,
+                                "description": description})
+            except Exception:
+                pass
         try:
             self._spawn_fn(job)
         except Exception as e:
