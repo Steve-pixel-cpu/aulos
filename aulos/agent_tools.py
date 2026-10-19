@@ -43,7 +43,8 @@ spawn_agent_spec = {
         "explore/plan workers are read-only and stay available in plan "
         "mode — delegate investigation there instead of grinding inline.\n"
         "The worker cannot spawn further subagents. Returns immediately "
-        "with the agent id; poll agent_status to collect the result."
+        "with the agent id; check agent_status later to collect the result "
+        "(do useful local work in between — do not poll in a tight loop)."
     ),
     "input_schema": {
         "type": "object",
@@ -80,7 +81,8 @@ agent_status_spec = {
     "description": (
         "Get the current status of a spawned subagent by id. Returns "
         "status (pending/running/completed/failed) and, once completed, "
-        "the worker's final report text. Use this to poll for results."
+        "the worker's final report text. Check back after doing other "
+        "work — repeated checks in the same turn are discouraged."
     ),
     "input_schema": {
         "type": "object",

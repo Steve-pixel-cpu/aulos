@@ -122,6 +122,24 @@ REPEAT_DENIED_TEXT = (
 # （网络类命令的重试/轮询有正当的重跑场景, 误拒代价更大）。
 SHELL_REPEAT_WARN_ON = 2
 SHELL_REPEAT_STRONG_ON = 3
+
+# --- 轮询空转提醒: 执行层兜底"提示词拦不住的紧密轮询" ---
+# 实测(20261019 会话 JSONL): 系统提示词明写 "Never poll agent_status in a
+# tight loop", 模型仍在单回合对同一 agent_id 发 10 次 agent_status——中间
+# 没有任何本地工作, 与 read_file×24 事故同款病理(提示词层失效, 只能执行层
+# 兜住)。重调本身合法(不拒绝): 只在连击达阈值时于结果尾部附加提醒。
+# 连击不清零规则: 写入动作与轮询空转无关(目标的产出不是文件), 只有
+# 新用户回合/压缩激活清零。agent_reap 不计数——收割动作幂等, 重调合法。
+POLL_TOOLS = frozenset({"agent_status", "task_output"})
+POLL_WARN_ON = 3          # 同 id 第 3 次起附加提醒
+POLL_WARN_MAX_PER_TURN = 2   # 每回合至多 2 条, 防提醒自身刷屏稀释注意力
+POLL_WARN_TEXT = (
+    "[System note] You have now checked this same target several times "
+    "in this turn and it was not done yet. Every poll result stays in "
+    "context permanently — do useful local work between checks, then "
+    "poll again in a later turn, or collect everything at the end via "
+    "agent_reap."
+)
 SHELL_REPEAT_WARN_TEXT = (
     "[System note] This exact command already ran with no file changes in "
     "between — its output is almost certainly identical to the one you "
@@ -151,6 +169,19 @@ def _read_guard_key(tool_name: str, tool_input: str):
         return (tool_name, norm, params.get("offset"), params.get("limit"))
     except Exception:
         return (tool_name, tool_input)
+
+def _poll_target_id(tool_input: str) -> str:
+    """从轮询工具入参里提目标 id（agent_id/task_id/id）。解析失败回落
+    整个输入串——同一目标必须落进同一计数键, 提不出去就保守全等。"""
+    try:
+        params = json.loads(tool_input or "{}")
+    except Exception:
+        return tool_input or ""
+    for k in ("agent_id", "task_id", "id"):
+        v = params.get(k)
+        if isinstance(v, str) and v:
+            return v
+    return tool_input or ""
 
 # --- 结论检查点: 本回合调用时钟的节奏性对靶提醒 ---
 # 治"忘记自己的目标是啥"（实测 v2 教训）: 模型查库实锤后转入支线
@@ -567,6 +598,11 @@ class ConversationRuntime:
         self._turn_call_clock = 0
         # 已触发的档位: 并行批次一次跨过倍数也要命中
         self._checkpoint_mark = 0
+        # 轮询空转连击: 键 (tool_name, agent/task id), 值连击数; 与只读
+        # 护栏不同, 写入介入不清零(见 POLL_TOOLS 注释)。_poll_warn_count
+        # 为本回合已附加的提醒条数(封顶 POLL_WARN_MAX_PER_TURN)。
+        self._poll_calls: dict[tuple, int] = {}
+        self._poll_warn_count = 0
         self._guard_lock = threading.Lock()
         # 事件镜像钩子（Web 端工具卡片闭合用, CLI 默认 None 行为不变）:
         # - on_tool_finalized: 工具未经执行就被终局（权限拒绝 / hook 拦截 /
@@ -853,6 +889,14 @@ class ConversationRuntime:
                 self._read_calls[key] = (count, self._mutation_seq)
                 self._turn_call_clock += 1
                 return count, 0
+        if tool_name in POLL_TOOLS:
+            # 轮询连击: 写入介入不清零（目标的产出不是文件）, 仅新回合/
+            # 压缩激活清零。计数与提醒封顶在同一临界区, 并行批次不超发。
+            with self._guard_lock:
+                self._turn_call_clock += 1
+                pkey = (tool_name, _poll_target_id(tool_input))
+                self._poll_calls[pkey] = self._poll_calls.get(pkey, 0) + 1
+                return None, 0
         if tool_name in MUTATING_SHELL_TOOLS and not readonly:
             key = _read_guard_key(tool_name, tool_input)
             with self._guard_lock:
@@ -1023,6 +1067,19 @@ class ConversationRuntime:
                                          if shell_streak >= SHELL_REPEAT_STRONG_ON
                                          else SHELL_REPEAT_WARN_TEXT))
 
+        # 轮询空转提醒: 同 id 连击达阈值且本回合配额未用完时附加（不拒绝
+        # 不改 is_error——与 shell 重跑提醒同一模式）。写入介入不断连击。
+        if tool_block.name in POLL_TOOLS:
+            pkey = (tool_block.name, _poll_target_id(tool_block.input))
+            with self._guard_lock:
+                streak = self._poll_calls.get(pkey, 0)
+                fire = (streak >= POLL_WARN_ON
+                        and self._poll_warn_count < POLL_WARN_MAX_PER_TURN)
+                if fire:
+                    self._poll_warn_count += 1
+            if fire:
+                output = f"{output}\n\n{POLL_WARN_TEXT}"
+
         # 同文件重读去重: 未变文件的整读换成一行 unchanged（主上下文瘦身,
         # 实测单会话 markdown.tsx 重读 14 遍、每遍全文驻留）
         output = self._maybe_reread_dedup(
@@ -1095,6 +1152,8 @@ class ConversationRuntime:
             self._read_dedup.clear()   # 旧全文可能已归档出视图: 重读必须给真内容
             self._turn_call_clock = 0
             self._checkpoint_mark = 0
+            self._poll_calls.clear()   # 压缩宽限期: 轮询连击/提醒配额重置
+            self._poll_warn_count = 0
         if self._on_compacted is not None:
             try:
                 self._on_compacted()
@@ -1596,6 +1655,8 @@ class ConversationRuntime:
         with self._guard_lock:
             self._turn_call_clock = 0    # 新用户回合: 调用时钟/检查点重新计数
             self._checkpoint_mark = 0
+            self._poll_calls.clear()     # 轮询连击/提醒配额随新回合重置
+            self._poll_warn_count = 0
         budget_exhausted = False
         iterations_exhausted = False
         auto_compacted = False
