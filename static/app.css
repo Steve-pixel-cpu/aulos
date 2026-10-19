@@ -1583,6 +1583,7 @@
   }
   .prov-item {
     display: flex; align-items: center; gap: 7px;
+    width: 100%;   /* button 默认 shrink-to-fit: 长供应商名会把整颗按钮撑破 188px 侧栏列, 省略号随之失效 */
     border: none; background: none; border-radius: 8px;
     padding: 8px 10px; cursor: pointer; text-align: left;
     font-family: inherit; font-size: calc(13px * var(--fs-ui)); color: var(--text-2);
@@ -1864,6 +1865,7 @@
   .dd-pop {
     position: fixed; z-index: 300; min-width: 148px;
     display: flex; flex-direction: column; padding: 6px;
+    max-height: min(60vh, 480px); overflow-y: auto;
     background: var(--surface);
     background: var(--pop-bg);
     -webkit-backdrop-filter: blur(18px) saturate(1.5); backdrop-filter: blur(18px) saturate(1.5);
@@ -2458,15 +2460,44 @@ body.col-resizing, body.col-resizing * { cursor: col-resize !important; }
 }
 #music-dock[hidden] { display: none; }
 .md-progress {
-  position: relative; height: 3px; margin: 0 10px; flex: none;
+  position: relative; height: 4px; margin: 3px 10px 1px; flex: none;
   background: var(--border); border-radius: 999px; cursor: pointer;
   transition: height .12s;
+  /* 命中区加宽: 轨道上下各扩 4px, 细轨道不再难点准 */
+  user-select: none; -webkit-user-select: none;
+  touch-action: none;   /* 触屏拖进度条不被页面滚动手势抢走 */
 }
-.md-progress:hover { height: 5px; }
+.md-progress::before {
+  content: ""; position: absolute; inset: -4px 0;   /* 透明热区, 不改变视觉 */
+}
+.md-progress:hover, .md-progress.dragging { height: 5px; }
 #music-progress-fill {
   position: absolute; inset: 0 auto 0 0; width: 0%;
   background: var(--accent); border-radius: 999px;
 }
+/* 拖动手柄: 平时半透明小点, 悬停/拖拽时放大变实 —— 拖起来有「抓得住」的手感 */
+.md-progress-thumb {
+  position: absolute; top: 50%; left: 0; width: 9px; height: 9px;
+  transform: translate(-50%, -50%) scale(.55); opacity: .55;
+  background: var(--accent); border-radius: 50%;
+  box-shadow: 0 1px 3px rgb(0 0 0 / .35);
+  transition: transform .12s, opacity .12s;
+  pointer-events: none;   /* 手柄不拦截命中, 统一走轨道的 Pointer 事件 */
+}
+.md-progress:hover .md-progress-thumb,
+.md-progress.dragging .md-progress-thumb { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+/* 拖拽/悬停时间气泡: 悬浮在指针上方, 预览落点时间 */
+.md-progress-tip {
+  position: absolute; bottom: calc(100% + 7px); left: 0;
+  transform: translateX(-50%); padding: 2px 7px;
+  background: var(--pop-bg, var(--surface-2)); color: var(--text);
+  border: 1px solid var(--border); border-radius: 6px;
+  font-size: 11px; line-height: 1.5; font-variant-numeric: tabular-nums;
+  white-space: nowrap; opacity: 0; visibility: hidden;
+  transition: opacity .12s; pointer-events: none; z-index: 20;
+  box-shadow: 0 2px 8px rgb(0 0 0 / .25);
+}
+.md-progress-tip.show { opacity: 1; visibility: visible; }
 .md-row {
   display: flex; align-items: center; gap: 7px;
   padding: 8px 10px 2px;

@@ -172,9 +172,12 @@ def test_stream_audio_forwards_with_referer(no_net, monkeypatch):
 
     bvid = "BV1STREAM"
     tok = _bili.make_stream_token(bvid)
-    status, ctype, crange, chunks = _bili.stream_audio(tok, "bytes=0-1023")
+    status, ctype, crange, clen, chunks = _bili.stream_audio(tok, "bytes=0-1023")
 
-    assert status == 200 and ctype == "audio/mp4" and crange == "bytes 0-99/1000"
+    # 带 Range 的上游响应一律归一化为 206（B 站 CDN 偶尔 200+Content-Range,
+    # 浏览器不认, duration 会是 Infinity）; CL 从 Content-Range 尾段推出。
+    assert status == 206 and ctype == "audio/mp4" and crange == "bytes 0-99/1000"
+    assert clen == "100"                    # 1000 - 起点0
     assert sent["referer"] == "https://www.bilibili.com/"
     assert sent["range"] == "bytes=0-1023"
     first = b"".join(c for c in chunks)
@@ -233,7 +236,9 @@ def test_api_bili_url_gives_token(monkeypatch):
 
 
 def test_api_bili_stream_proxy(monkeypatch):
-    """stream 路由: 收到媒体流响应, 透传 Content-Range。"""
+    """stream 路由: 收到媒体流响应, 透传 Content-Range, 补 Content-Length。
+    Range 请求归一化为 206 —— 浏览器只认 206+Content-Range, 否则
+    <audio> 拿不到总时长, 进度条拖不了。"""
     import urllib.request
     monkeypatch.setattr(urllib.request, "urlopen", lambda req, timeout=None: _FakeResp())
     monkeypatch.setattr(_bili, "get_audio_url", lambda bvid: "https://upos/m.m4s")
@@ -241,9 +246,10 @@ def test_api_bili_stream_proxy(monkeypatch):
 
     r = client.get("/api/bili/stream", params={"token": tok},
                    headers={"Range": "bytes=0-1023"})
-    assert r.status_code == 200
+    assert r.status_code == 206
     assert r.headers["content-type"] == "audio/mp4"
     assert r.headers["content-range"] == "bytes 0-99/1000"
+    assert r.headers["content-length"] == "100"   # 时长可求的关键
     assert b"data" in r.content
 
 

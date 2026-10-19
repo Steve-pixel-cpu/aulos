@@ -71,10 +71,23 @@
     audio.preload = "auto";
     audio.volume = (pref.vol ?? 70) / 100;
     audio.addEventListener("ended", () => musicNext(true));
+    audio.addEventListener("loadedmetadata", () => {
+      /* 冷启动点条预选的落点: 元数据一到位就落位（15s 内有效） */
+      if (pendingSeek.ratio == null) return;
+      if (Date.now() - pendingSeek.at > 15000 || !isFinite(audio.duration)) {
+        pendingSeek.ratio = null;
+        return;
+      }
+      audio.currentTime = pendingSeek.ratio * audio.duration;
+      pendingSeek.ratio = null;
+      seekPaint(audio.currentTime);
+    });
     audio.addEventListener("timeupdate", () => {
-      $("music-progress-fill").style.width
-        = (audio.currentTime / (audio.duration || 1) * 100) + "%";
-      $("music-time").textContent = fmtTime(audio.currentTime);
+      if (seekState.active) return;   // 拖拽中: fill/thumb 由拖拽逻辑驱动, 别被 timeupdate 打回去
+      seekPaint(audio.currentTime);
+      const d = audioDur();
+      $("music-time").textContent = fmtTime(audio.currentTime)
+        + (d > 0 ? " / " + fmtTime(d) : "");
     });
     audio.addEventListener("play", () => { setPlayingUi(true); markPlayingRow(); });
     audio.addEventListener("pause", () => { setPlayingUi(false); markPlayingRow(); });
@@ -973,11 +986,164 @@
         `<div class="mp-empty">${mstate.src === "bili" ? "B站视频只取音轨, 画面不进电台" : "搜歌名 / 歌手"}</div>`;
     };
   });
-  $("music-seek").onclick = (ev) => {
-    if (!audio || !isFinite(audio.duration)) return;
-    const rect = ev.currentTarget.getBoundingClientRect();
-    audio.currentTime = (ev.clientX - rect.left) / rect.width * audio.duration;
-  };
+  /* ---- 进度条: 拖拽 + 点击 + 键盘 ----
+     旧实现只有一个 onclick, 轨道又只有 3px 高 —— 点一下 = 跳一下, 没法拖,
+     手感极差。现在换成 Pointer 事件完整拖拽: 按下即进入 scrub 状态, fill/
+     thumb/时间跟随指针, 松手才真正 seek（拖拽期间 timeupdate 不回写 UI）。 */
+  const seekState = { active: false, wasPlaying: false, wasPausedByDrag: false, ratio: null };
+  /* 冷启动点进度条: audio 还没挂源时没有时长, 先把落点比例记下,
+     挂源起播（loadedmetadata）后落到该位置。15s 内有效, 防止残留串歌。 */
+  const pendingSeek = { ratio: null, at: 0 };
+  const NOMINAL_DUR = 240;   // 无时长时的名义时长(秒): 只用于画拖拽预览/气泡的近似
+  const seekEl = $("music-seek");
+  const seekFill = $("music-progress-fill");
+  const seekThumb = $("music-progress-thumb");
+  const seekTip = $("music-progress-tip");
+
+  /* 时长兜底: 有的代理流 duration=Infinity（缺 Content-Length 时 Chromium 的
+     行为）, 但 seekable 仍有界 —— seekable.end 即总时长。不兜底的话进度条
+     整个锁死（拖不动/画不了）。两个都拿不到才返回 0（真不可 seek）。 */
+  function audioDur() {
+    if (!audio) return 0;
+    if (isFinite(audio.duration) && audio.duration > 0) return audio.duration;
+    try {
+      const s = audio.seekable;
+      if (s && s.length && isFinite(s.end(s.length - 1))) return s.end(s.length - 1);
+    } catch { /* 元数据未就绪 */ }
+    return 0;
+  }
+
+  function seekPaint(t) {
+    const d = audioDur();
+    const pct = d > 0 ? Math.min(100, Math.max(0, t / d * 100)) : 0;
+    seekFill.style.width = pct + "%";
+    seekThumb.style.left = pct + "%";
+    seekEl.setAttribute("aria-valuenow", Math.round(pct));
+    if (!seekState.active) {
+      seekEl.setAttribute("aria-valuetext", fmtTime(t) + " / " + fmtTime(d));
+    }
+  }
+
+  /* 拖拽期间暂停播放（不然 audio 一边走、指针一边拖, 松手前后打架）,
+     记住之前是播是停, 松手 seek 后恢复。所有 audio 操作都套 .catch 防闹。 */
+  function seekPauseForDrag() {
+    const a = getAudio();
+    seekState.wasPlaying = a && !a.paused;
+    if (seekState.wasPlaying) {
+      seekState.wasPausedByDrag = true;
+      a.pause();
+    }
+  }
+  function seekResumeAfterDrop() {
+    if (!seekState.wasPausedByDrag) return;
+    seekState.wasPausedByDrag = false;
+    const a = getAudio();
+    if (a.src) a.play().catch(() => {});
+  }
+
+  function seekClientX(t) {
+    const d = audioDur();
+    if (!audio || d <= 0) return;
+    const rect = seekEl.getBoundingClientRect();
+    const ratio = Math.min(1, Math.max(0, (t - rect.left) / rect.width));
+    seekState.scrub = ratio * d;
+    seekPaint(seekState.scrub);
+    seekTip.textContent = fmtTime(seekState.scrub);
+    seekEl.setAttribute("aria-valuetext", fmtTime(seekState.scrub) + " / " + fmtTime(d));
+    $("music-time").textContent = fmtTime(seekState.scrub) + " / " + fmtTime(d);
+  }
+
+  function seekStart(e) {
+    if (!audio || audioDur() <= 0) {
+      /* 冷启动（还没播过歌）: 没时长不 seek, 但点击不能没反应 ——
+         队列有歌就记下落点比例, 起播后落位; 空队列引导去选歌面板。 */
+      e.preventDefault();
+      if (!mstate.queue.length) { openMusicPanel(); return; }
+      const rect = seekEl.getBoundingClientRect();
+      pendingSeek.ratio = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+      pendingSeek.at = Date.now();
+      const s = curSong();
+      if (s) seekPaintPreview(pendingSeek.ratio, s);
+      playIndex(mstate.index);
+      return;
+    }
+    e.preventDefault();   // 别让拖拽变成文本选择/焦点迁移
+    seekState.active = true;
+    seekEl.classList.add("dragging");
+    try { seekEl.setPointerCapture(e.pointerId); } catch { /* 合成事件/无效指针: 忽略 */ }
+    seekPauseForDrag();
+    seekClientX(e.clientX);
+  }
+  function seekMove(e) {
+    if (seekState.active) { seekClientX(e.clientX); return; }
+    // 纯悬停: 气泡预览落点时间
+    const d = audioDur();
+    const rect = seekEl.getBoundingClientRect();
+    const ratio = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+    if (!rect.width) return;
+    // 冷启动悬停也有反馈: 按名义时长估一个时间（真挂源后会纠正）
+    if (!audio || d <= 0) {
+      seekTip.style.left = (ratio * 100) + "%";
+      seekTip.textContent = "~" + fmtTime(ratio * NOMINAL_DUR);
+      seekTip.classList.add("show");
+      return;
+    }
+    seekTip.style.left = (ratio * 100) + "%";
+    seekTip.textContent = fmtTime(ratio * d);
+    seekTip.classList.add("show");
+  }
+  function seekDrop(e) {
+    if (!seekState.active) return;
+    seekState.active = false;
+    seekEl.classList.remove("dragging");
+    const d = audioDur();
+    const rect = seekEl.getBoundingClientRect();
+    const ratio = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+    const t = ratio * d;
+    try { audio.currentTime = t; } catch { /* 元数据未就绪等, 忽略 */ }
+    seekPaint(t);
+    seekResumeAfterDrop();
+  }
+  /* 无时长时的预览绘制: 冷启动点进度条立刻给视觉反馈, 别让条子纹丝不动 */
+  function seekPaintPreview(ratio) {
+    seekFill.style.width = (ratio * 100) + "%";
+    seekThumb.style.left = (ratio * 100) + "%";
+    seekEl.setAttribute("aria-valuenow", Math.round(ratio * 100));
+    $("music-time").textContent = "~" + fmtTime(ratio * NOMINAL_DUR);
+  }
+
+  seekEl.addEventListener("pointerdown", seekStart);
+  seekEl.addEventListener("pointermove", seekMove);
+  seekEl.addEventListener("pointerup", seekDrop);
+  seekEl.addEventListener("pointercancel", (e) => {
+    if (!seekState.active) return;
+    seekState.active = false;
+    seekEl.classList.remove("dragging");
+    seekResumeAfterDrop();          // 没动过=没暂停过; 动过就恢复播
+  });
+  seekEl.addEventListener("pointerleave", () => seekTip.classList.remove("show"));
+  // 拖到窗口外松手: 指针捕获保证 pointerup 仍派发给 seekEl, 兜底清状态
+  window.addEventListener("blur", () => {
+    if (!seekState.active) return;
+    seekState.active = false;
+    seekEl.classList.remove("dragging");
+    seekResumeAfterDrop();
+  });
+  // 键盘可调（role=slider）: 左右 ±5s, Home/End 跳首尾
+  seekEl.addEventListener("keydown", (e) => {
+    const d = audioDur();
+    if (!audio || d <= 0) return;
+    const step = 5;
+    let t = audio.currentTime;
+    if (e.key === "ArrowLeft") t -= step;
+    else if (e.key === "ArrowRight") t += step;
+    else if (e.key === "Home") t = 0;
+    else if (e.key === "End") t = d - 0.25;
+    else return;
+    e.preventDefault();
+    audio.currentTime = Math.min(d - 0.25, Math.max(0, t));
+    seekPaint(audio.currentTime);
+  });
   /* 窗口缩放时面板跟着 dock 重新锚定; 标题是否超宽也随宽度重判 */
   window.addEventListener("resize", () => {
     if (!$("music-panel").hidden) anchorPanel();

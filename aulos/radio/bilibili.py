@@ -238,6 +238,23 @@ def stream_audio(token: str, range_header: Optional[str] = None):
     ctype = (resp.headers.get("Content-Type") or "application/octet-stream")
     ctype = ctype.split(";")[0].strip() or "application/octet-stream"
     crange = resp.headers.get("Content-Range")
+    clen = resp.headers.get("Content-Length")
+
+    # B 站 CDN 对 bytes=0- 偶尔回 200 还捎带 Content-Range（非标准）。
+    # 浏览器只认「206 + Content-Range」的组合, 不认 200 + Content-Range
+    # —— 不归一化的话 <audio> 拿不到总时长, duration=Infinity, 进度条拖不了。
+    if crange and status == 200 and range_header:
+        status = 206
+    # Content-Length 缺失时从 Content-Range 推本段长度（end-start+1）:
+    # 没有它 Chromium 把流当无限流, duration=Infinity, 播放条无法 seek。
+    # 整段响应（end=total-1）时恰好等于 总长-起点。
+    if not clen and crange:
+        try:
+            rng, _total = crange.split("/")
+            start, end = rng.replace("bytes", "").strip().split("-")
+            clen = str(int(end) - int(start) + 1)
+        except (ValueError, IndexError):
+            clen = None
 
     def chunks():
         try:
@@ -249,4 +266,4 @@ def stream_audio(token: str, range_header: Optional[str] = None):
         finally:
             resp.close()
 
-    return status, ctype, crange, chunks()
+    return status, ctype, crange, clen, chunks()

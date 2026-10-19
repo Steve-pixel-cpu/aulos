@@ -35,10 +35,14 @@ async def api_bili_stream(request: Request, token: str = ""):
     """音频流本地代理: 带 B 站 Referer 拉直链, 逐块转发给前端 <audio>。
     Range 透传: 浏览器读流会带 Range, seek 也会发二次 Range(206), 透传给 CDN。"""
     range_h = request.headers.get("range")
-    status, ctype, crange, chunks = await _music_call(
+    status, ctype, crange, clen, chunks = await _music_call(
         _bili.stream_audio, token, range_h)
     headers = {"Content-Type": ctype}
     if crange:
         headers["Content-Range"] = crange
         headers["Accept-Ranges"] = "bytes"
+    if clen:
+        # 时长可求的关键: 没有 Content-Length 浏览器把流当无限流,
+        # duration=Infinity, 播放条既画不了进度也 seek 不了。
+        headers["Content-Length"] = clen
     return StreamingResponse(chunks, status_code=status, headers=headers)
