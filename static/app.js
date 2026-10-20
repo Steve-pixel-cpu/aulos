@@ -1356,6 +1356,9 @@ async function loadSettings() {
   try {
     const [r, pr] = await Promise.all([fetch("/api/settings"), fetch("/api/providers")]);
     const s = await r.json();
+    setI18nLang(s.language);                    // i18n: 后端语言（缺省/非法 → 保持 zh）
+    if (window.__langDd) window.__langDd.setValue(s.language || "zh");
+    applyI18n();   // 二期 data-i18n 落地后开始真正改写 DOM; 现在是空扫描
     state.providerCfg = await pr.json();
     loadUtilityProvider();   // side-call 小模型设置（下拉项依赖供应商列表）
     loadWorkerProvider();    // 子代理模型设置（下拉项同样依赖供应商列表）

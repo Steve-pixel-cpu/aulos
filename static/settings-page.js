@@ -33,6 +33,20 @@ const themeDd = makeDropdown($("sel-theme"), {
   },
 });
 
+/* ---------- 语言: 中文 / English（i18n 骨架; 界面文案迁移在二期） ---------- */
+const LANG_ITEMS = [
+  { value: "zh", label: "中文" },     // 语言名按惯例用各自语言书写,
+  { value: "en", label: "English" },  // 与界面语言无关 → 无时序问题
+];
+const langDd = makeDropdown($("sel-lang"), {
+  items: LANG_ITEMS, value: "zh",   // 真值由 loadSettings 回显（异步 fetch 后）
+  onChange: async v => {
+    await saveSettings({ language: v });  // 失败: toast+回显, reload 后自然回落
+    location.reload();                    // 语言切换 = 整页重载（spec §4.3）
+  },
+});
+window.__langDd = langDd;   // loadSettings 回显钩子（先例: __zenDd）
+
 /* ---------- 界面风格: 默认 / Fluent · 系统云母 ---------- */
 const STYLE_KEY = "xc-style";
 function stylePref() {
