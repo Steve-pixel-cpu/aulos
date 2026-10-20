@@ -27,6 +27,8 @@ from aulos.config import (SETTINGS_FILE, USER_DIR, ConfigLoader,
                     load_worker_provider, load_worker_provider_setting,
                     save_providers, save_utility_provider_setting,
                     save_worker_provider_setting)
+from aulos.i18n import (SUPPORTED_LANGUAGES, current_language, set_language,
+                        t)
 from aulos.mcp_client import MCP_TOOL_PREFIX, get_mcp_manager
 from aulos.permissions import MODE_TO_NAME, NAME_TO_MODE, PermissionMode
 from aulos.skills import (SkillError, delete_user_skill, discover_skills,
@@ -311,6 +313,8 @@ async def api_get_settings():
         "icon_ver": server._icon_ver(),
         "bg_ver": server._bg_ver(),
         "app_version": server._app_version(),   # 标题栏版本徽标; 空串 = 前端不显示
+        # 界面/AI 回复语言（i18n）: zh | en, 缺省 zh
+        "language": current_language(),
     }
 
 
@@ -329,6 +333,20 @@ async def api_post_settings(request: dict):
         # 存活会话各自持有等级（WS set_thinking_level 单独切换）,
         # 这里只改全局默认——与其他设置的会话隔离语义对齐。
         # 必须落盘: 不写的话重启后 settings.json 还是旧档, 新会话静默回落。
+
+    lang = request.get("language")
+    if lang is not None:
+        normalized = str(lang).strip().lower()
+        if normalized not in SUPPORTED_LANGUAGES:
+            raise HTTPException(
+                status_code=400,
+                detail=t("settings.language.invalid", {"value": normalized}),
+            )
+        set_language(normalized)
+        _save_setting("language", normalized)
+        # 语言决定系统提示词末尾的回复语言指令节: 重建活跃会话提示词,
+        # 下一轮即按新语言回复（与 skills 安装/卸载同一热生效机制）。
+        _resync_session_prompts()
 
     mode_name = request.get("permission_mode")
     if mode_name is not None:
