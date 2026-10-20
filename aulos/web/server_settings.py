@@ -9,6 +9,7 @@
 """Aulos web — 设置/供应商/Skills/记忆/MCP 管理 REST。"""
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import subprocess
@@ -628,20 +629,21 @@ async def api_save_providers(request: dict):
     return server._provider_cfg
 
 
-@app.post("/api/providers/test")
-async def api_test_provider(request: dict):
-    """用给定配置发一次最小请求, 验证供应商连通性。"""
-    try:
-        protocol = normalize_protocol(request.get("protocol"))
-    except ValueError:
-        raise HTTPException(
-            status_code=400,
-            detail=t("server_settings.039", {"p0": ' / '.join(KNOWN_PROTOCOLS)}))
-    base_url = server._normalize_base_url(request.get("base_url"), protocol=protocol) or None
-    api_key = request.get("api_key") or ""
-    model = request.get("model") or ""
-    if not api_key or not model:
-        raise HTTPException(status_code=400, detail=t("server_settings.040"))
+async def probe_provider(provider: dict) -> dict:
+    """用给定配置发一次最小请求（max_tokens=16）, 验证供应商连通性。
+
+    设置页「测试」按钮与连接指示器的启动/配置变更探测共用此体:
+    返回 {ok, detail}（detail = 模型回文/错误摘要, 截断到 200 字符）,
+    不抛异常——所有失败都折叠进 ok=False。
+    SDK 调用是同步阻塞的（timeout 30s）, 丢线程池跑以免挂住事件循环。"""
+    return await asyncio.to_thread(_probe_provider_sync, provider)
+
+
+def _probe_provider_sync(provider: dict) -> dict:
+    protocol = normalize_protocol(provider.get("protocol"))
+    base_url = server._normalize_base_url(provider.get("base_url"), protocol=protocol) or None
+    api_key = provider.get("api_key") or ""
+    model = provider.get("model") or ""
     try:
         if protocol == "openai":
             from openai import OpenAI
@@ -661,6 +663,20 @@ async def api_test_provider(request: dict):
         return {"ok": True, "detail": text.strip()[:50] or t("server_settings.043")}
     except Exception as e:
         return {"ok": False, "detail": str(e)[:200]}
+
+
+@app.post("/api/providers/test")
+async def api_test_provider(request: dict):
+    """用给定配置发一次最小请求, 验证供应商连通性。"""
+    try:
+        protocol = normalize_protocol(request.get("protocol"))
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail=t("server_settings.039", {"p0": ' / '.join(KNOWN_PROTOCOLS)}))
+    if not (request.get("api_key") or "") or not (request.get("model") or ""):
+        raise HTTPException(status_code=400, detail=t("server_settings.040"))
+    return probe_provider(request)
 
 
 @app.post("/api/open-config")

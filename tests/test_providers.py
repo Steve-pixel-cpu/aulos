@@ -168,3 +168,54 @@ def test_apply_switches_protocol_rebuilds_client(providers_file):
         assert server.api_client.model == "m2"
     finally:
         server.api_client = original
+
+
+# ------------------------------------------------------------
+# probe_provider: 从设置页测试端点抽出的模块级探测体（连接指示器复用）
+# ------------------------------------------------------------
+def test_probe_provider_ok(monkeypatch):
+    """探测成功: ok=True + 模型回文（与设置页测试按钮同语义）。"""
+    import asyncio
+    from aulos.web import server_settings
+
+    captured = {}
+
+    class _FakeMessages:
+        def create(self, **kw):
+            captured.update(kw)
+            return type("R", (), {"content": [type("B", (), {"type": "text", "text": "pong"})()]})()
+
+    class _FakeAnthropic:
+        def __init__(self, **kw):
+            captured.update(kw)
+            self.messages = _FakeMessages()
+
+    monkeypatch.setattr(server_settings.anthropic, "Anthropic", _FakeAnthropic)
+    res = asyncio.run(server_settings.probe_provider(
+        {"protocol": "anthropic", "base_url": "https://example.com/api",
+         "api_key": "k", "model": "m1"}))
+    assert res == {"ok": True, "detail": "pong"}
+    assert captured["api_key"] == "k"
+    assert captured["base_url"] == "https://example.com/api"
+    assert captured["model"] == "m1"
+    assert captured["max_tokens"] == 16   # 探测必须是单次最小请求
+
+
+def test_probe_provider_failure(monkeypatch):
+    """探测失败: ok=False + 错误摘要（不抛异常, 与设置页测试按钮同语义）。"""
+    import asyncio
+    from aulos.web import server_settings
+
+    def _boom(**kw):
+        raise RuntimeError("connection refused")
+
+    class _FakeAnthropic:
+        def __init__(self, **kw):
+            self.messages = type("M", (), {"create": staticmethod(_boom)})()
+
+    monkeypatch.setattr(server_settings.anthropic, "Anthropic", _FakeAnthropic)
+    res = asyncio.run(server_settings.probe_provider(
+        {"protocol": "anthropic", "base_url": "https://example.com/api",
+         "api_key": "k", "model": "m1"}))
+    assert res["ok"] is False
+    assert "connection refused" in res["detail"]
