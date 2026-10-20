@@ -18,7 +18,7 @@ STRINGS = {
     "main.013x": "  {p0:<24} {p1:<20} {p2}",
     "main.014": "无效的权限模式: {p0}",
     "main.015": "（可选: {p0} | plan）",
-    "main.016": "{p0}\\n\\n--- 管道输入（stdin）---\\n{p1}",
+    "main.016": "{p0}\n\n--- 管道输入（stdin）---\n{p1}",
     "main.017": "终端时会并入任务",
     "main.018": " json=结果对象(含用量/子状态)",
     "main.019": "workspace-write | danger-full-access | plan(计划开关)",

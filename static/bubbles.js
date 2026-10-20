@@ -36,10 +36,11 @@ function addUserBubble(text, attachments, col, ts, qid) {
   const b = document.createElement("div");
   b.className = "bubble";
   if (text) {
-    const t = document.createElement("div");
-    t.className = "u-text";
-    t.textContent = text;   // 用户输入永远纯文本
-    b.appendChild(t);
+    // 命名避开全局 i18n 函数 t —— 同名遮蔽曾让 minimap 整列炸掉
+    const textEl = document.createElement("div");
+    textEl.className = "u-text";
+    textEl.textContent = text;   // 用户输入永远纯文本
+    b.appendChild(textEl);
   }
   // 附件: 图片缩略图网格 + 文件 chip
   const atts = attachments || [];

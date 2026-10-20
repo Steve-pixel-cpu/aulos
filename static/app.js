@@ -1215,7 +1215,9 @@ const ICON_MODE_PENCIL = '<svg width="15" height="15" viewBox="0 0 24 24" fill="
 const ICON_MODE_SHIELD = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 2.8v5.4c0 4.4-2.9 7.8-7 9.8-4.1-2-7-5.4-7-9.8V5.8L12 3z"/></svg>';
 // 基础权限模式: 三档。"计划"不是档位而是叠加开关（顶部分隔的开关行）,
 // 生效时表现为只读 + 计划工作流, 批准后回落基础档。
-const MODE_ITEMS = [
+// i18n: label 工厂函数(makeDropdown 原生支持 items 为函数)——顶层 t() 会
+// 在语言注入前求值固化 zh, en 用户顶栏将停留中文(终审 Important#1)。
+const MODE_ITEMS = () => [
   { value: "prompt", label: t("app.061"), icon: ICON_MODE_HAND,
     desc: t("app.062") },
   { value: "workspace-write", label: t("app.063"), icon: ICON_MODE_PENCIL,
@@ -1225,12 +1227,14 @@ const MODE_ITEMS = [
   // allow 不提供: 后端拒绝从设置/会话进入（连将来需要问的工具也一并放行,
   // 只允许 CLI REPL /mode allow 临时开启）
 ];
-const BASE_MODE_LABELS = { "prompt": t("app.067"), "workspace-write": t("app.068"),
-  "danger-full-access": t("app.069") };
+function baseModeLabel(base) {   // 现取, 不固化
+  const labels = { "prompt": t("app.067"), "workspace-write": t("app.068"),
+                   "danger-full-access": t("app.069") };
+  return labels[base] || base;
+}
 // 触发按钮文案: 计划开 → 「计划 · <基础档>」; 关 → 纯基础档名
 function modeLabel(base, plan) {
-  return plan ? t("app.070") + (BASE_MODE_LABELS[base] || base)
-              : (BASE_MODE_LABELS[base] || base);
+  return plan ? t("app.070") + baseModeLabel(base) : baseModeLabel(base);
 }
 // 动态菜单视图: items 为函数时, open() 每次展开重新取——计划行的
 // 勾号/文案反映当下 plan 状态, 基础模式行打基础勾（两态独立）。
@@ -1243,7 +1247,7 @@ function modeMenuItems(value) {
       icon: ICON_MODE_PLAN, on: plan,
       desc: t("app.073") },
     { sep: true },
-    ...MODE_ITEMS.map(it => ({
+    ...MODE_ITEMS().map(it => ({
       ...it, value: mkModeValue(it.value, plan), on: it.value === base,
     })),
   ];
@@ -1286,7 +1290,7 @@ const modeDd = makeDropdown($("sel-mode"), {
     }
   },
 });
-const THINK_ITEMS = [
+const THINK_ITEMS = () => [   // 工厂函数: 语言注入后现取(同 MODE_ITEMS)
   { value: "low", label: t("app.074") },
   { value: "medium", label: t("app.075") },
   { value: "high", label: t("app.076") },
@@ -1912,7 +1916,7 @@ function renderUtilityStatus() {
   if (!s || !el) return;
   el.classList.remove("err");
   if (!s.provider) el.textContent = t("app.122");
-  else if (s.valid) el.textContent = t("app.123", { p0: s.effective_model || s.model || "主对话模型" });
+  else if (s.valid) el.textContent = t("app.123", { p0: s.effective_model || s.model || t("app.fallbackmodel") });
   else { el.textContent = t("app.124"); el.classList.add("err"); }
 }
 let utSaveTimer = null;

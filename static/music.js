@@ -562,7 +562,7 @@
       const songs = mstate.src === "bili" ? (data.videos || []) : (data.songs || []);
       if (!songs.length) {
         body.innerHTML = t("music.035", { p0: escapeText(kw), p1: 
-          mstate.src === "bili" ? "视频" : "歌曲" });
+          mstate.src === "bili" ? t("music.wordvideo") : t("music.wordsong") });
         return;
       }
       renderSongList(body, songs);   // 纯浏览: 点行插播, 不动队列

@@ -177,15 +177,22 @@ function mmSummary(row) {
 }
 
 function mmRelTime(ts) {
-  const t = ts ? new Date(ts) : null;
-  if (!t || isNaN(t)) return "";
-  const diff = (Date.now() - t.getTime()) / 1000;
-  if (diff < 90) return t("msg_extras.004");
-  if (diff < 3600) return Math.floor(diff / 60) + t("msg_extras.005");
-  if (diff < 86400) return Math.floor(diff / 3600) + t("msg_extras.006");
-  if (diff < 172800) return t("msg_extras.007");
-  if (diff < 604800) return Math.floor(diff / 86400) + t("msg_extras.008");
-  return `${t.getFullYear()}/${t.getMonth() + 1}/${t.getDate()}`;
+  // 兜底: 相对时间文案失败只损失这一枚刻度的时间, 不再中断整列重建
+  // (2026-10-20 事故: 局部 const t 遮蔽全局 i18n 函数 t, TypeError 导致
+  //  mm.textContent 清空后 forEach 首行即抛, 刻度列整条消失)
+  try {
+    const d = ts ? new Date(ts) : null;
+    if (!d || isNaN(d)) return "";
+    const diff = (Date.now() - d.getTime()) / 1000;
+    if (diff < 90) return t("msg_extras.004");
+    if (diff < 3600) return Math.floor(diff / 60) + t("msg_extras.005");
+    if (diff < 86400) return Math.floor(diff / 3600) + t("msg_extras.006");
+    if (diff < 172800) return t("msg_extras.007");
+    if (diff < 604800) return Math.floor(diff / 86400) + t("msg_extras.008");
+    return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
+  } catch (e) {
+    return "";
+  }
 }
 
 /* 激活态: 视口中线以上最近的一条用户消息 */

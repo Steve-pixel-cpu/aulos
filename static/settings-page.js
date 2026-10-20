@@ -51,7 +51,10 @@ window.__langDd = langDd;   // loadSettings 回显钩子（先例: __zenDd）
 /* i18n: 语言注入后所有设置下拉统一重同步 —— 构造时 label 固化了当时的
  * 语言快照; loadSettings 拿到后端语言后调用本函数现取 t() 刷新 */
 window.__resyncSettingsDropdowns = () => {
-  for (const dd of [themeDd, langDd, styleDd, hlDd, densityDd, msgstyleDd, zenDd, soundDd, desktopDd]) {
+  const mtd = [];
+  if (typeof modeDd !== "undefined") mtd.push(modeDd);   // app.js 顶栏下拉(词法环境共享)
+  if (typeof thinkDd !== "undefined") mtd.push(thinkDd);
+  for (const dd of [...mtd, themeDd, langDd, styleDd, hlDd, densityDd, msgstyleDd, zenDd, soundDd, desktopDd]) {
     try { dd.syncLabel ? dd.syncLabel() : dd.setValue(dd.value); } catch (e) { /* 容错: 单个失败不阻塞其余 */ }
   }
 };

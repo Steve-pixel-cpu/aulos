@@ -18,7 +18,7 @@ STRINGS = {
     "main.013x": "  {p0:<24} {p1:<20} {p2}",
     "main.014": "Invalid permission mode: {p0}",
     "main.015": " (options: {p0} | plan)",
-    "main.016": "{p0}\\n\\n--- piped input (stdin) ---\\n{p1}",
+    "main.016": "{p0}\n\n--- piped input (stdin) ---\n{p1}",
     "main.017": "non-terminal stdin is merged into the task",
     "main.018": " json=result object (with usage/subagent status)",
     "main.019": "workspace-write | danger-full-access | plan (plan toggle)",

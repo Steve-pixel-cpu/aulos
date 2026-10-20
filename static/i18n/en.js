@@ -964,5 +964,8 @@ window.I18N_STRINGS_EN = {
   "petpg.t003": "Drag to move · click to toggle music",
   "petpg.t004": "Assign a task · request a song · chat, press Enter to send",
   "petpg.t005": "Slacking off",
+  "music.wordvideo": "video",
+  "music.wordsong": "song",
+  "app.fallbackmodel": "main chat model",
 };
 })();

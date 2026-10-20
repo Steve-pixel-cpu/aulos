@@ -967,5 +967,8 @@ window.I18N_STRINGS_ZH = {
   "petpg.t003": "派任务 · 点歌 · 聊天，回车发送",
   "petpg.t004": "桌宠输入框",
   "petpg.t005": "摸鱼中",
+  "music.wordvideo": "视频",
+  "music.wordsong": "歌曲",
+  "app.fallbackmodel": "主对话模型",
 };
 })();
