@@ -2,7 +2,7 @@
 <html lang="zh-CN" data-theme="dark">
 <head>
 <meta charset="UTF-8">
-<title>Aulos 桌宠</title>
+<title data-i18n="petpg.t001">Aulos 桌宠</title>
 <!-- 令牌从 ?token= 种成 cookie, WS/API 鉴权与 index 同一套(Tauri pet 窗口加载本页) -->
 <script>(function(){try{var t=new URLSearchParams(location.search).get("token");if(t)document.cookie="aulos_token="+encodeURIComponent(t)+"; path=/; max-age=31536000; SameSite=Strict";}catch(e){}})();</script>
 <!-- 宠物大小在绘制前应用, 防止按默认 100% 先渲染一帧再跳变。
@@ -25,14 +25,27 @@
 <body>
 <div id="pet-float">
   <div id="pet-text">
-    <div id="pet-status">摸鱼中</div>
+    <div id="pet-status"><span data-i18n="petpg.t005">摸鱼中</span></div>
     <div id="pet-bubble" hidden></div>
   </div>
-  <div id="pet-sprite" title="按住拖动 · 点击开关音乐"></div>
+  <div id="pet-sprite" title="按住拖动 · 点击开关音乐" data-i18n-title="petpg.t002"></div>
   <input id="pet-input" type="text" maxlength="500" spellcheck="false"
-         autocomplete="off" placeholder="派任务 · 点歌 · 聊天，回车发送"
-         aria-label="桌宠输入框">
+         autocomplete="off" placeholder="派任务 · 点歌 · 聊天，回车发送" data-i18n-placeholder="petpg.t003"
+         aria-label="桌宠输入框" data-i18n-aria-label="petpg.t004">
 </div>
 <script src="/static/pet.js?v=20260926i" defer></script>
+<script src="/static/i18n/zh.js?v=20261020b" defer></script>
+<script src="/static/i18n/en.js?v=20261020b" defer></script>
+<script src="/static/i18n/i18n.js?v=20261020b" defer></script>
+<script>
+/* i18n 卫星页: 语言镜像 xc-lang(主页面 loadSettings 写透) */
+document.addEventListener("DOMContentLoaded", () => {
+  try {
+    const lg = localStorage.getItem("xc-lang");
+    if (lg === "en") { setI18nLang("en"); document.documentElement.lang = "en"; }
+    applyI18n();
+  } catch (e) { console.warn("[i18n] page:", e); }
+});
+</script>
 </body>
 </html>

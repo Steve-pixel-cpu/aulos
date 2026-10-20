@@ -59,13 +59,13 @@
         onerror="this.onerror=null;this.src='/api/icon?v='+Date.now()">
     <span class="tb-name">Aulos</span>
     <div class="tb-controls">
-      <button class="tb-btn" id="tb-min" title="最小化">
+      <button class="tb-btn" id="tb-min" title="最小化" data-i18n-title="loadpg.t001">
         <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.1"><path d="M0.5 5.2h9"/></svg>
       </button>
-      <button class="tb-btn" id="tb-max" title="最大化">
+      <button class="tb-btn" id="tb-max" title="最大化" data-i18n-title="loadpg.t002">
         <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.1"><rect x="0.7" y="0.7" width="8.6" height="8.6" rx="1"/></svg>
       </button>
-      <button class="tb-btn tb-close" id="tb-close" title="关闭">
+      <button class="tb-btn tb-close" id="tb-close" title="关闭" data-i18n-title="loadpg.t003">
         <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.1"><path d="M0.7 0.7l8.6 8.6M9.3 0.7l-8.6 8.6"/></svg>
       </button>
     </div>
@@ -91,5 +91,18 @@
       });
     }
   </script>
+<script src="/static/i18n/zh.js?v=20261020b" defer></script>
+<script src="/static/i18n/en.js?v=20261020b" defer></script>
+<script src="/static/i18n/i18n.js?v=20261020b" defer></script>
+<script>
+/* i18n 卫星页: 语言镜像 xc-lang(主页面 loadSettings 写透) */
+document.addEventListener("DOMContentLoaded", () => {
+  try {
+    const lg = localStorage.getItem("xc-lang");
+    if (lg === "en") { setI18nLang("en"); document.documentElement.lang = "en"; }
+    applyI18n();
+  } catch (e) { console.warn("[i18n] page:", e); }
+});
+</script>
 </body>
 </html>

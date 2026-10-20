@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>调用遥测 · Aulos</title>
+<title data-i18n="stats.t001"><span data-i18n="stats.t002">调用遥测 · Aulos</span></title>
 <!-- 独立页面（不嵌 index）: 原生 JS + fetch, 同源自动带 cookie（aulos_token）,
      门禁与主应用同一套（server.py 的 _token_gate 认 cookie 即放行）。
      入口: http://127.0.0.1:8000/stats.html -->
@@ -60,20 +60,20 @@
 </head>
 <body>
 <div class="wrap">
-  <h1>调用遥测</h1>
-  <div class="sub">模型调用耗时与 token 用量（数据源 ~/.aulos/logs/runtime-*.log，只读）</div>
+  <h1><span data-i18n="stats.t003">调用遥测</span></h1>
+  <div class="sub"><span data-i18n="stats.t004">模型调用耗时与 token 用量（数据源 ~/.aulos/logs/runtime-*.log，只读）</span></div>
 
   <!-- 区块一: 天数概览 -->
   <section>
-    <h2>逐天概览 <span class="bar" style="display:inline-flex;margin:0">
-      <input type="number" id="days-n" value="14" min="1" max="365" style="width:72px">天
-      <button id="btn-days">刷新</button></span></h2>
+    <h2><span data-i18n="stats.t005">逐天概览</span> <span class="bar" style="display:inline-flex;margin:0">
+      <input type="number" id="days-n" value="14" min="1" max="365" style="width:72px"><span data-i18n="stats.t006">天</span>
+      <button id="btn-days"><span data-i18n="stats.t007">刷新</span></button></span></h2>
     <div class="card"><div class="scroll">
       <table id="tbl-days">
         <thead><tr>
-          <th>日期</th><th>调用数</th><th>会话数</th><th>总耗时(s)</th>
-          <th>平均(s)</th><th class="dim">input</th><th class="dim">cache_read</th>
-          <th class="dim">cache_create</th><th class="dim">output</th><th>缓存命中</th>
+          <th><span data-i18n="stats.t008">日期</span></th><th><span data-i18n="stats.t009">调用数</span></th><th><span data-i18n="stats.t010">会话数</span></th><th><span data-i18n="stats.t011">总耗时(s)</span></th>
+          <th><span data-i18n="stats.t012">平均(s)</span></th><th class="dim">input</th><th class="dim">cache_read</th>
+          <th class="dim">cache_create</th><th class="dim">output</th><th><span data-i18n="stats.t013">缓存命中</span></th>
         </tr></thead>
         <tbody></tbody>
       </table>
@@ -82,15 +82,15 @@
 
   <!-- 区块二: 会话排行 -->
   <section>
-    <h2>会话排行 <span class="bar" style="display:inline-flex;margin:0">
-      <input type="number" id="sess-n" value="50" min="1" max="500" style="width:72px">条
-      <button id="btn-sess">刷新</button></span></h2>
+    <h2><span data-i18n="stats.t014">会话排行</span> <span class="bar" style="display:inline-flex;margin:0">
+      <input type="number" id="sess-n" value="50" min="1" max="500" style="width:72px"><span data-i18n="stats.t015">条</span>
+      <button id="btn-sess"><span data-i18n="stats.t016">刷新</span></button></span></h2>
     <div class="card"><div class="scroll">
       <table id="tbl-sess">
         <thead><tr>
-          <th>会话</th><th>调用数</th><th>总耗时(s)</th><th>平均(s)</th>
-          <th>最大(s)</th><th class="dim">tokens(in+cache)</th>
-          <th class="dim">output</th><th>首次调用</th><th>最后调用</th>
+          <th><span data-i18n="stats.t017">会话</span></th><th><span data-i18n="stats.t018">调用数</span></th><th><span data-i18n="stats.t019">总耗时(s)</span></th><th><span data-i18n="stats.t020">平均(s)</span></th>
+          <th><span data-i18n="stats.t021">最大(s)</span></th><th class="dim">tokens(in+cache)</th>
+          <th class="dim">output</th><th><span data-i18n="stats.t022">首次调用</span></th><th><span data-i18n="stats.t023">最后调用</span></th>
         </tr></thead>
         <tbody></tbody>
       </table>
@@ -99,15 +99,15 @@
 
   <!-- 区块三: 指定日调用流水 -->
   <section>
-    <h2>调用流水 <span class="bar" style="display:inline-flex;margin:0">
+    <h2><span data-i18n="stats.t024">调用流水</span> <span class="bar" style="display:inline-flex;margin:0">
       <input type="date" id="calls-date">
-      <label class="sub" style="margin:0">条数上限
+      <label class="sub" style="margin:0"><span data-i18n="stats.t025">条数上限</span>
         <input type="number" id="calls-limit" value="200" min="1" max="2000" style="width:80px"></label>
-      <button id="btn-calls">加载</button></span></h2>
+      <button id="btn-calls"><span data-i18n="stats.t026">加载</span></button></span></h2>
     <div class="card"><div class="scroll">
       <table id="tbl-calls">
         <thead><tr>
-          <th>时间</th><th>会话</th><th>迭代</th><th>思考</th><th>耗时(s)</th>
+          <th><span data-i18n="stats.t027">时间</span></th><th><span data-i18n="stats.t028">会话</span></th><th><span data-i18n="stats.t029">迭代</span></th><th><span data-i18n="stats.t030">思考</span></th><th><span data-i18n="stats.t031">耗时(s)</span></th>
           <th class="dim">context</th><th class="dim">input</th><th class="dim">cache_read</th>
           <th class="dim">cache_create</th><th class="dim">output</th>
         </tr></thead>
@@ -224,6 +224,19 @@ $("#calls-date").addEventListener("keydown", e => e.key === "Enter" && loadCalls
 $("#calls-date").value = new Date().toLocaleDateString("sv-SE");
 loadDays();
 loadSessions();
+</script>
+<script src="/static/i18n/zh.js?v=20261020b" defer></script>
+<script src="/static/i18n/en.js?v=20261020b" defer></script>
+<script src="/static/i18n/i18n.js?v=20261020b" defer></script>
+<script>
+/* i18n 卫星页: 语言镜像 xc-lang(主页面 loadSettings 写透); 字典与运行时复用三件套 */
+document.addEventListener("DOMContentLoaded", () => {
+  try {
+    const lg = localStorage.getItem("xc-lang");
+    if (lg === "en") { setI18nLang("en"); document.documentElement.lang = "en"; }
+    applyI18n();
+  } catch (e) { console.warn("[i18n] stats page:", e); }
+});
 </script>
 </body>
 </html>
