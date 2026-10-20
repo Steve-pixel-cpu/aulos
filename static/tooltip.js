@@ -7,7 +7,7 @@
  * 不依赖 app.js 的任何符号 (反向: app.js 动态创建的节点天然被覆盖)。
  *
  * 读的前置全局: 无
- * 暴露的全局:   tipShow / tipHide (供需要程序化提示的位置调用)
+ * 暴露的全局:   tipShow / tipHide / tipIgnoreNextScroll (供程序化滚动方调用)
  * ============================================================ */
 /* ============================================================
  * 统一悬浮提示: 接管原生 title（系统白框提示又慢又丑, 也无法换肤）
@@ -44,6 +44,16 @@ function tipHide() {
     tipSaved = null;
   }
 }
+/* 程序化滚动抑制窗口: scrollToBottom 贴底跟随 / 思考流贴尾这类自动滚动
+ * 每个 delta 都产生 scroll 事件, capture 监听会连人带计时器一起杀——流式
+ * 期间全站 tooltip 永远弹不出 (2026-10-20 事故)。程序化滚动前调用本函数
+ * 开一个小窗口, 窗口内的 scroll 事件忽略; 用户手动滚动 (wheel/拖滑块) 不
+ * 经过此路径, 即滚即隐的行为保持不变。窗口取短时效顺延制: 滚动方按各自
+ * delta 节奏续期, 流一停 ≤ 时效即恢复原判。 */
+let tipScrollIgnoreUntil = 0;
+window.tipIgnoreNextScroll = function (ms) {
+  tipScrollIgnoreUntil = Date.now() + Math.max(0, ms | 0);
+};
 document.addEventListener("mouseover", ev => {
   const el = ev.target.closest("[title], [data-tip]");
   if (el === tipAnchor) return;   // 在同一元素内移动: 不重置计时
@@ -56,4 +66,7 @@ document.addEventListener("mouseover", ev => {
 });
 document.addEventListener("mousedown", () => { tipAnchor = null; tipHide(); }, true);
 window.addEventListener("blur", tipHide);
-document.addEventListener("scroll", tipHide, true);
+document.addEventListener("scroll", () => {
+  if (Date.now() < tipScrollIgnoreUntil) return;   // 程序化滚动窗口内: 不杀气泡/计时器
+  tipHide();
+}, true);

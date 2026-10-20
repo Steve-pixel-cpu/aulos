@@ -41,6 +41,10 @@ $("scroll-btn").onclick = () => {
 function scrollToBottom(force) {
   if (!force && scrollInteracting) return;   // 滑块交互中: 手势优先, 不拽底
   if (!force && !nearBottom) return;
+  // 程序化滚动: 开短时效抑制窗口, 不让 tooltip 的 scroll-capture 杀掉
+  // 气泡/计时器——否则流式贴底跟随期间全站悬浮提示永远弹不出
+  // (2026-10-20 事故, 见 tooltip.js tipIgnoreNextScroll)。
+  window.tipIgnoreNextScroll?.(120);
   const el = $("messages");
   el.scrollTop = el.scrollHeight;
 }
@@ -130,8 +134,6 @@ function mmScheduleRebuild() {
 
 function mmRebuild() {
   const el = $("messages");
-  mmPop.hidden = true;
-  mm.textContent = "";
   // 只收集当前可见会话列的用户气泡: #messages 下常驻着每个会话一个的
   // .msg-col（切会话仅显隐、不销毁）, 若全局 querySelectorAll 会把隐藏
   // 会话的气泡一并收进来——display:none 行的 offsetTop 恒为 0, 刻度全部
@@ -139,7 +141,18 @@ function mmRebuild() {
   const col = el.querySelector(".msg-col.on");
   const rows = col ? [...col.querySelectorAll(".msg.user")] : [];
   const scrollable = el.scrollHeight - el.clientHeight > 2;
-  if (!rows.length || !scrollable) { mm.hidden = true; return; }
+  if (!rows.length || !scrollable) {
+    mmPop.hidden = true; mm.hidden = true; mm.textContent = ""; return;
+  }
+  // 无变化早退: 流式输出期间内容增高也会触发 ResizeObserver → 每 150ms
+  // 重建一次并无条件 mmPop.hidden=true, 悬停预览卡必被吞 (2026-10-20
+  // 事故)。用户行集合 (身份序列) 未变时只更新激活态, 不动刻度 DOM——
+  // hover 中的预览卡与刻度保持原样。
+  const sameRows = mm.children.length === rows.length &&
+    [...mm.children].every((tick, i) => tick._row === rows[i]);
+  if (sameRows) { mm.hidden = false; mmUpdateActive(); return; }
+  mmPop.hidden = true;
+  mm.textContent = "";
   mm.hidden = false;
   // 轨道按消息区可视范围垂直居中: 高度收窄到 70%, 上下各留 15%
   const trackH = Math.round(el.clientHeight * 0.7);

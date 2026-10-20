@@ -88,3 +88,27 @@ test("非法时间戳: 兜底为空串, 刻度照常生成", () => {
   assert.equal(mm.children.length, 1, "刻度仍在");
   assert.equal(mm.children[0]._time, "", "坏 ts → 空时间文案");
 });
+
+test("无变化重建: 用户行未变时预览卡不被吞、刻度 DOM 不重建", () => {
+  const w = setup();
+  const col = w.colOf("s-mm4");
+  w.addUserBubble("第一条", null, col, new Date().toISOString());
+  col.classList.add("on");
+  fakeScrollable(w, 3000, 800);
+
+  w.mmRebuild();
+  const mm = w.document.getElementById("msg-minimap");
+  const tick = mm.children[0];
+  assert.equal(mm.children.length, 1);
+
+  // 模拟 hover 中的预览卡 (流式悬停场景) + 标记刻度 DOM
+  const mmPop = w.document.getElementById("mm-pop");
+  mmPop.hidden = false;
+  tick.__probe = true;
+
+  // 流式期间 ResizeObserver 触发的重建: 用户行集合没变
+  w.mmRebuild();
+  assert.equal(mmPop.hidden, false, "预览卡不被无变化重建吞掉");
+  assert.equal(mm.children[0].__probe, true, "刻度 DOM 未被重建");
+  assert.equal(mm.children[0]._row, tick._row, "_row 身份保持");
+});

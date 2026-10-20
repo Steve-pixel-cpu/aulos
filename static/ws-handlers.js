@@ -298,6 +298,7 @@ function onThinkingDelta(msg, sid) {
   }
   const txt = cur.raw;
   cur.live.textContent = txt.length > THINK_LIVE_TAIL ? txt.slice(-THINK_LIVE_TAIL) : txt;
+  window.tipIgnoreNextScroll?.(120);   // scrollLeft 贴尾同属程序化滚动: 不杀 tooltip
   cur.live.scrollLeft = cur.live.scrollWidth;   // 贴尾: 新字从右缘入场, 旧字向左滚走
 }
 
