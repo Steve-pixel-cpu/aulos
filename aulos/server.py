@@ -130,7 +130,7 @@ from aulos.permissions import (
     PermissionResult,
 )
 from aulos.prompt import ProjectContext, SystemPromptBuilder
-from aulos.i18n import language_directive
+from aulos.i18n import language_directive, t
 from aulos.storage import SessionStore
 from aulos.tools import ToolRegistry, git_bash_unavailable_reason, TOOL_CANCEL_CHECK
 from aulos.runtime import result_meta
@@ -366,7 +366,8 @@ def _session_system_prompt(workdir: Optional[str]) -> list:
     return base
 
 MAX_CONCURRENT_TURNS = 4  # 全局并发上限: 同时跑的轮次超过这个数就排队
-UNTITLED = "(未命名)"
+def _untitled() -> str:
+    return t("server.001")  # 函数化: import 期固化会把宿主语言冻结进常量
 _CANCEL_SENTINEL = "__cancelled__"
 
 
@@ -545,7 +546,7 @@ class WebPermissionPrompter:
 
     def decide(self, request: PermissionRequest) -> PermissionResult:
         if self._cancelled:
-            return self._finish_deny(request, "(用户已打断本轮，自动拒绝)")
+            return self._finish_deny(request, t("server.002"))
         self._seq += 1
         request_id = f"perm-{self._seq}"
         if request.tool_name == "present_plan":
@@ -871,7 +872,7 @@ def _ai_title(first_text: str) -> Optional[str]:
     )
     title_text = (_utility_client or api_client).generate_text(
         system=[], user=prompt, max_tokens=512)
-    title = " ".join(title_text.split()).strip("　\"'“”「」『』。.!！?？，,；;：:")
+    title = " ".join(title_text.split()).strip(t("server.003"))
     return title[:30] or None
 
 
@@ -899,7 +900,7 @@ def backfill_title(session_id: str, meta: Optional[dict] = None) -> str:
         return meta["title"]
     title = (meta["first_user_text"] or "")[:AUTO_TITLE_LEN] or None
     if not title:
-        return UNTITLED
+        return _untitled()
     store.set_title(session_id, title)
     return title
 
@@ -1433,10 +1434,10 @@ async def api_post_icon(request: dict):
     else:
         m = _ICON_RE.match(str(data))
         if not m:
-            raise HTTPException(status_code=400, detail="图标必须是 PNG/JPEG/WebP 的 dataURL")
+            raise HTTPException(status_code=400, detail=t("server.004"))
         raw = base64.b64decode(m.group(2))
         if len(raw) > 512 * 1024:
-            raise HTTPException(status_code=400, detail="图标过大（解码后限 512KB）")
+            raise HTTPException(status_code=400, detail=t("server.005"))
         APPEARANCE_DIR.mkdir(parents=True, exist_ok=True)
         _ICON_LIVE.write_bytes(raw)
     return {"ok": True, "ver": _icon_ver()}
@@ -1457,7 +1458,7 @@ def _bg_ver() -> int:
 async def api_get_bg():
     """壁纸: 未设置时 404（前端以 bg_ver=0 为"无壁纸"口径, 不会盲拉）。"""
     if not _BG_LIVE.exists():
-        raise HTTPException(status_code=404, detail="未设置背景图片")
+        raise HTTPException(status_code=404, detail=t("server.006"))
     return FileResponse(_BG_LIVE, headers={"Cache-Control": "no-cache"})
 
 
@@ -1475,14 +1476,14 @@ async def api_post_bg(request: dict):
             except PermissionError:
                 time.sleep(0.05)
         else:
-            raise HTTPException(status_code=409, detail="背景图正被读取, 请稍后重试")
+            raise HTTPException(status_code=409, detail=t("server.007"))
     else:
         m = _ICON_RE.match(str(data))
         if not m:
-            raise HTTPException(status_code=400, detail="背景图必须是 PNG/JPEG/WebP 的 dataURL")
+            raise HTTPException(status_code=400, detail=t("server.008"))
         raw = base64.b64decode(m.group(2))
         if len(raw) > _BG_MAX:
-            raise HTTPException(status_code=400, detail="背景图过大（解码后限 20MB）")
+            raise HTTPException(status_code=400, detail=t("server.009"))
         APPEARANCE_DIR.mkdir(parents=True, exist_ok=True)
         _BG_LIVE.write_bytes(raw)
     return {"ok": True, "ver": _bg_ver()}
@@ -1554,7 +1555,7 @@ async def api_list_sessions():
         })
     for sid in _pending_sessions:
         meta = store.get_session_meta(sid)   # 未落盘: 全默认值, 仅一次 stat
-        items.append({"id": sid, "title": UNTITLED, "message_count": 0,
+        items.append({"id": sid, "title": _untitled(), "message_count": 0,
                       "workdir": None, "archived": False, "mtime": 0,
                       "permission_mode": _mode_name_for(sid, meta),
                       "plan_active": _session_plan(sid, meta),
@@ -1582,7 +1583,7 @@ async def api_create_session(payload: Optional[dict] = Body(None)):
     if raw_wd:
         wd = Path(raw_wd)
         if not wd.is_dir():
-            raise HTTPException(status_code=400, detail=f"工作目录不存在: {raw_wd}")
+            raise HTTPException(status_code=400, detail=t("server.010", {"p0": raw_wd}))
         workdir = str(wd.resolve())
         store.set_workdir(sid, workdir)
     # 桌宠会话: 固化 danger-full-access + 关计划开关并立即持久化。
@@ -1600,7 +1601,7 @@ async def api_delete_session(session_id: str):
     """删除会话: 删磁盘 JSONL + 清内存态。对话进行中的会话拒删。"""
     web_session = _sessions.get(session_id)
     if web_session is not None and web_session.busy:
-        raise HTTPException(status_code=409, detail="会话正在对话中，暂不能删除")
+        raise HTTPException(status_code=409, detail=t("server.011"))
     _pending_sessions.discard(session_id)
     _sessions.pop(session_id, None)
     try:
@@ -1647,9 +1648,9 @@ async def api_batch_archive_sessions(request: dict):
     try:
         days = int(request.get("days"))
     except (TypeError, ValueError):
-        raise HTTPException(status_code=422, detail="days 必须是整数天数")
+        raise HTTPException(status_code=422, detail=t("server.012"))
     if days <= 0:
-        raise HTTPException(status_code=422, detail="days 必须是正整数")
+        raise HTTPException(status_code=422, detail=t("server.013"))
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
     archived = 0
     skipped_busy = 0
@@ -1679,13 +1680,13 @@ async def api_archive_session(session_id: str, request: dict):
     """归档/恢复: 追加一条 archive 记录（展示取最新）。对话中的会话拒归档。"""
     archived = request.get("archived")
     if not isinstance(archived, bool):
-        raise HTTPException(status_code=422, detail="archived 必须是布尔值")
+        raise HTTPException(status_code=422, detail=t("server.014"))
     web_session = _sessions.get(session_id)
     if web_session is not None and web_session.busy and archived:
-        raise HTTPException(status_code=409, detail="会话正在对话中，暂不能归档")
+        raise HTTPException(status_code=409, detail=t("server.015"))
     if session_id not in set(store.list_sessions()) \
             and session_id not in _pending_sessions:
-        raise HTTPException(status_code=404, detail="会话不存在")
+        raise HTTPException(status_code=404, detail=t("server.016"))
     store.archive_session(session_id, archived)
     return {"ok": True, "archived": archived}
 
@@ -1695,10 +1696,10 @@ async def api_rename_session(session_id: str, request: dict):
     """手动重命名: 追加一条 title 记录（展示取最新）。未落盘的会话不可重命名。"""
     title = str(request.get("title") or "").strip()
     if not title:
-        raise HTTPException(status_code=400, detail="标题不能为空")
+        raise HTTPException(status_code=400, detail=t("server.017"))
     title = title[:60]
     if session_id not in set(store.list_sessions()):
-        raise HTTPException(status_code=404, detail="会话不存在（还没有消息，无法命名）")
+        raise HTTPException(status_code=404, detail=t("server.018"))
     store.set_title(session_id, title)
     # 手动命名优先: 标记已命名，首轮 AI 命名不再覆盖它
     web_session = _sessions.get(session_id)
@@ -1717,16 +1718,16 @@ async def api_set_session_workdir(session_id: str, request: dict):
     """
     web_session = _sessions.get(session_id)
     if web_session is not None and web_session.busy:
-        raise HTTPException(status_code=409, detail="会话正在对话中，暂不能修改项目")
+        raise HTTPException(status_code=409, detail=t("server.019"))
     exists = session_id in set(store.list_sessions()) or session_id in _pending_sessions
     if not exists:
-        raise HTTPException(status_code=404, detail="会话不存在")
+        raise HTTPException(status_code=404, detail=t("server.020"))
 
     raw_wd = str(request.get("workdir") or "").strip()
     if raw_wd:
         wd = Path(raw_wd)
         if not wd.is_dir():
-            raise HTTPException(status_code=400, detail=f"工作目录不存在: {raw_wd}")
+            raise HTTPException(status_code=400, detail=t("server.021", {"p0": raw_wd}))
         workdir: Optional[str] = str(wd.resolve())
     else:
         workdir = None
@@ -1744,7 +1745,7 @@ async def api_list_dirs(path: str = ""):
     """列出某目录下的子目录（前端工作目录选择器浏览用）。path 缺省为服务进程 cwd。"""
     target = Path(path) if path.strip() else Path.cwd()
     if not target.is_dir():
-        raise HTTPException(status_code=400, detail=f"目录不存在: {target}")
+        raise HTTPException(status_code=400, detail=t("server.022", {"p0": target}))
     try:
         target = target.resolve()
         dirs = sorted(
@@ -1752,7 +1753,7 @@ async def api_list_dirs(path: str = ""):
             key=str.lower,
         )
     except OSError as e:
-        raise HTTPException(status_code=400, detail=f"无法读取目录: {e}")
+        raise HTTPException(status_code=400, detail=t("server.023", {"p0": e}))
     return {"path": str(target), "dirs": dirs}
 
 
@@ -1884,7 +1885,7 @@ async def ws_endpoint(websocket: WebSocket, session_id: str):
             except WebSocketDisconnect:
                 raise
             except ValueError:  # JSON 解析失败（WebSocketDisconnect 不是 ValueError）
-                emit_error("消息不是合法 JSON")
+                emit_error(t("server.024"))
                 continue
             msg_type = raw.get("type")
 
@@ -1920,7 +1921,7 @@ async def ws_endpoint(websocket: WebSocket, session_id: str):
                     # 前端在待发送气泡上提供「立即」按钮, 需要插队时发 queue_promote。
                     # qid 由前端生成（本地排队卡片与后端排队区对齐）, 缺失时兜底生成
                     if len(web_session.pending) >= 10:
-                        emit_error("待发送消息过多（上限 10 条），请等当前轮次结束")
+                        emit_error(t("server.025"))
                         continue
                     web_session.pending.append({
                         "qid": str(raw.get("qid") or uuid.uuid4()),
@@ -1934,7 +1935,7 @@ async def ws_endpoint(websocket: WebSocket, session_id: str):
                 if web_session.workdir is None and raw_wd:
                     wd = Path(raw_wd)
                     if not wd.is_dir():
-                        emit_error(f"工作目录不存在: {raw_wd}")
+                        emit_error(t("server.026", {"p0": raw_wd}))
                         continue
                     web_session.workdir = str(wd.resolve())
                     store.set_workdir(web_session.session_id, web_session.workdir)
@@ -1948,7 +1949,7 @@ async def ws_endpoint(websocket: WebSocket, session_id: str):
                 try:
                     load_runtime_for(web_session)
                 except Exception as e:
-                    emit_error(f"会话加载失败: {e}")
+                    emit_error(t("server.027", {"p0": e}))
                     continue
                 _start_turn(web_session, text, web_session.broadcast,
                             attachments=attachments)
@@ -1981,7 +1982,7 @@ async def ws_endpoint(websocket: WebSocket, session_id: str):
                 mode = NAME_TO_MODE.get(raw_mode) if raw_mode else None
                 if raw_mode and not legacy_plan \
                         and (mode is None or mode == ALLOW_MODE):
-                    emit_error(f"未知或不可用的权限模式: {raw.get('mode')!r}")
+                    emit_error(t("server.028", {"p0": repr(raw.get('mode'))}))
                     continue
                 if legacy_plan:
                     mode = None   # 基础模式不变（"plan"/"read-only" 只是开计划的旧写法）
@@ -2016,7 +2017,7 @@ async def ws_endpoint(websocket: WebSocket, session_id: str):
                 # 下一轮迭代立即生效（stream 按轮携带, 与模式升级同步）。
                 level = str(raw.get("level") or "").strip().lower()
                 if level not in THINKING_LEVELS:
-                    emit_error(f"未知思考等级: {raw.get('level')!r}")
+                    emit_error(t("server.029", {"p0": repr(raw.get('level'))}))
                     continue
                 web_session.thinking_level = level
                 if web_session.runtime is not None:
@@ -2033,13 +2034,13 @@ async def ws_endpoint(websocket: WebSocket, session_id: str):
                 provider_id = str(raw.get("provider_id") or "").strip()
                 model_id = str(raw.get("model_id") or "").strip()
                 if not provider_id or not model_id:
-                    emit_error(f"模型选择不完整: {raw.get('provider_id')!r} | {raw.get('model_id')!r}")
+                    emit_error(t("server.030", {"p0": repr(raw.get('provider_id')), "p1": repr(raw.get('model_id'))}))
                     continue
                 prov = next((p for p in _provider_cfg.get("providers", [])
                              if p.get("id") == provider_id and p.get("enabled")), None)
                 if prov is None or not any(
                         m.get("id") == model_id for m in (prov.get("models") or [])):
-                    emit_error(f"未知模型: {provider_id} | {model_id}")
+                    emit_error(t("server.031", {"p0": provider_id, "p1": model_id}))
                     continue
                 web_session.model_provider = provider_id
                 web_session.model_id = model_id
@@ -2057,7 +2058,7 @@ async def ws_endpoint(websocket: WebSocket, session_id: str):
             elif msg_type == "permission_response":
                 prompter = web_session.prompter
                 if prompter is None:
-                    emit_error("当前没有待审批的请求")
+                    emit_error(t("server.032"))
                 else:
                     prompter.resolve(str(raw.get("request_id")), bool(raw.get("approved")))
 
@@ -2065,7 +2066,7 @@ async def ws_endpoint(websocket: WebSocket, session_id: str):
                 request_stop(web_session)
 
             else:
-                emit_error(f"未知消息类型: {msg_type!r}（已知: user / queue_promote / queue_remove / set_permission_mode / set_thinking_level / set_model / permission_response / stop）")
+                emit_error(t("server.033", {"p0": repr(msg_type)}))
 
     except WebSocketDisconnect:
         # 断连但一轮对话可能还在跑: 朝安全侧叫停；落盘由工作线程完成

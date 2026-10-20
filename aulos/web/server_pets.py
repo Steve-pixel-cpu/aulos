@@ -20,7 +20,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from aulos.api_client import make_api_client, normalize_base_url as _normalize_base_url, \
     normalize_protocol
 from aulos.config import USER_DIR
-from aulos.i18n import language_directive
+from aulos.i18n import language_directive, t
 # TOOLS 经 server_common 转出（它已 from main import TOOLS 并保留在命名空间）:
 # 拆分约定是功能域只依赖 server_common, 不反向 import 内核 main
 from aulos.web.server_common import TOOLS, api_client, app
@@ -205,13 +205,13 @@ async def api_pet_sheet(pid: str):
     """宠物精灵图。id 只认白名单字符, 杜绝路径穿越; 命中不了缓存就重扫一次
     （进程启动后才放进目录的宠物不必重启）。"""
     if not _PET_ID_RE.match(pid):
-        raise HTTPException(status_code=404, detail="宠物不存在")
+        raise HTTPException(status_code=404, detail=t("server_pets.001"))
     sheet = _pet_sheets.get(pid)
     if sheet is None:
         _list_pets()
         sheet = _pet_sheets.get(pid)
     if sheet is None or not sheet.is_file():
-        raise HTTPException(status_code=404, detail="宠物不存在")
+        raise HTTPException(status_code=404, detail=t("server_pets.002"))
     # no-cache: 图集允许缓存但要回源验证, 替换图集后各窗口能拿到新图
     return FileResponse(
         sheet,
@@ -234,7 +234,7 @@ async def api_pets_open_dir():
         else:
             subprocess.Popen(["xdg-open", str(d)])
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"打开失败: {e}")
+        raise HTTPException(status_code=500, detail=t("server_pets.003", {"p0": e}))
     return {"ok": True}
 
 
@@ -243,14 +243,13 @@ async def api_pets_open_dir():
 # 的任务/点歌走完整 agent 会话, 不经过这里）
 # ============================================================================
 
-_PET_DEFAULT_STYLE = ("摸鱼搭子: 住在主人屏幕上的电子小同事, 会吐槽会捧场, "
-                      "陪摸鱼也催干活, 对点歌点单来者不拒")
+_PET_DEFAULT_STYLE = t("server_pets.004") + t("server_pets.005")
 
 
 def _pet_system_prompt(persona: dict) -> str:
     """桌宠 system prompt: 人设来自 pet.json(前端透传), 交互规则留在代码里。
     规则收紧到"一句话 + JSON 输出", 让便宜小模型也能稳定被解析。"""
-    name = str(persona.get("name") or "").strip() or "桌宠"
+    name = str(persona.get("name") or "").strip() or t("server_pets.006")
     style = str(persona.get("style") or "").strip() or _PET_DEFAULT_STYLE
     lines = [
         f"你是桌面宠物「{name}」, 住在主人的电脑屏幕上。",
@@ -274,22 +273,22 @@ def _pet_quip_prompt(state: dict) -> str:
     if event:
         parts.append("刚刚发生: " + event[:100])
     base = str(state.get("base") or "idle")
-    parts.append("当前状态: " + ("正在打工" if base.startswith("running") else "空闲摸鱼"))
+    parts.append(t("server_pets.007") + (t("server_pets.008") if base.startswith("running") else t("server_pets.009")))
     minutes = state.get("run_minutes")
     if isinstance(minutes, (int, float)) and minutes >= 1:
-        parts.append(f"这一轮已经跑了 {int(minutes)} 分钟")
+        parts.append(t("server_pets.010", {"p0": int(minutes)}))
     top = str(state.get("top_tools") or "").strip()
     if top:
         parts.append("用得最多的工具: " + top[:60])
     errs = state.get("errors")
     if isinstance(errs, int) and errs > 0:
-        parts.append(f"出错 {errs} 次")
+        parts.append(t("server_pets.011", {"p0": errs}))
     hour = state.get("hour")
     if isinstance(hour, int) and 0 <= hour <= 23:
-        parts.append(f"现在 {hour} 点")
+        parts.append(t("server_pets.012", {"p0": hour}))
     busy = state.get("busy_sessions")
     if isinstance(busy, int) and busy > 0:
-        parts.append(f"有 {busy} 个会话在干活")
+        parts.append(t("server_pets.013", {"p0": busy}))
     tail = ("针对刚发生的这件事, 说一句应景的吐槽"
             if event else "结合人设和现场说一句应景的点评")
     return "\n".join(parts) + "\n" + tail

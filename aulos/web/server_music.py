@@ -12,6 +12,7 @@ from fastapi import Body, HTTPException
 
 from aulos.web.server_common import app
 import aulos.radio.music as _music
+from aulos.i18n import t
 
 # 在线部分（搜索/直链/歌词）上游失败转 502; 本地曲库是文件读写:
 # KeyError→404（歌单/收藏不存在）, ValueError→400（参数非法）,
@@ -30,7 +31,7 @@ def _library_call(fn, *args, **kwargs):
     try:
         return fn(*args, **kwargs)
     except KeyError as e:
-        raise HTTPException(status_code=404, detail=f"不存在: {e.args[0]}")
+        raise HTTPException(status_code=404, detail=t("server_music.001", {"p0": e.args[0]}))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -46,7 +47,7 @@ async def api_music_library():
 @app.post("/api/music/favorites")
 async def api_music_fav_add(payload: Optional[dict] = Body(None)):
     if not isinstance(payload, dict) or not isinstance(payload.get("songs"), list):
-        raise HTTPException(status_code=400, detail="需要 {\"songs\": [...]}")
+        raise HTTPException(status_code=400, detail=t("server_music.002"))
     return _music.add_favorites(payload["songs"])
 
 
@@ -60,7 +61,7 @@ async def api_music_fav_remove(song_id: str, source: str = "netease"):
 @app.post("/api/music/playlists")
 async def api_music_pl_create(payload: Optional[dict] = Body(None)):
     if not isinstance(payload, dict):
-        raise HTTPException(status_code=400, detail="需要 JSON body")
+        raise HTTPException(status_code=400, detail=t("server_music.003"))
     return _library_call(_music.create_playlist,
                          payload.get("name"), payload.get("songs"))
 
@@ -68,7 +69,7 @@ async def api_music_pl_create(payload: Optional[dict] = Body(None)):
 @app.patch("/api/music/playlists/{pid}")
 async def api_music_pl_rename(pid: int, payload: Optional[dict] = Body(None)):
     if not isinstance(payload, dict):
-        raise HTTPException(status_code=400, detail="需要 JSON body")
+        raise HTTPException(status_code=400, detail=t("server_music.004"))
     return _library_call(_music.rename_playlist, pid, payload.get("name"))
 
 
@@ -80,7 +81,7 @@ async def api_music_pl_delete(pid: int):
 @app.post("/api/music/playlists/{pid}/songs")
 async def api_music_pl_add_songs(pid: int, payload: Optional[dict] = Body(None)):
     if not isinstance(payload, dict) or not isinstance(payload.get("songs"), list):
-        raise HTTPException(status_code=400, detail="需要 {\"songs\": [...]}")
+        raise HTTPException(status_code=400, detail=t("server_music.005"))
     return _library_call(_music.add_to_playlist, pid, payload["songs"])
 
 

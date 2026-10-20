@@ -82,6 +82,7 @@ def test_current_language_reads_settings_json(tmp_path, monkeypatch):
     (tmp_path / "s.json").write_text(
         json.dumps({"language": "en"}), encoding="utf-8")
     monkeypatch.setattr(config, "SETTINGS_FILE", tmp_path / "s.json")
+    i18n._current["lang"] = None   # conftest 的 _force_zh_language 已置 zh; 本用例要验证懒读
     assert i18n.current_language() == "en"
 
 

@@ -448,6 +448,7 @@ from aulos.render import (  # noqa: F401  (re-export: 本文件与其兄弟模�
     c_bold, c_cyan, c_dim, c_red, c_yellow,
     strip_ansi,
 )
+from aulos.i18n import t
 
 SEPARATOR = "─" * 40        # 每轮对话开始的细分隔线
 PREVIEW_MAX_LINES = 3       # 工具结果预览: 最多行数
@@ -492,7 +493,7 @@ def indent_block(text: str, prefix: str = "  ") -> str:
 def format_preview(output: str) -> str:
     """工具结果预览: 最多 3 行 / 160 字符，超出加 '...(已截断，共 N 行)'。"""
     if not output.strip():
-        return "(无输出)"
+        return t("main.001")
     text = output.replace("\r\n", "\n").rstrip("\n")
     all_lines = text.split("\n")
     total = len(all_lines)
@@ -510,7 +511,7 @@ _JSON_KEY_PRIORITY = ("command", "path", "file_path", "url", "content", "plan")
 def describe_tool_input(raw: str) -> str:
     """权限面板/工具提示的『内容』: JSON 先解析取关键信息，解析失败才展示原文。"""
     if not raw.strip():
-        return "(空)"
+        return t("main.002")
     try:
         data = json.loads(raw)
     except ValueError:
@@ -613,8 +614,8 @@ class CliPermissionPrompter:
         print(c_yellow("⚠ 需要授权"))
         print(c_yellow(field_line("工具", request.tool_name)))
         print(c_yellow(field_line(
-            "权限",
-            f"{request.required_mode.as_str()}（当前 {request.current_mode.as_str()}）",
+            t("main.003"),
+            t("main.004", {"p0": request.required_mode.as_str(), "p1": request.current_mode.as_str()}),
         )))
         if request.detail:
             print(c_yellow(field_line("原因", request.detail)))
@@ -790,7 +791,7 @@ def _mode_status_text(runtime: ConversationRuntime) -> str:
     """/mode 与 /status 共用的模式回显: 基础模式 + 计划开关两个状态。"""
     base = runtime.base_permission_mode().as_str()
     if runtime.plan_active():
-        return f"{base} + plan（计划开, 生效档位 read-only）"
+        return t("main.005", {"p0": base})
     return base
 
 
@@ -886,9 +887,9 @@ def print_status(runtime: "ConversationRuntime") -> None:
     print(field_line("思考等级", runtime.thinking_level()))
     latest = runtime.usage().current_turn_usage()
     print(field_line(
-        "最近一轮",
-        f"{latest.input_tokens:,} 入 / {latest.output_tokens:,} 出"
-        f"（缓存读 {latest.cache_read_input_tokens:,}）"))
+        t("main.006"),
+        t("main.007", {"p0": format(latest.input_tokens, ","), "p1": format(latest.output_tokens, ",")})
+        + t("main.008", {"p0": format(latest.cache_read_input_tokens, ",")})))
     print(c_dim(SEPARATOR))
 
 def do_compact(runtime: ConversationRuntime):
@@ -903,7 +904,7 @@ def do_compact(runtime: ConversationRuntime):
 # --- 会话命名 (prompt_dev/session_title.md) ---
 TITLE_MAX_LEN = 50          # /rename 名字上限
 AUTO_TITLE_LEN = 30         # 自动命名截取长度
-UNTITLED = "(未命名)"
+UNTITLED = t("main.009")
 
 
 def derive_title(text: str) -> str:
@@ -983,7 +984,7 @@ def repair_interrupted_turn(session: Session) -> None:
             messages.append(Message.tool_result(
                 id=block.id,
                 name=block.name,
-                output="(用户中断了本轮对话)",
+                output=t("main.010"),
                 is_error=True,
             ))
 
@@ -1058,9 +1059,7 @@ def do_skills(runtime: "ConversationRuntime", name_arg: str) -> None:
     name_arg = (name_arg or "").strip()
     skills = _discover(Path.cwd(), USER_DIR)
     if not skills:
-        print(c_dim("没有已安装的技能。把 SKILL.md 放进 "
-                    "~/.aulos/skills/<name>/ 或 <项目>/.claude/skills/<name>/, "
-                    "或用 Web 设置页从 GitHub 仓库安装。"))
+        print(c_dim(t("main.010") + t("main.011") + t("main.012")))
         return
     if name_arg:
         skill = next((s for s in skills if s.name == name_arg), None)
@@ -1086,8 +1085,7 @@ def do_skills(runtime: "ConversationRuntime", name_arg: str) -> None:
         return
     print(f"已安装 {len(skills)} 个技能:")
     for s in skills:
-        print(f"  {s.name:<24} {c_cyan(s.source):<20} "
-              f"{c_dim(s.description[:60] or '(无描述)')}")
+        print(t("main.013x", {"p0": s.name, "p1": c_cyan(s.source), "p2": c_dim(s.description[:60] or '(无描述)')}))
 
 
 # --- REPL ---
@@ -1491,8 +1489,8 @@ def _assemble(session_store: SessionStore, session_id: str, *,
         mode = NAME_TO_MODE.get(name)
         if mode is None or mode == ALLOW_MODE:
             raise StartupError(
-                f"无效的权限模式: {permission_mode_override!r}"
-                f"（可选: {' | '.join(v for v in MODE_TO_NAME.values() if v != 'allow')} | plan）")
+                t("main.014", {"p0": repr(permission_mode_override)})
+                + t("main.015", {"p0": ' | '.join(v for v in MODE_TO_NAME.values() if v != 'allow')}))
         permission_mode = mode
         plan_mode = plan_flag
     else:
@@ -1645,7 +1643,7 @@ def run_headless(session_store: SessionStore, session_id: str, task: str, *,
         except Exception:
             piped = ""
         if piped.strip():
-            task = f"{task}\n\n--- 管道输入（stdin）---\n{piped}"
+            task = t("main.016", {"p0": task, "p1": piped})
 
     try:
         _, runtime, last_uuid = _assemble(
@@ -1768,15 +1766,12 @@ def usage() -> None:
     print("  -c, --continue  恢复最近一次会话")
     print("  --resume <id>   恢复指定会话")
     print("  --list          列出全部会话")
-    print('  -p, --print "任务"  一次性执行任务后退出（headless）, stdin 非'
-          "终端时会并入任务")
-    print("                      --output-format text|json   text=只出正文;"
-          " json=结果对象(含用量/子状态)")
+    print('  -p, --print "任务"  一次性执行任务后退出（headless）, stdin 非' + t("main.017"))
+    print("                      --output-format text|json   text=只出正文;" + t("main.018"))
     print("                      --model <名>                覆盖本次运行的模型")
-    print("                      --permission-mode <模式>    prompt | "
-          "workspace-write | danger-full-access | plan(计划开关)")
-    print("                      退出码: 0=完成 1=运行错误 2=中断 "
-          "3=预算/迭代提前收束 4=用法/启动错误")
+    print("                      --permission-mode <模式>    prompt | " + t("main.019"))
+    print("                      退出码: 0=完成 1=运行错误 2=中断 " +
+          t("main.020"))
 
 
 def main():

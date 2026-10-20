@@ -21,6 +21,21 @@ def _disable_token_gate(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _force_zh_language(monkeypatch, tmp_path):
+    """测试基线语言 = zh。
+
+    用户真实 ~/.aulos/settings.json 可能 language=en（i18n 生效后 detail/
+    toast 文案变英文）——断言中文字面量的既有用例会因宿主环境翻车。
+    每条用例强制 zh + 隔离 settings 文件, 保证文案断言稳定。"""
+    import aulos.i18n as i18n
+    from aulos import config
+    monkeypatch.setattr(config, "SETTINGS_FILE", tmp_path / "none.json")
+    i18n._current["lang"] = "zh"
+    yield
+    i18n._current["lang"] = None
+
+
+@pytest.fixture(autouse=True)
 def _no_user_mcp_in_tools():
     """测试进程内全局 TOOLS 不携带用户真实 MCP 工具。
 

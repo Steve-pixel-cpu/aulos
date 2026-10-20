@@ -85,14 +85,14 @@ async def api_install_skills(request: dict):
     subpath = str(request.get("subpath") or "").strip()
     overwrite = bool(request.get("overwrite", False))
     if not repo:
-        raise HTTPException(status_code=400, detail="repo 不能为空")
+        raise HTTPException(status_code=400, detail=t("server_settings.001"))
     try:
         installed = install_from_repo(repo, server.USER_DIR,
                                       subpath=subpath, overwrite=overwrite)
     except SkillError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"安装失败: {e}")
+        raise HTTPException(status_code=400, detail=t("server_settings.002", {"p0": e}))
     sync_skill_tools(server.TOOLS, discover_skills(Path.cwd(), server.USER_DIR))
     _rebind_skill_tools()
     _resync_session_prompts()
@@ -111,8 +111,8 @@ async def api_delete_skill(name: str):
             if project_dir.is_dir():
                 raise HTTPException(
                     status_code=400,
-                    detail=f"{name} 是项目级技能（位于 {project_dir}）, "
-                           "请在项目仓库里管理")
+                    detail=t("server_settings.003", {"p0": name, "p1": project_dir})
+                           + t("server_settings.004"))
         raise HTTPException(status_code=400, detail=msg)
     sync_skill_tools(server.TOOLS, discover_skills(Path.cwd(), server.USER_DIR))
     _rebind_skill_tools()
@@ -138,7 +138,7 @@ async def api_add_memory(request: dict):
     from aulos.memory.tools import get_memory_store
     content = " ".join(str(request.get("content") or "").split())
     if not content:
-        raise HTTPException(status_code=400, detail="content 不能为空")
+        raise HTTPException(status_code=400, detail=t("server_settings.005"))
     category = str(request.get("category") or "fact")
     if category not in ("preference", "fact", "context"):
         category = "fact"
@@ -151,10 +151,10 @@ async def api_update_memory(memory_id: str, request: dict):
     from aulos.memory.tools import get_memory_store
     content = " ".join(str(request.get("content") or "").split())
     if not content:
-        raise HTTPException(status_code=400, detail="content 不能为空")
+        raise HTTPException(status_code=400, detail=t("server_settings.006"))
     m = get_memory_store().update(memory_id, content)
     if m is None:
-        raise HTTPException(status_code=404, detail=f"记忆不存在: {memory_id}")
+        raise HTTPException(status_code=404, detail=t("server_settings.007", {"p0": memory_id}))
     return {"memory": m}
 
 
@@ -162,7 +162,7 @@ async def api_update_memory(memory_id: str, request: dict):
 async def api_delete_memory(memory_id: str):
     from aulos.memory.tools import get_memory_store
     if not get_memory_store().remove(memory_id):
-        raise HTTPException(status_code=404, detail=f"记忆不存在: {memory_id}")
+        raise HTTPException(status_code=404, detail=t("server_settings.008", {"p0": memory_id}))
     return {"ok": True}
 
 
@@ -197,26 +197,26 @@ def _validate_mcp_entry(name: str, spec: dict) -> None:
     transport = spec.get("type", "stdio")
     if transport not in ("stdio", "http", "sse"):
         raise HTTPException(status_code=400,
-                            detail=f"{name}: type 只支持 stdio / http / sse")
+                            detail=t("server_settings.009", {"p0": name}))
     timeout = spec.get("timeout", 60)
     if not isinstance(timeout, int) or isinstance(timeout, bool) or timeout <= 0:
         raise HTTPException(status_code=400,
-                            detail=f"{name}: timeout 必须是正整数秒")
+                            detail=t("server_settings.010", {"p0": name}))
     for key in ("args",):
         v = spec.get(key, [])
         if not isinstance(v, list) or not all(isinstance(a, str) for a in v):
-            raise HTTPException(status_code=400, detail=f"{name}: args 必须是字符串数组")
+            raise HTTPException(status_code=400, detail=t("server_settings.011", {"p0": name}))
     for key in ("env", "headers"):
         v = spec.get(key, {})
         if not isinstance(v, dict) or not all(
                 isinstance(k, str) and isinstance(x, str) for k, x in v.items()):
             raise HTTPException(status_code=400,
-                                detail=f"{name}: {key} 必须是字符串→字符串对象")
+                                detail=t("server_settings.012", {"p0": name, "p1": key}))
     if transport == "stdio":
         if not str(spec.get("command") or "").strip():
-            raise HTTPException(status_code=400, detail=f"{name}: stdio 需要 command")
+            raise HTTPException(status_code=400, detail=t("server_settings.013", {"p0": name}))
     elif not str(spec.get("url") or "").strip():
-        raise HTTPException(status_code=400, detail=f"{name}: {transport} 需要 url")
+        raise HTTPException(status_code=400, detail=t("server_settings.014", {"p0": name, "p1": transport}))
 
 
 @app.post("/api/mcp/servers")
@@ -227,13 +227,13 @@ async def api_save_mcp_servers(request: dict):
     名字清洗规则与工具名前缀一致, 避免存进去了却连不出合法工具名。"""
     raw = request.get("mcpServers")
     if not isinstance(raw, dict):
-        raise HTTPException(status_code=400, detail="mcpServers 必须是对象")
+        raise HTTPException(status_code=400, detail=t("server_settings.015"))
     cleaned: dict = {}
     for name, spec in raw.items():
         if not isinstance(name, str) or not name.strip():
-            raise HTTPException(status_code=400, detail="服务器名不能为空")
+            raise HTTPException(status_code=400, detail=t("server_settings.016"))
         if not isinstance(spec, dict):
-            raise HTTPException(status_code=400, detail=f"{name}: 描述必须是对象")
+            raise HTTPException(status_code=400, detail=t("server_settings.017", {"p0": name}))
         entry = {k: v for k, v in spec.items() if v not in ("", None, [], {})}
         # type 推断先于校验: {"url":...} 应识别为 http 而非按缺 command 的 stdio 拒掉
         if "type" not in entry:
@@ -248,7 +248,7 @@ async def api_save_mcp_servers(request: dict):
     try:
         fresh = ConfigLoader(cwd=Path.cwd(), config_home=server.USER_DIR).load()
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"保存后加载失败: {e}")
+        raise HTTPException(status_code=400, detail=t("server_settings.018", {"p0": e}))
     server.runtime_config = fresh
     # 换绑必须落在外层壳委托的 _inner 上: execute 走 _inner, 挂到外层
     # dict 的 handler 永远不会被调到, 而 _inner 里的旧 handler 闭包引用
@@ -268,7 +268,7 @@ async def api_mcp_reload():
     try:
         fresh = ConfigLoader(cwd=Path.cwd(), config_home=server.USER_DIR).load()
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"配置加载失败: {e}")
+        raise HTTPException(status_code=400, detail=t("server_settings.019", {"p0": e}))
     server.runtime_config = fresh
     servers: list = fresh.mcp_servers()
     # 同 save 端点: 必须换绑 _inner(理由见上)
@@ -326,7 +326,7 @@ async def api_post_settings(request: dict):
         if level not in THINKING_LEVELS:
             raise HTTPException(
                 status_code=400,
-                detail=f"未知思考等级: {thinking}（可选: {' | '.join(THINKING_LEVELS)}）",
+                detail=t("server_settings.020", {"p0": thinking, "p1": ' | '.join(THINKING_LEVELS)}),
             )
         server.api_client.set_thinking_level(level)  # 新会话的默认值
         _save_setting("thinkingLevel", level)
@@ -360,12 +360,12 @@ async def api_post_settings(request: dict):
         if mode is None:
             raise HTTPException(
                 status_code=400,
-                detail=f"未知权限模式: {mode_name}（可选: {' | '.join(MODE_TO_NAME.values())}）",
+                detail=t("server_settings.021", {"p0": mode_name, "p1": ' | '.join(MODE_TO_NAME.values())}),
             )
         if mode == server.ALLOW_MODE:
             # 与 CLI 配置口径一致: allow 连将来需要问的工具也一并放行,
             # 不允许从设置进入（REPL /mode allow 临时开启不受影响）
-            raise HTTPException(status_code=400, detail="allow 模式不允许从设置进入")
+            raise HTTPException(status_code=400, detail=t("server_settings.022"))
         server.app_state.set_permission_mode(mode)
         _save_permission_mode(mode)
         if legacy_plan:
@@ -380,7 +380,7 @@ async def api_post_settings(request: dict):
     if plan_flag is not None:
         if not isinstance(plan_flag, bool):
             raise HTTPException(status_code=400,
-                                detail=f"permission_plan 须为布尔, got {plan_flag!r}")
+                                detail=t("server_settings.023", {"p0": repr(plan_flag)}))
         server.app_state.plan_active = plan_flag
         _save_setting("permissionPlan", plan_flag)
 
@@ -394,7 +394,7 @@ async def api_post_settings(request: dict):
                 or not 1 <= raw_iterations <= 10000):
             raise HTTPException(
                 status_code=400,
-                detail=f"max_iterations: 须为 1–10000 的整数, got {raw_iterations!r}",
+                detail=t("server_settings.024", {"p0": repr(raw_iterations)}),
             )
         server.runtime_config.feature_config.max_iterations = raw_iterations
         _save_setting("maxIterations", raw_iterations)
@@ -406,7 +406,7 @@ async def api_post_settings(request: dict):
         if not isinstance(raw_downshift, bool):
             raise HTTPException(
                 status_code=400,
-                detail=f"thinking_auto_downshift: 须为布尔, got {raw_downshift!r}",
+                detail=t("server_settings.025", {"p0": repr(raw_downshift)}),
             )
         server.runtime_config.feature_config.thinking_auto_downshift = raw_downshift
         _save_setting("thinkingAutoDownshift", raw_downshift)
@@ -419,7 +419,7 @@ async def api_post_settings(request: dict):
                 or not 1 <= raw_downshift_after <= 10000):
             raise HTTPException(
                 status_code=400,
-                detail=("downshift_after_iterations: 须为 1–10000 的整数, "
+                detail=(t("server_settings.026") +
                         f"got {raw_downshift_after!r}"),
             )
         server.runtime_config.feature_config.downshift_after_iterations = raw_downshift_after
@@ -431,7 +431,7 @@ async def api_post_settings(request: dict):
                 or not 0 <= raw_nudge <= 10000):
             raise HTTPException(
                 status_code=400,
-                detail=f"convergence_nudge_at: 须为 0–10000 的整数, got {raw_nudge!r}",
+                detail=t("server_settings.027", {"p0": repr(raw_nudge)}),
             )
         server.runtime_config.feature_config.convergence_nudge_at = raw_nudge
         _save_setting("convergenceNudgeAt", raw_nudge)
@@ -444,7 +444,7 @@ async def api_post_settings(request: dict):
         if not isinstance(raw_browser_headless, bool):
             raise HTTPException(
                 status_code=400,
-                detail=f"browser_headless: 须为布尔, got {raw_browser_headless!r}",
+                detail=t("server_settings.028", {"p0": repr(raw_browser_headless)}),
             )
         server.runtime_config.feature_config.browser_headless = raw_browser_headless
         _save_setting("browserHeadless", raw_browser_headless)
@@ -456,7 +456,7 @@ async def api_post_settings(request: dict):
                 or not 0 <= raw_browser_slow_mo <= 10000):
             raise HTTPException(
                 status_code=400,
-                detail=("browser_slow_mo: 须为 0–10000 的整数, "
+                detail=(t("server_settings.029") +
                         f"got {raw_browser_slow_mo!r}"),
             )
         server.runtime_config.feature_config.browser_slow_mo = raw_browser_slow_mo
@@ -531,7 +531,7 @@ async def api_save_utility_provider(request: dict):
     pid = str(request.get("provider") or "").strip()
     if pid and not any(p.get("id") == pid
                        for p in server._provider_cfg.get("providers", [])):
-        raise HTTPException(status_code=400, detail=f"供应商不存在: {pid}")
+        raise HTTPException(status_code=400, detail=t("server_settings.030", {"p0": pid}))
     setting = save_utility_provider_setting(
         {"provider": pid, "model": request.get("model")})
     server._rebuild_utility_client()
@@ -558,7 +558,7 @@ async def api_save_worker_provider(request: dict):
     pid = str(request.get("provider") or "").strip()
     if pid and not any(p.get("id") == pid
                        for p in server._provider_cfg.get("providers", [])):
-        raise HTTPException(status_code=400, detail=f"供应商不存在: {pid}")
+        raise HTTPException(status_code=400, detail=t("server_settings.031", {"p0": pid}))
     setting = save_worker_provider_setting(
         {"provider": pid, "model": request.get("model")})
     wprov = load_worker_provider()
@@ -571,23 +571,23 @@ async def api_save_providers(request: dict):
     providers = request.get("providers")
     active = request.get("active")
     if not isinstance(providers, list):
-        raise HTTPException(status_code=400, detail="providers 必须是数组")
+        raise HTTPException(status_code=400, detail=t("server_settings.032"))
     ids = [p.get("id") for p in providers]
     if len(ids) != len(set(ids)):
-        raise HTTPException(status_code=400, detail="供应商 id 重复")
+        raise HTTPException(status_code=400, detail=t("server_settings.033"))
     for p in providers:
         if not p.get("id") or not p.get("name"):
-            raise HTTPException(status_code=400, detail="供应商缺少 id 或名称")
+            raise HTTPException(status_code=400, detail=t("server_settings.034"))
         if not isinstance(p.get("models"), list):
-            raise HTTPException(status_code=400, detail=f"供应商 {p.get('name')} 缺少模型列表")
+            raise HTTPException(status_code=400, detail=t("server_settings.035", {"p0": p.get('name')}))
         # protocol: anthropic（缺省）| openai。非法值直接拒绝保存。
         try:
             p["protocol"] = normalize_protocol(p.get("protocol"))
         except ValueError:
             raise HTTPException(
                 status_code=400,
-                detail=f"供应商 {p.get('name')} 的 protocol 非法"
-                       f"（可选: {' / '.join(KNOWN_PROTOCOLS)}）",
+                detail=t("server_settings.036", {"p0": p.get('name')})
+                       + t("server_settings.037", {"p0": ' / '.join(KNOWN_PROTOCOLS)}),
             )
         # 照 OpenAI 习惯粘贴的 https://xxx/v1 在此归一（SDK 会自动拼 /v1/messages）
         p["base_url"] = server._normalize_base_url(p.get("base_url"),
@@ -596,7 +596,7 @@ async def api_save_providers(request: dict):
         if p.get("enabled") is not False and not p["base_url"]:
             raise HTTPException(
                 status_code=400,
-                detail=f"供应商 {p.get('name')} 缺少接口地址 Base URL",
+                detail=t("server_settings.038", {"p0": p.get('name')}),
             )
     cfg = {"active": active if isinstance(active, dict) else server._provider_cfg.get("active"),
            "providers": providers}
@@ -617,12 +617,12 @@ async def api_test_provider(request: dict):
     except ValueError:
         raise HTTPException(
             status_code=400,
-            detail=f"protocol 非法（可选: {' / '.join(KNOWN_PROTOCOLS)}）")
+            detail=t("server_settings.039", {"p0": ' / '.join(KNOWN_PROTOCOLS)}))
     base_url = server._normalize_base_url(request.get("base_url"), protocol=protocol) or None
     api_key = request.get("api_key") or ""
     model = request.get("model") or ""
     if not api_key or not model:
-        raise HTTPException(status_code=400, detail="缺少 api_key 或 model")
+        raise HTTPException(status_code=400, detail=t("server_settings.040"))
     try:
         if protocol == "openai":
             from openai import OpenAI
@@ -660,5 +660,5 @@ async def api_open_config():
         else:
             subprocess.Popen(["xdg-open", str(path)])
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"打开失败: {e}")
+        raise HTTPException(status_code=500, detail=t("server_settings.041", {"p0": e}))
     return {"ok": True}

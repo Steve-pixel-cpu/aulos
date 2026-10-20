@@ -18,6 +18,7 @@ from aulos.config import (load_command_allowlist, save_command_allowlist,
                     load_additional_directories, save_additional_directories,
                     load_command_denylist, save_command_denylist,
                     load_sensitive_paths, save_sensitive_paths)
+from aulos.i18n import t
 
 
 # ============================================================================
@@ -81,7 +82,7 @@ async def api_add_allowlist_rule(request: dict):
     重复添加幂等（返回现有列表）。成功后热更新所有活跃 runtime。"""
     rule = request.get("rule")
     if not isinstance(rule, str) or not rule.strip():
-        raise HTTPException(status_code=400, detail="rule 不能为空")
+        raise HTTPException(status_code=400, detail=t("server_policy.001"))
     rules = load_command_allowlist() + [rule]
     saved = save_command_allowlist(rules)
     _apply_allowlist_to_runtimes(saved)
@@ -93,7 +94,7 @@ async def api_delete_allowlist_rule(request: dict):
     """删除一条规则（按原文精确匹配; 前端从列表渲染而来, 原文可用）。"""
     rule = request.get("rule")
     if not isinstance(rule, str) or not rule:
-        raise HTTPException(status_code=400, detail="rule 不能为空")
+        raise HTTPException(status_code=400, detail=t("server_policy.002"))
     rules = [r for r in load_command_allowlist() if r != rule]
     saved = save_command_allowlist(rules)
     _apply_allowlist_to_runtimes(saved)
@@ -108,12 +109,12 @@ async def api_add_session_allow_rule(session_id: str, request: dict):
     import aulos.server as server
     web_session = server._sessions.get(session_id)
     if web_session is None:
-        raise HTTPException(status_code=404, detail="会话不存在或未打开")
+        raise HTTPException(status_code=404, detail=t("server_policy.003"))
     if web_session.runtime is None:
-        raise HTTPException(status_code=409, detail="会话 runtime 未组装")
+        raise HTTPException(status_code=409, detail=t("server_policy.004"))
     rule = str(request.get("rule") or "").strip()
     if not rule:
-        raise HTTPException(status_code=400, detail="rule 不能为空")
+        raise HTTPException(status_code=400, detail=t("server_policy.005"))
     web_session.runtime.add_session_allow_rule(rule)
     return {"ok": True, "rule": rule}
 
@@ -132,7 +133,7 @@ async def api_get_denylist():
 async def api_add_denylist_rule(request: dict):
     rule = request.get("rule")
     if not isinstance(rule, str) or not rule.strip():
-        raise HTTPException(status_code=400, detail="rule 不能为空")
+        raise HTTPException(status_code=400, detail=t("server_policy.006"))
     saved = save_command_denylist(load_command_denylist() + [rule])
     _apply_policy_list("set_command_denylist", saved)
     return {"ok": True, "rules": saved}
@@ -142,7 +143,7 @@ async def api_add_denylist_rule(request: dict):
 async def api_delete_denylist_rule(request: dict):
     rule = request.get("rule")
     if not isinstance(rule, str) or not rule:
-        raise HTTPException(status_code=400, detail="rule 不能为空")
+        raise HTTPException(status_code=400, detail=t("server_policy.007"))
     saved = save_command_denylist(
         [r for r in load_command_denylist() if r != rule])
     _apply_policy_list("set_command_denylist", saved)
@@ -163,7 +164,7 @@ async def api_get_sensitive_paths():
 async def api_add_sensitive_path(request: dict):
     p = str(request.get("path") or "").strip()
     if not p:
-        raise HTTPException(status_code=400, detail="path 不能为空")
+        raise HTTPException(status_code=400, detail=t("server_policy.008"))
     saved = save_sensitive_paths(load_sensitive_paths() + [p])
     _apply_policy_list("set_sensitive_paths", saved)
     return {"ok": True, "paths": saved}
@@ -173,7 +174,7 @@ async def api_add_sensitive_path(request: dict):
 async def api_delete_sensitive_path(request: dict):
     p = str(request.get("path") or "").strip()
     if not p:
-        raise HTTPException(status_code=400, detail="path 不能为空")
+        raise HTTPException(status_code=400, detail=t("server_policy.009"))
     saved = save_sensitive_paths([x for x in load_sensitive_paths() if x != p])
     _apply_policy_list("set_sensitive_paths", saved)
     return {"ok": True, "paths": saved}
@@ -195,10 +196,10 @@ async def api_add_additional_dir(request: dict):
     越界写立即变为根内写（不再弹问）。"""
     d = str(request.get("dir") or "").strip()
     if not d:
-        raise HTTPException(status_code=400, detail="dir 不能为空")
+        raise HTTPException(status_code=400, detail=t("server_policy.010"))
     p = Path(d)
     if not p.is_dir():
-        raise HTTPException(status_code=400, detail=f"目录不存在: {d}")
+        raise HTTPException(status_code=400, detail=t("server_policy.011", {"p0": d}))
     saved = save_additional_directories(
         load_additional_directories() + [str(p.resolve())])
     _apply_workspace_roots_to_runtimes()
@@ -210,7 +211,7 @@ async def api_delete_additional_dir(request: dict):
     """移除一个附加目录（按原文精确匹配; 前端从列表渲染而来）。"""
     d = str(request.get("dir") or "").strip()
     if not d:
-        raise HTTPException(status_code=400, detail="dir 不能为空")
+        raise HTTPException(status_code=400, detail=t("server_policy.012"))
     saved = save_additional_directories(
         [x for x in load_additional_directories() if x != d])
     _apply_workspace_roots_to_runtimes()
@@ -229,13 +230,13 @@ async def api_permission_respond(request: dict):
     import aulos.server as server
     web_session = server._sessions.get(str(request.get("session_id") or ""))
     if web_session is None:
-        raise HTTPException(status_code=404, detail="会话不存在或未打开")
+        raise HTTPException(status_code=404, detail=t("server_policy.013"))
     prompter = web_session.prompter
     if prompter is None:
-        raise HTTPException(status_code=409, detail="当前没有待审批的请求")
+        raise HTTPException(status_code=409, detail=t("server_policy.014"))
     request_id = str(request.get("request_id") or "")
     if not request_id:
-        raise HTTPException(status_code=400, detail="request_id 不能为空")
+        raise HTTPException(status_code=400, detail=t("server_policy.015"))
     approved = bool(request.get("approved"))
     prompter.resolve(request_id, approved)
     # 广播批复结果: 走桌宠/REST 批复时主窗不知道请求已被处理, 其

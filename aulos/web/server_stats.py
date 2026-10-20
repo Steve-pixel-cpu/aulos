@@ -18,6 +18,7 @@ from fastapi import HTTPException
 
 from aulos.web.server_common import app
 from aulos.config import USER_DIR
+from aulos.i18n import t
 
 # 独立定义（不 import call_log 的常量）: 遥测读侧与日志写侧解耦,
 # 测试 monkeypatch 本模块的 LOG_DIR 即可重定向, 不牵连写侧。
@@ -176,7 +177,7 @@ def _check_date(date: Optional[str]) -> str:
     d = date or datetime.now().strftime("%Y%m%d")
     if not _DAY_RE.match(d):
         raise HTTPException(status_code=400,
-                            detail=f"日期格式应为 YYYYMMDD: {date!r}")
+                            detail=t("server_stats.001", {"p0": repr(date)}))
     return d
 
 
