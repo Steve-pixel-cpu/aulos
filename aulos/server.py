@@ -174,7 +174,7 @@ async def _token_gate(request: Request, call_next):
         if provided != API_TOKEN:
             return JSONResponse(
                 status_code=403,
-                content={"detail": "请通过 Aulos 桌面应用打开"},
+                content={"detail": t("server.034")},
             )
     return await call_next(request)
 
@@ -975,45 +975,45 @@ def _parse_attachments(raw) -> tuple[Optional[list[dict]], Optional[str]]:
     if raw is None:
         return [], None
     if not isinstance(raw, list):
-        return None, "attachments 必须是数组"
+        return None, t("server.035")
     images: list[dict] = []
     files: list[dict] = []
     total_bytes = 0
     for att in raw:
         if not isinstance(att, dict):
-            return None, "attachments 项必须是对象"
+            return None, t("server.037")
         kind = att.get("kind")
         if kind == "image":
             name = str(att.get("name") or "").strip()
             media_type = str(att.get("media_type") or "").strip().lower()
             data = att.get("data")
             if media_type not in ATTACH_IMAGE_TYPES:
-                return None, f"不支持的图片类型: {media_type or '(缺失)'}（仅支持 png/jpeg/webp/gif）"
+                return None, t("server.038", {"p0": media_type or t("server.050")}) + t("server.039")
             if not isinstance(data, str) or not data:
-                return None, f"图片 {name or media_type} 缺少 data"
+                return None, t("server.040", {"p0": name or media_type}) + t("server.041")
             b64_len = len(data)
             total_bytes += b64_len
             if b64_len > MAX_IMAGE_B64_BYTES:
-                return None, f"图片 {name or media_type} 过大（base64 超 5MB）"
+                return None, t("server.040", {"p0": name or media_type}) + t("server.042")
             images.append({"kind": "image", "name": name,
                            "media_type": media_type, "data": data})
             if len(images) > MAX_IMAGES:
-                return None, f"图片最多 {MAX_IMAGES} 张"
+                return None, t("server.043", {"p0": MAX_IMAGES}) + t("server.044")
         elif kind == "file":
             name = str(att.get("name") or "").strip()
             text = att.get("text")
             if not isinstance(text, str):
-                return None, f"文本附件 {name or '(未命名)'} 缺少 text"
+                return None, t("server.046", {"p0": name or t("server.051")}) + t("server.047")
             total_bytes += len(text.encode("utf-8", "replace"))
             if len(text) > MAX_FILE_TEXT_BYTES:
-                return None, f"文本附件 {name or '(未命名)'} 过大（内容超 512KB）"
+                return None, t("server.046", {"p0": name or t("server.051")}) + t("server.048")
             files.append({"kind": "file", "name": name, "text": text})
             if len(files) > MAX_FILES:
-                return None, f"文本附件最多 {MAX_FILES} 个"
+                return None, t("server.043", {"p0": MAX_FILES}) + t("server.049")
         else:
-            return None, f"未知附件类型: {kind!r}"
+            return None, t("server.045", {"p0": repr(kind)})
     if total_bytes > MAX_TOTAL_ATTACH_BYTES:
-        return None, "附件总量超过 20MB"
+        return None, t("server.036")
     return images + files, None
 
 

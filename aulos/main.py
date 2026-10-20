@@ -501,7 +501,7 @@ def format_preview(output: str) -> str:
     if len(preview) > PREVIEW_MAX_CHARS:
         preview = preview[:PREVIEW_MAX_CHARS]
     if total > PREVIEW_MAX_LINES or len(text) > len(preview):
-        preview += f"\n...(已截断，共 {total} 行)"
+        preview += t("main.022", {"p0": total})
     return preview
 
 
@@ -620,8 +620,7 @@ class CliPermissionPrompter:
         if request.detail:
             print(c_yellow(field_line("原因", request.detail)))
         print(c_yellow(field_line("内容", describe_tool_input(request.input))))
-        hint = ("批准? [y]本次 / [a]总是(白名单) / [s]本会话 / [N]拒绝 "
-                if rememberable else "批准? [y/N] ")
+        hint = (t("main.023") if rememberable else t("main.024"))
         try:
             user_input = input(c_yellow(hint))
         except KeyboardInterrupt:
@@ -807,7 +806,7 @@ def switch_mode(runtime: ConversationRuntime, mode_name: str) -> None:
     if name == "plan":
         active = not runtime.plan_active()
         runtime.set_plan_mode(active)
-        state = "开" if active else "关"
+        state = t("main.025") if active else t("main.026")
         print(f"计划模式已{state}: {_mode_status_text(runtime)}")
         return
     mode = NAME_TO_MODE.get(name)
@@ -840,7 +839,7 @@ def switch_model(runtime: "ConversationRuntime", model_name: str) -> None:
     覆盖, 回到启动时的模型。跨 provider 切换请重启时换环境变量/--model。
     """
     from aulos.config import load_providers
-    current = runtime.model() or "(跟随启动模型)"
+    current = runtime.model() or t("main.021")
     if not model_name:
         print(f"当前模型: {current}")
         prov_cfg = load_providers()
@@ -1715,33 +1714,30 @@ def _parse_headless_args(rest: list[str]) -> tuple[Optional[str], dict, Optional
         arg = rest[i]
         if arg == "--output-format":
             if i + 1 >= len(rest):
-                return None, opts, "--output-format 需要值: text | json"
+                return None, opts, t("main.030")
             i += 1
             if rest[i] not in ("text", "json"):
-                return None, opts, f"无效的 --output-format: {rest[i]!r}（可选: text | json）"
+                return None, opts, t("main.031", {"p0": repr(rest[i])}) + t("main.032")
             opts["output_format"] = rest[i]
         elif arg == "--model":
             if i + 1 >= len(rest):
-                return None, opts, "--model 需要模型名"
+                return None, opts, t("main.033")
             i += 1
             opts["model_override"] = rest[i]
         elif arg == "--permission-mode":
             if i + 1 >= len(rest):
-                return None, opts, ("--permission-mode 需要值"
-                                    "（prompt | workspace-write | danger-full-access | plan）")
+                return None, opts, t("main.034")
             i += 1
             opts["permission_mode_override"] = rest[i]
         elif arg.startswith("-"):
-            return None, opts, f"未知选项: {arg}"
+            return None, opts, t("main.035", {"p0": arg})
         elif task is None:
             task = arg
         else:
             return None, opts, f"多余的位置参数: {arg!r}（任务文本只收一个, 带空格请加引号）"
         i += 1
     if not task or not task.strip():
-        return None, opts, ('缺少任务文本。用法: python main.py -p "任务" '
-                            "[--output-format text|json] [--model 名] "
-                            "[--permission-mode prompt|workspace-write|danger-full-access|plan]")
+        return None, opts, (t("main.027") + t("main.028") + t("main.029"))
     return task, opts, None
 
 

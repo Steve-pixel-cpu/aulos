@@ -24,6 +24,24 @@ use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager, RunEvent, WindowEvent, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_opener::OpenerExt;
 
+// ==== i18n (spec §6): UI 文案语言跟随 ~/.aulos/settings.json; boot_log 日志保持中文 ====
+static LANG_EN: LazyLock<bool> = LazyLock::new(|| {
+    let home = std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(std::path::PathBuf::from)
+        .unwrap_or_default();
+    let path = home.join(".aulos").join("settings.json");
+    std::fs::read_to_string(path).ok()
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+        .and_then(|v| v.get("language").and_then(|l| l.as_str()).map(|l| l == "en"))
+        .unwrap_or(false)
+});
+
+/// UI 文案双语选择: zh_en("中文", "English")
+fn zh_en(zh: &str, en: &str) -> String {
+    if *LANG_EN { en.to_string() } else { zh.to_string() }
+}
+
 /// 本壳拉起的后端子进程; None = 复用外部已运行的服务（退出时不杀）
 static CHILD: LazyLock<Mutex<Option<Child>>> = LazyLock::new(|| Mutex::new(None));
 
@@ -102,7 +120,7 @@ fn set_resource_dir(app: &AppHandle) {
             "resource_dir = {}",
             dir.as_ref()
                 .map(|d| d.display().to_string())
-                .unwrap_or_else(|| "(解析失败)".into()),
+                .unwrap_or_else(|| zh_en("(解析失败)", "(parse failed)")),
         ),
     );
     let _ = RESOURCE_DIR.set(dir);
@@ -381,9 +399,9 @@ fn spawn_backend(program: PathBuf, args: Vec<String>, cwd: PathBuf) -> Result<Ch
         cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
     }
     let mut child = cmd.spawn().map_err(|e| {
-        let msg = format!(
-            "启动后端 {} 失败: {e}\n发布版常见原因: 杀毒软件已隔离 resources\\server\\aulos-server.exe, 或安装目录缺少该文件。",
-            program.display()
+        let msg = zh_en(
+            &format!("启动后端 {} 失败: {e}\n发布版常见原因: 杀毒软件已隔离 resources\\\\server\\aulos-server.exe, 或安装目录缺少该文件。", program.display()),
+            &format!("Failed to start backend {}: {e}\nCommon causes in release builds: the antivirus quarantined resources\\\\server\\aulos-server.exe, or the file is missing from the install directory.", program.display()),
         );
         boot_log("shell", &msg);
         msg
@@ -398,7 +416,7 @@ fn spawn_backend(program: PathBuf, args: Vec<String>, cwd: PathBuf) -> Result<Ch
 }
 
 fn start_server() -> Result<Child, String> {
-    // 打包态: 冻结后端随包分发在 <exe>\resources\server\; cwd 指向 ~/.aulos（.env/会话/配置在那里）
+    // 打包态: 冻结后端随包分发在 <exe>\resources\\\\server\; cwd 指向 ~/.aulos（.env/会话/配置在那里）
     if let Some(exe_path) = sidecar_exe() {
         let _ = std::fs::create_dir_all(data_dir());
         boot_log("shell", &format!("打包态: 拉起冻结后端 {}", exe_path.display()));
@@ -512,7 +530,7 @@ async fn check_update(app: AppHandle) -> Result<serde_json::Value, String> {
         .updater()
         .map_err(|e| {
             boot_log("updater", &format!("ERROR: updater 未就绪: {e}"));
-            format!("更新器未就绪: {e}")
+            zh_en("更新器未就绪: ", "Updater not ready: ") + &e.to_string()
         })?
         .check()
         .await;
@@ -534,7 +552,7 @@ async fn check_update(app: AppHandle) -> Result<serde_json::Value, String> {
         }
         Err(e) => {
             boot_log("updater", &format!("ERROR: {e}"));
-            Err(format!("检查更新失败: {e}"))
+            Err(zh_en("检查更新失败: ", "Update check failed: ") + &e.to_string())
         }
     }
 }
@@ -549,7 +567,7 @@ async fn install_update(_app: AppHandle) -> Result<(), String> {
     let update = {
         let mut pending = PENDING_UPDATE.lock().unwrap();
         let Some(update) = pending.take() else {
-            return Err("没有待安装的更新（请先检查更新）".into());
+            return Err(zh_en("没有待安装的更新（请先检查更新）", "No update pending install (check for updates first)"));
         };
         // clone 留底: 下载失败重试不需要重新 check（Update: Clone）
         *pending = Some(update.clone());
@@ -558,7 +576,7 @@ async fn install_update(_app: AppHandle) -> Result<(), String> {
     {
         let mut started = INSTALL_STARTED.lock().unwrap();
         if *started {
-            return Err("更新已在进行中".into());
+            return Err(zh_en("更新已在进行中", "An update is already in progress"));
         }
         *started = true;
     }
@@ -601,7 +619,7 @@ async fn install_update(_app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 async fn apply_update(app: AppHandle) -> Result<(), String> {
     let Some((update, bytes)) = PENDING_INSTALL.lock().unwrap().take() else {
-        return Err("没有已下载的更新包（请先下载）".into());
+        return Err(zh_en("没有已下载的更新包（请先下载）", "No downloaded update package (download first)"));
     };
     DL_PHASE.store(2, Ordering::SeqCst);
     boot_log("updater", "拉起安装器");
@@ -621,12 +639,12 @@ async fn apply_update(app: AppHandle) -> Result<(), String> {
         Ok(Err(e)) => {
             boot_log("updater", &format!("ERROR: 安装失败: {e}"));
             DL_PHASE.store(4, Ordering::SeqCst);
-            Err(format!("安装失败: {e}"))
+            Err(zh_en("安装失败: ", "Install failed: ") + &e.to_string())
         }
         Err(e) => {
             boot_log("updater", &format!("ERROR: 安装任务失败: {e}"));
             DL_PHASE.store(4, Ordering::SeqCst);
-            Err(format!("安装任务失败: {e}"))
+            Err(zh_en("安装任务失败: ", "Install task failed: ") + &e.to_string())
         }
     }
 }
@@ -735,7 +753,7 @@ async fn read_clipboard_image(app: AppHandle) -> Result<Option<String>, String> 
             img.height(),
             image::ExtendedColorType::Rgba8,
         )
-        .map_err(|e| format!("剪贴板图片编码 PNG 失败: {e}"))?;
+        .map_err(|e| zh_en("剪贴板图片编码 PNG 失败: ", "Failed to encode clipboard image as PNG: ") + &e.to_string())?;
     Ok(Some(format!(
         "data:image/png;base64,{}",
         base64::engine::general_purpose::STANDARD.encode(png.into_inner())
@@ -749,12 +767,12 @@ async fn pick_folder(app: AppHandle) -> Result<Option<String>, String> {
     let Some(win) = app.get_webview_window("main") else {
         boot_log(PICK_LOG, "ERROR: main 窗口不存在");
         eprintln!("[pick_folder] ERROR: main window not found");
-        return Err("主窗口不存在，无法打开选择对话框".into());
+        return Err(zh_en("主窗口不存在，无法打开选择对话框", "Main window not found; cannot open the picker dialog"));
     };
     // spawn_blocking: rfd 的阻塞式对话框不能跑在主线程——会卡死 UI 消息泵
     let picked = tauri::async_runtime::spawn_blocking(move || {
         rfd::FileDialog::new()
-            .set_title("选择文件夹")
+            .set_title(&zh_en("选择文件夹", "Choose a folder"))
             .set_parent(&win)
             .pick_folder()
             .map(|p| p.to_string_lossy().to_string())
@@ -764,7 +782,7 @@ async fn pick_folder(app: AppHandle) -> Result<Option<String>, String> {
         // JoinError（任务 panic/运行时关闭）: 此前被 .ok() 静默折叠成 null
         boot_log(PICK_LOG, &format!("ERROR: 对话框线程失败: {e}"));
         eprintln!("[pick_folder] ERROR: dialog task failed: {e}");
-        format!("对话框线程失败: {e}")
+        zh_en("对话框线程失败: ", "Dialog thread failed: ") + &e.to_string()
     })?;
     match picked {
         Some(p) => {
@@ -981,9 +999,9 @@ async fn open_pet_window(
     let builder = WebviewWindowBuilder::new(
         &app,
         "pet",
-        WebviewUrl::External(url.parse().map_err(|e| format!("桌宠地址非法: {e}"))?),
+        WebviewUrl::External(url.parse().map_err(|e| zh_en(&format!("桌宠地址非法: {e}"), &format!("Invalid pet URL: {e}")))?),
     )
-    .title("Aulos 桌宠")
+    .title(&zh_en("Aulos 桌宠", "Aulos Desktop Pet"))
     .decorations(false)
     .always_on_top(true)
     .skip_taskbar(true)
@@ -1006,7 +1024,7 @@ async fn open_pet_window(
     builder
     .initialization_script(BRIDGE_JS)
     .build()
-    .map_err(|e| format!("创建桌宠窗口失败: {e}"))?;
+    .map_err(|e| zh_en("创建桌宠窗口失败: ", "Failed to create the pet window: ") + &e.to_string())?;
     // 默认出生点(1200,600)在大尺寸/小屏组合下可能开出屏幕外, 夹回来
     if let Some(w) = app.get_webview_window("pet") {
         clamp_pet_into_monitor(&w);
@@ -1055,7 +1073,7 @@ async fn pet_hit_test(app: AppHandle) -> Result<bool, String> {
     if !CURSOR_TRACKABLE.get().copied().unwrap_or(true) {
         // 纯 Wayland (无 XWayland): tao 的 cursor_position 恒返回 (0,0),
         // 命中测试无意义——报错让前端停轮询, 显隐交回事件通道
-        return Err("全局光标坐标不可用 (纯 Wayland)".into());
+        return Err(zh_en("全局光标坐标不可用 (纯 Wayland)", "Global cursor position unavailable (pure Wayland)"));
     }
     let Some(win) = app.get_webview_window("pet") else {
         return Ok(false);
@@ -1161,152 +1179,7 @@ async fn resize_pet_window(app: AppHandle, scale: f64) {
 /// window.aulosPickFolder() 原生选文件夹桥 + 掐掉浏览器行为。
 /// 幂等（__aulosBridgeInstalled 哨兵）: initialization_script 之外,
 /// on_page_load 还会 eval 重申一次——注入偶发失效时兜底。
-const BRIDGE_JS: &str = r#"
-(() => {
-  // 结构即健壮性: 哨兵必须在全部安装完成后才置位。此前哨兵在最前, 脚本中途
-  // 抛错(注入脚本跑在文档解析前, documentElement 可能为 null → classList
-  // 抛 TypeError)会留下"哨兵已装、桥没装"的半安装态, on_page_load 的重申
-  // 也被哨兵拦截 → aulosPickFolder 永远缺失, 页面静默走进浏览器兜底
-  // (#dir-pop), 用户看到的就是"弹不出原生文件夹对话框"。
-  // 1) 桥最优先: 后面任何一步失败都不影响 aulosPickFolder 存在
-  if (!window.aulosPickFolder) {
-    window.aulosPickFolder = async () => {
-      // 失败必须可见: Promise reject = 真实失败（ACL/IPC/对话框崩溃）,
-      // 页面 catch 据此 toast 报错; 用户取消由 Rust 返回 null 表达, 不走 reject。
-      if (!window.__TAURI_INTERNALS__) {
-        console.error('[aulos] __TAURI_INTERNALS__ 缺失: pick_folder 无法调用');
-        throw new Error('桌面桥未就绪（__TAURI_INTERNALS__ 缺失）');
-      }
-      try {
-        return await window.__TAURI_INTERNALS__.invoke('pick_folder');
-      } catch (e) {
-        console.error('[aulos] pick_folder IPC 失败:', e);
-        throw e;
-      }
-    };
-  }
-  if (!window.aulosDesktop) {
-    Object.defineProperty(window, 'aulosDesktop', { value: true });
-  }
-  // 剪贴板读取桥（右键菜单"粘贴"用）: 必须走 Rust 侧 clipboard API。
-  // 缺桥时前端回退 navigator.clipboard.readText(), WebView2 对网页读剪贴板
-  // 会弹"是否允许"权限窗——用户看到的粘贴弹窗就是它。
-  if (!window.aulosReadClipboard) {
-    window.aulosReadClipboard = async () => {
-      if (!window.__TAURI_INTERNALS__) return null;   // 页面在浏览器里预览: 无壳
-      try {
-        return await window.__TAURI_INTERNALS__.invoke('read_clipboard_text');
-      } catch (e) {
-        console.error('[aulos] read_clipboard_text IPC 失败:', e);
-        throw e;
-      }
-    };
-  }
-  // 剪贴板图片桥（右键粘贴对纯图片剪贴板——系统截图——转附件用）:
-  // 有图返回 PNG dataURL, 无图/失败返回 null（不 reject, 前端据此提示"剪贴板是空的"）
-  if (!window.aulosReadClipboardImage) {
-    window.aulosReadClipboardImage = async () => {
-      if (!window.__TAURI_INTERNALS__) return null;   // 页面在浏览器里预览: 无壳
-      try {
-        return await window.__TAURI_INTERNALS__.invoke('read_clipboard_image');
-      } catch (e) {
-        console.error('[aulos] read_clipboard_image IPC 失败:', e);
-        return null;
-      }
-    };
-  }
-  // 应用版本号桥: 标题栏徽标用。打包后的 Python 后端不带 pyproject.toml,
-  // 服务端读不到版本 → 壳内一律问壳自己。版本号由 Rust 在注入脚本头部
-  // 烤成 window.__AULOS_VERSION__（create_main_window 处拼接）, 这里直接读;
-  // invoke('plugin:app|version') 做兜底（remote 上下文的 ACL 曾实测拒掉该命令,
-  // 故不作为主路径）。
-  if (!window.aulosAppVersion) {
-    window.aulosAppVersion = async () => {
-      if (window.__AULOS_VERSION__) return window.__AULOS_VERSION__;
-      if (!window.__TAURI_INTERNALS__) return null;   // 页面在浏览器里预览: 无壳
-      try {
-        return await window.__TAURI_INTERNALS__.invoke('plugin:app|version');
-      } catch (e) {
-        console.error('[aulos] get app version 失败:', e);
-        return null;
-      }
-    };
-  }
-  // 桌宠悬浮窗桥: petFloat 打开/聚焦悬浮窗（token 从本页 cookie 取——
-  // 后端门禁认它）; petClose 关窗; startDragPet 把拖动交给系统;
-  // setClickThrough 右键鼠标穿透。全部走"失败必须可见": reject 而非静默 null。
-  if (!window.aulosDesktopPet) {
-    const petInvoke = async (cmd, payload) => {
-      if (!window.__TAURI_INTERNALS__) {
-        throw new Error('桌面桥未就绪（__TAURI_INTERNALS__ 缺失）');
-      }
-      try {
-        return await window.__TAURI_INTERNALS__.invoke(cmd, payload);
-      } catch (e) {
-        console.error('[aulos] ' + cmd + ' IPC 失败:', e);
-        throw e;
-      }
-    };
-    window.aulosDesktopPet = {
-      petFloat: (scale) => petInvoke('open_pet_window', {
-        token: (document.cookie.match(/(?:^|;\s*)aulos_token=([^;]*)/) || [])[1]
-          ? decodeURIComponent((document.cookie.match(/(?:^|;\s*)aulos_token=([^;]*)/) || [])[1])
-          : '',
-        scale: Number(scale) || 1
-      }),
-      petClose: () => petInvoke('close_pet'),
-      startDragPet: () => petInvoke('start_drag_pet'),
-      setClickThrough: (ignore) => petInvoke('set_pet_click_through', { ignore: !!ignore }),
-      focusPet: () => petInvoke('focus_pet'),
-      petHitTest: () => petInvoke('pet_hit_test'),
-      movePet: (x, y) => petInvoke('move_pet_window', { x: Number(x), y: Number(y) }),
-      resizePet: (scale) => petInvoke('resize_pet_window', { scale: Number(scale) || 1 }),
-    };
-  }
-  // 自动更新桥: 检查/安装/进度查询。安装进度走轮询而非事件监听——
-  // 远端上下文的事件 ACL 曾实测拒过插件命令, invoke 应用命令是已验证的路子。
-  if (!window.aulosDesktopUpdater) {
-    const updInvoke = async (cmd) => {
-      if (!window.__TAURI_INTERNALS__) {
-        throw new Error('桌面桥未就绪（__TAURI_INTERNALS__ 缺失）');
-      }
-      try {
-        return await window.__TAURI_INTERNALS__.invoke(cmd);
-      } catch (e) {
-        console.error('[aulos] ' + cmd + ' IPC 失败:', e);
-        throw e;
-      }
-    };
-    window.aulosDesktopUpdater = {
-      check: () => updInvoke('check_update'),
-      install: () => updInvoke('install_update'),
-      apply: () => updInvoke('apply_update'),
-      status: () => updInvoke('update_status'),
-    };
-  }
-  // 2) DOM 相关: 注入时机 documentElement 可能尚未创建 → 空值安全 + 就绪后补挂
-  const installDom = () => {
-    if (document.documentElement.dataset.aulosDomInstalled) return;  // 重申幂等
-    document.documentElement.dataset.aulosDomInstalled = '1';
-    // 桌面应用形态, 三层配合:
-    // 1) Rust: SetAreDefaultContextMenusEnabled(false) + SetAreBrowserAcceleratorKeysEnabled(false)
-    // 2) 这里: contextmenu 捕获阶段 preventDefault（右键菜单由 app.js 自建）
-    // 3) 这里: F5/Ctrl+R 兜底拦截——设置应用前的窗口期也不许刷新
-    document.documentElement.classList.add('aulos-desktop');   // 显示自绘标题栏
-    document.addEventListener('contextmenu', e => e.preventDefault(), true);
-    document.addEventListener('keydown', e => {
-      const isReload = e.key === 'F5' || (e.ctrlKey && e.key.toLowerCase() === 'r');
-      if (isReload) { e.preventDefault(); e.stopPropagation(); }
-    }, true);
-    ['dragover', 'drop'].forEach(t =>
-      document.addEventListener(t, e => e.preventDefault()));
-  };
-  if (document.documentElement) installDom();
-  else document.addEventListener('DOMContentLoaded', installDom, { once: true });
-  // 3) 哨兵最后: 只有全部装完才标记——半安装态不再拦截重申, 重申反而能自愈
-  window.__aulosBridgeInstalled = true;
-})();
-"#;
+const BRIDGE_JS: &str = r#"\n(() => {\n  // 结构即健壮性: 哨兵必须在全部安装完成后才置位。此前哨兵在最前, 脚本中途\n  // 抛错(注入脚本跑在文档解析前, documentElement 可能为 null → classList\n  // 抛 TypeError)会留下"哨兵已装、桥没装"的半安装态, on_page_load 的重申\n  // 也被哨兵拦截 → aulosPickFolder 永远缺失, 页面静默走进浏览器兜底\n  // (#dir-pop), 用户看到的就是"弹不出原生文件夹对话框"。\n  // 1) 桥最优先: 后面任何一步失败都不影响 aulosPickFolder 存在\n  if (!window.aulosPickFolder) {\n    window.aulosPickFolder = async () => {\n      // 失败必须可见: Promise reject = 真实失败（ACL/IPC/对话框崩溃）,\n      // 页面 catch 据此 toast 报错; 用户取消由 Rust 返回 null 表达, 不走 reject。\n      if (!window.__TAURI_INTERNALS__) {\n        console.error('[aulos] __TAURI_INTERNALS__ 缺失: pick_folder 无法调用');\n        throw new Error('桌面桥未就绪（__TAURI_INTERNALS__ 缺失）');\n      }\n      try {\n        return await window.__TAURI_INTERNALS__.invoke('pick_folder');\n      } catch (e) {\n        console.error('[aulos] pick_folder IPC 失败:', e);\n        throw e;\n      }\n    };\n  }\n  if (!window.aulosDesktop) {\n    Object.defineProperty(window, 'aulosDesktop', { value: true });\n  }\n  // 剪贴板读取桥（右键菜单"粘贴"用）: 必须走 Rust 侧 clipboard API。\n  // 缺桥时前端回退 navigator.clipboard.readText(), WebView2 对网页读剪贴板\n  // 会弹"是否允许"权限窗——用户看到的粘贴弹窗就是它。\n  if (!window.aulosReadClipboard) {\n    window.aulosReadClipboard = async () => {\n      if (!window.__TAURI_INTERNALS__) return null;   // 页面在浏览器里预览: 无壳\n      try {\n        return await window.__TAURI_INTERNALS__.invoke('read_clipboard_text');\n      } catch (e) {\n        console.error('[aulos] read_clipboard_text IPC 失败:', e);\n        throw e;\n      }\n    };\n  }\n  // 剪贴板图片桥（右键粘贴对纯图片剪贴板——系统截图——转附件用）:\n  // 有图返回 PNG dataURL, 无图/失败返回 null（不 reject, 前端据此提示"剪贴板是空的"）\n  if (!window.aulosReadClipboardImage) {\n    window.aulosReadClipboardImage = async () => {\n      if (!window.__TAURI_INTERNALS__) return null;   // 页面在浏览器里预览: 无壳\n      try {\n        return await window.__TAURI_INTERNALS__.invoke('read_clipboard_image');\n      } catch (e) {\n        console.error('[aulos] read_clipboard_image IPC 失败:', e);\n        return null;\n      }\n    };\n  }\n  // 应用版本号桥: 标题栏徽标用。打包后的 Python 后端不带 pyproject.toml,\n  // 服务端读不到版本 → 壳内一律问壳自己。版本号由 Rust 在注入脚本头部\n  // 烤成 window.__AULOS_VERSION__（create_main_window 处拼接）, 这里直接读;\n  // invoke('plugin:app|version') 做兜底（remote 上下文的 ACL 曾实测拒掉该命令,\n  // 故不作为主路径）。\n  if (!window.aulosAppVersion) {\n    window.aulosAppVersion = async () => {\n      if (window.__AULOS_VERSION__) return window.__AULOS_VERSION__;\n      if (!window.__TAURI_INTERNALS__) return null;   // 页面在浏览器里预览: 无壳\n      try {\n        return await window.__TAURI_INTERNALS__.invoke('plugin:app|version');\n      } catch (e) {\n        console.error('[aulos] get app version 失败:', e);\n        return null;\n      }\n    };\n  }\n  // 桌宠悬浮窗桥: petFloat 打开/聚焦悬浮窗（token 从本页 cookie 取——\n  // 后端门禁认它）; petClose 关窗; startDragPet 把拖动交给系统;\n  // setClickThrough 右键鼠标穿透。全部走"失败必须可见": reject 而非静默 null。\n  if (!window.aulosDesktopPet) {\n    const petInvoke = async (cmd, payload) => {\n      if (!window.__TAURI_INTERNALS__) {\n        throw new Error('桌面桥未就绪（__TAURI_INTERNALS__ 缺失）');\n      }\n      try {\n        return await window.__TAURI_INTERNALS__.invoke(cmd, payload);\n      } catch (e) {\n        console.error('[aulos] ' + cmd + ' IPC 失败:', e);\n        throw e;\n      }\n    };\n    window.aulosDesktopPet = {\n      petFloat: (scale) => petInvoke('open_pet_window', {\n        token: (document.cookie.match(/(?:^|;\s*)aulos_token=([^;]*)/) || [])[1]\n          ? decodeURIComponent((document.cookie.match(/(?:^|;\s*)aulos_token=([^;]*)/) || [])[1])\n          : '',\n        scale: Number(scale) || 1\n      }),\n      petClose: () => petInvoke('close_pet'),\n      startDragPet: () => petInvoke('start_drag_pet'),\n      setClickThrough: (ignore) => petInvoke('set_pet_click_through', { ignore: !!ignore }),\n      focusPet: () => petInvoke('focus_pet'),\n      petHitTest: () => petInvoke('pet_hit_test'),\n      movePet: (x, y) => petInvoke('move_pet_window', { x: Number(x), y: Number(y) }),\n      resizePet: (scale) => petInvoke('resize_pet_window', { scale: Number(scale) || 1 }),\n    };\n  }\n  // 自动更新桥: 检查/安装/进度查询。安装进度走轮询而非事件监听——\n  // 远端上下文的事件 ACL 曾实测拒过插件命令, invoke 应用命令是已验证的路子。\n  if (!window.aulosDesktopUpdater) {\n    const updInvoke = async (cmd) => {\n      if (!window.__TAURI_INTERNALS__) {\n        throw new Error('桌面桥未就绪（__TAURI_INTERNALS__ 缺失）');\n      }\n      try {\n        return await window.__TAURI_INTERNALS__.invoke(cmd);\n      } catch (e) {\n        console.error('[aulos] ' + cmd + ' IPC 失败:', e);\n        throw e;\n      }\n    };\n    window.aulosDesktopUpdater = {\n      check: () => updInvoke('check_update'),\n      install: () => updInvoke('install_update'),\n      apply: () => updInvoke('apply_update'),\n      status: () => updInvoke('update_status'),\n    };\n  }\n  // 2) DOM 相关: 注入时机 documentElement 可能尚未创建 → 空值安全 + 就绪后补挂\n  const installDom = () => {\n    if (document.documentElement.dataset.aulosDomInstalled) return;  // 重申幂等\n    document.documentElement.dataset.aulosDomInstalled = '1';\n    // 桌面应用形态, 三层配合:\n    // 1) Rust: SetAreDefaultContextMenusEnabled(false) + SetAreBrowserAcceleratorKeysEnabled(false)\n    // 2) 这里: contextmenu 捕获阶段 preventDefault（右键菜单由 app.js 自建）\n    // 3) 这里: F5/Ctrl+R 兜底拦截——设置应用前的窗口期也不许刷新\n    document.documentElement.classList.add('aulos-desktop');   // 显示自绘标题栏\n    document.addEventListener('contextmenu', e => e.preventDefault(), true);\n    document.addEventListener('keydown', e => {\n      const isReload = e.key === 'F5' || (e.ctrlKey && e.key.toLowerCase() === 'r');\n      if (isReload) { e.preventDefault(); e.stopPropagation(); }\n    }, true);\n    ['dragover', 'drop'].forEach(t =>\n      document.addEventListener(t, e => e.preventDefault()));\n  };\n  if (document.documentElement) installDom();\n  else document.addEventListener('DOMContentLoaded', installDom, { once: true });\n  // 3) 哨兵最后: 只有全部装完才标记——半安装态不再拦截重申, 重申反而能自愈\n  window.__aulosBridgeInstalled = true;\n})();\n"#;
 
 // ---------- 启动流程 ----------
 
@@ -1389,13 +1262,13 @@ fn main() {
                 let token = token.clone();
                 // 窗口先开（秒级, 显示 loading 页）, 后端在后台线程拉起
                 if let Err(e) = create_main_window(&app) {
-                    error_box("aulos 启动失败", &e);
+                    error_box(&zh_en("aulos 启动失败", "Aulos failed to start"), &e.to_string());
                     app.exit(1);
                     return;
                 }
                 std::thread::spawn(move || {
                     if let Err(e) = bootstrap(&token) {
-                        error_box("aulos 启动失败", &e);
+                        error_box(&zh_en("aulos 启动失败", "Aulos failed to start"), &e.to_string());
                         app.exit(1);
                         return;
                     }
@@ -1466,9 +1339,9 @@ fn bootstrap(token: &str) -> Result<(), String> {
             if let Some(child) = guard.as_mut() {
                 match child.try_wait() {
                     Ok(Some(status)) => {
-                        let msg = format!(
-                            "后端进程启动后即退出（{status}）。\n常见原因: 杀毒软件拦截/隔离了 resources\\server\\aulos-server.exe（请在杀软隔离区找回并加入白名单）, 或安装目录缺少该文件。\n后端完整输出已写入 {}",
-                            log.display()
+                        let msg = zh_en(
+                            &format!("后端进程启动后即退出（{status}）。\n常见原因: 杀毒软件拦截/隔离了 resources\\\\server\\aulos-server.exe（请在杀软隔离区找回并加入白名单）, 或安装目录缺少该文件。\n后端完整输出已写入 {}", log.display()),
+                            &format!("The backend process exited right after starting ({status}).\nCommon causes: the antivirus blocked/quarantined resources\\\\server\\aulos-server.exe (recover it from quarantine and allowlist it), or the file is missing.\nFull backend output was written to {}", log.display()),
                         );
                         boot_log("shell", &format!("后端提前退出: {status}"));
                         return Err(msg);
@@ -1485,11 +1358,9 @@ fn bootstrap(token: &str) -> Result<(), String> {
         }
         std::thread::sleep(Duration::from_millis(300));
     }
-    Err(format!(
-        "Python 后端在 60 秒内未能就绪。\n可能原因: ① {}-{} 端口被其他程序占用; ② 杀毒软件拦截后端进程（请查杀软隔离区并加白名单）。\n后端完整输出已写入 {}",
-        default_port(),
-        default_port() + 19,
-        log.display()
+    Err(zh_en(
+        &format!("Python 后端在 60 秒内未能就绪。\n可能原因: ① {}-{} 端口被其他程序占用; ② 杀毒软件拦截后端进程（请查杀软隔离区并加白名单）。\n后端完整输出已写入 {}", default_port(), default_port() + 19, log.display()),
+        &format!("The Python backend did not become ready within 60 seconds.\nPossible causes: ① ports {}-{} are occupied by another program; ② the antivirus is blocking the backend process (check the quarantine and allowlist it).\nFull backend output was written to {}", default_port(), default_port() + 19, log.display()),
     ))
 }
 

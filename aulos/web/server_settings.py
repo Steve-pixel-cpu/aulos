@@ -632,14 +632,14 @@ async def api_test_provider(request: dict):
                 messages=[{"role": "user", "content": "hi"}],
             )
             text = (resp.choices[0].message.content or "").strip() if resp.choices else ""
-            return {"ok": True, "detail": text[:50] or "(空回复)"}
+            return {"ok": True, "detail": text[:50] or t("server_settings.043")}
         probe = anthropic.Anthropic(api_key=api_key, base_url=base_url, timeout=30.0)
         resp = probe.messages.create(
             model=model, max_tokens=16,
             messages=[{"role": "user", "content": "hi"}],
         )
         text = "".join(b.text for b in resp.content if getattr(b, "type", "") == "text")
-        return {"ok": True, "detail": text.strip()[:50] or "(空回复)"}
+        return {"ok": True, "detail": text.strip()[:50] or t("server_settings.043")}
     except Exception as e:
         return {"ok": False, "detail": str(e)[:200]}
 
