@@ -79,7 +79,8 @@ function loadUiDialogs() {
 // 桌面态: URL 已带 ?desktop=1; music.js/pet.js 按需在测试里自行 runScripts
 function loadApp() {
   const window = makeDom(pageHtml());
-  runScripts(window, "ui-dialogs.js", "notify.js", "app.js",
+  runScripts(window, "i18n/zh.js", "i18n/en.js", "i18n/i18n.js",
+           "ui-dialogs.js", "notify.js", "app.js",
            "settings-extras.js", "desktop.js", "bubbles.js",
            "msg-extras.js", "ws-handlers.js", "sidebar.js",
            "settings-page.js");   // = index.html 完整 defer 序

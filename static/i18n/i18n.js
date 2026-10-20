@@ -3,9 +3,10 @@
  * 语言来源: 后端 GET /api/settings 的 language 字段, 由 app.js 的
  * loadSettings() 调 setI18nLang() 注入（spec §5.3: 服务端持久化,
  * 不走 localStorage）。切换语言 = saveSettings + 整页 reload。
- * 规则: 默认/回退 zh; 缺 key 回退 zh 并 console.warn（spec §3）。 */
-"use strict";
+ * 规则: 默认/回退 zh; 缺 key 回退 zh 并 console.warn（spec §3）。
+ * 注意: "use strict" 在 IIFE 内 —— helpers.js 拼接 eval 契约（见 zh.js 注释）。 */
 (function () {
+"use strict";
   const FALLBACK = "zh";
   let current = "zh";
 
