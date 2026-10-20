@@ -33,10 +33,12 @@
          autocomplete="off" placeholder="派任务 · 点歌 · 聊天，回车发送" data-i18n-placeholder="petpg.t003"
          aria-label="桌宠输入框" data-i18n-aria-label="petpg.t004">
 </div>
-<script src="/static/pet.js?v=20260926i" defer></script>
+<!-- 顺序关键: i18n 必须在 pet.js 之前——pet.js 顶层 STATUS_TEXT 即调 t(),
+     若 t 未定义整个 IIFE 会 ReferenceError 崩掉, 宠物窗空白无任何请求 -->
 <script src="/static/i18n/zh.js?v=20261020b" defer></script>
 <script src="/static/i18n/en.js?v=20261020b" defer></script>
 <script src="/static/i18n/i18n.js?v=20261020b" defer></script>
+<script src="/static/pet.js?v=20261020j" defer></script>
 <script>
 /* i18n 卫星页: 语言镜像 xc-lang(主页面 loadSettings 写透) */
 document.addEventListener("DOMContentLoaded", () => {

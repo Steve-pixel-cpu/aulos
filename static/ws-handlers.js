@@ -939,20 +939,47 @@ function saTabLabel(card, agentId) {
   return labeled ? text : (zh ? zh + " · " : "") + text;
 }
 
-/* 重建侧栏选项卡: 本会话所有已登记的子代理各一个, 状态点实时着色 */
+/* 重建侧栏选项卡。
+ * 分组策略（2026-10-20 修复: 长会话累积十几个已完成子代理, 选项
+ * 卡挤成一行乱码单字）: 运行中/当前选中平铺在最前; 其余已完成的
+ * 收进右侧一个「历史 N」胶囊按钮, 点击弹出列表面板, 不再占满
+ * tab 行。sa-history 为 DOM 上的持久的宿主容器（#sa-body 同级）,
+ * 面板关闭时隐藏但保留选项 DOM 便于状态点同步着色。 */
+function saTabSortKey(card, agentId) {
+  if (agentId === _saOpenAgent) return "0-" + agentId;
+  if (card && card.dataset.state === "run") return "1-" + agentId;
+  return "2-" + agentId;
+}
 function saRenderTabs(run) {
   const tabs = $("sa-tabs");
   tabs.innerHTML = "";
+  // 历史弹出层: 挂 body 顶层, 与 #sa-body 同级（避免被面板内容裁切）
+  let histEl = document.getElementById("sa-history");
+  if (!histEl) {
+    histEl = document.createElement("div");
+    histEl.id = "sa-history";
+    histEl.className = "sa-history";
+    histEl.addEventListener("click", ev => ev.stopPropagation());
+    document.body.appendChild(histEl);
+  }
+  histEl.innerHTML = "";
   const map = run.subagents || {};
+  const running = [], done = [];
   for (const [agentId, card] of Object.entries(map)) {
     if (!card || !card.isConnected) continue;
+    (agentId === _saOpenAgent || (card.dataset.state === "run")
+      ? running : done).push([agentId, card]);
+  }
+  // 排序: 当前选中 → 运行中（保持登记序）→ 历史（按时间倒序, 新的在前）
+  running.sort((a, b) => saTabSortKey(a[1], a[0]).localeCompare(saTabSortKey(b[1], b[0])));
+  const mkTab = (agentId, card) => {
     const full = saTabLabel(card, agentId.slice(0, 8));
     const b = document.createElement("button");
     b.type = "button";
     b.className = "sa-tab" + (agentId === _saOpenAgent ? " on" : "") +
       (card.classList.contains("sa-done-ok") ? " done-ok" :
        card.classList.contains("sa-done-err") ? " done-err" :
-       card.classList.contains("sa-card") ? " running" : "");
+       card.dataset.state === "run" ? " running" : "");
     const dot = document.createElement("span");
     dot.className = "sa-dot";
     const label = document.createElement("span");
@@ -972,11 +999,69 @@ function saRenderTabs(run) {
     }
     b.appendChild(dot);
     b.appendChild(label);
+    b.dataset.agent = agentId;
     b.onclick = () => {
       if (_saOpenAgent === agentId) { closeSaPanel(); return; }
       openSaPanel(agentId, card);
     };
-    tabs.appendChild(b);
+    return b;
+  };
+  for (const [aid, card] of running) tabs.appendChild(mkTab(aid, card));
+  // 历史胶囊按钮
+  if (done.length) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.id = "sa-hist-btn";
+    btn.className = "sa-tab sa-hist-btn";
+    btn.textContent = t("ws_handlers.118", { n: done.length });
+    btn.onclick = (ev) => {
+      ev.stopPropagation();
+      const show = histEl.classList.toggle("open");
+      if (show) saRenderHistoryList(histEl, done);
+    };
+    tabs.appendChild(btn);
+    // 历史面板开着且本次渲染更新了集合: 保持内容同步（不丢用户当前视图）
+    if (histEl.classList.contains("open")) saRenderHistoryList(histEl, done);
+  }
+  // 点击空白处收起历史面板
+  const closeHist = (ev) => {
+    if (histEl.classList.contains("open") &&
+        !ev.target.closest("#sa-hist-btn") &&
+        !ev.target.closest("#sa-history")) {
+      histEl.classList.remove("open");
+      histEl.innerHTML = "";
+    }
+  };
+  document.removeEventListener("click", closeHist);
+  document.addEventListener("click", closeHist);
+}
+
+/* 渲染历史弹出层的内容列表（done 数组 = [agentId, card] 对的数组） */
+function saRenderHistoryList(histEl, done) {
+  histEl.innerHTML = "";
+  for (const [aid, card] of done) {
+    const it = document.createElement("button");
+    it.type = "button";
+    it.className = "sa-hist-item" +
+      (card.classList.contains("sa-done-err") ? " done-err" :
+       card.classList.contains("sa-done-ok") ? " done-ok" : "");
+    // 摘要: 类型 · 描述（无描述则 agent_id 短码）
+    const zh = SUB_TYPE_LABEL[card.dataset.saType] || card.dataset.saType || "";
+    const desc = (card.querySelector(".tdesc") || {}).textContent || "";
+    const text = (desc || aid.slice(0, 8)).trim();
+    it.textContent = (zh && !text.startsWith(zh + " · ") ? zh + " · " : "") + text;
+    // 角标: 耗时/失败
+    const tag = document.createElement("span");
+    tag.className = "sa-hist-tag";
+    const dur = card.querySelector(".t-dur");
+    if (card.classList.contains("sa-done-ok") && dur && dur.textContent) {
+      tag.textContent = t("ws_handlers.119", { n: dur.textContent.replace(/[^0-9.]/g, "") });
+    } else if (card.classList.contains("sa-done-err")) {
+      tag.textContent = t("ws_handlers.120");
+    }
+    it.appendChild(tag);
+    it.onclick = () => openSaPanel(aid, card);
+    histEl.appendChild(it);
   }
 }
 
@@ -1029,6 +1114,18 @@ function openSaPanel(agentId, cardRef) {
   pane.classList.remove("plan-open");   // 侧栏互斥: 打开子代理面板则收起计划面板
   saPlaceCol(card, true);
   card.classList.add("sa-open-in-panel");
+  // 历史回放的空流回填: 会话刷新后嵌套流(子代理内部事件)不落盘,
+  // 只有 manifest 摘要。开面板时若无 _saStream 且有 .sa-summary
+  // （回放时登记的"摘要气泡"）就把它搬进面板作内容, 否则空白。
+  // 有实时流(_saStream 持引用)就证明会话期间有事件, 不覆盖实时。
+  if (!saColOf(card) && card.querySelector(".sa-summary")) {
+    try {
+      const sum = card.querySelector(".sa-summary");
+      sum.remove();
+      $("sa-body").appendChild(sum);   // saPlaceCol 会搬 _saStream; 这里搬摘要
+      sum.classList.add("hosted", "msg", "bubble-host");
+    } catch (e) { /* 搬移失败不阻断开面板 */ }
+  }
   saRenderTabs(runOf(state.sessionId));
   saNearBottom = true;                       // 打开即看最新: 重置贴底态
   $("sa-scroll-btn").classList.remove("show");

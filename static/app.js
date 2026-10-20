@@ -672,6 +672,15 @@ async function loadSessionHistory(id) {
     while (buf.firstChild) col.appendChild(buf.firstChild);
     for (const n of live) col.appendChild(n);
     run.loaded = true;
+    // 子代理卡片回填: 刷新后嵌套流(subagent_event)不落盘, 卡片只有
+    // spawn 回执的 agent_id, 面板点开空白。manifest 已持久化全部摘要
+    // (type/description/status/result), 非阻塞拉一次, 给没有实时流的
+    // 子代理卡补摘要气泡, 让历史选项卡点开有内容可看。
+    // 只在当前会话(或回放会话)首次加载后做一次; 后台会话回放同样需要。
+    if (!run._saManifestsFetched) {
+      run._saManifestsFetched = true;
+      reconcileSaCardsFromManifests(id).catch(() => {});
+    }
     // selectSession 不再 await 本函数: 滚动到底在这里补——同一任务内
     // 先滚后绘制, 观感即"加载中"直接跳到最新, 无滚动过程
     if (state.sessionId === id) scrollToBottom(true);
@@ -682,6 +691,44 @@ async function loadSessionHistory(id) {
     pinnedCol = null; pinnedRun = null;
   } finally {
     run.loading = false;
+  }
+}
+
+/* 历史回放后: 用 /api/agents 的 manifest 摘要回填子代理卡片。
+ * 只处理"没有实时 _saStream"的卡(即回放重建的空白卡); 有流的卡
+ * (会话期间后台仍在跑/刚跑完)不动。补上摘要气泡后调用方会在
+ * openSaPanel 时把它搬进面板当内容。 */
+async function reconcileSaCardsFromManifests(id) {
+  const run = runOf(id);
+  let data;
+  try {
+    const r = await fetch("/api/agents");
+    if (!r.ok) return;
+    data = await r.json();
+  } catch (e) { return; }
+  const agents = (data && data.agents) || [];
+  if (!agents.length || !run.subagents) return;
+  for (const m of agents) {
+    const card = run.subagents[m.agent_id];
+    if (!card || !card.isConnected) continue;
+    if (saColOf(card)) continue;   // 有实时流: 不回填, 保持实时内容
+    // 补摘要气泡（页面打开时搬进面板）; 已有则不重复
+    if (card.querySelector(".sa-summary")) continue;
+    const sum = document.createElement("div");
+    sum.className = "sa-summary msg";
+    const meta = document.createElement("div");
+    meta.className = "sa-summary-meta";
+    const zh = SUB_TYPE_LABEL[m.subagent_type] || m.subagent_type || "";
+    const stLabel = m.status === "completed" ? t("ws_handlers.052")
+      : m.status === "failed" ? t("ws_handlers.053") : m.status || "";
+    meta.textContent = (zh ? zh + " · " : "") + (m.description || m.agent_id.slice(0, 8)) +
+      (stLabel ? " — " + stLabel : "");
+    const body = document.createElement("pre");
+    body.className = "sa-summary-body";
+    body.textContent = m.result_preview || m.error || "";
+    sum.appendChild(meta);
+    sum.appendChild(body);
+    card.appendChild(sum);
   }
 }
 
@@ -752,16 +799,19 @@ const SUG_SVG = k => '<svg width="14" height="14" viewBox="0 0 24 24" fill="none
   play: '<circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/>',
   eye: '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>',
 }[k]) + '</svg>';
+/* 建议 chips 定义为键名(标签/完整指令两键): 渲染瞬间才查字典——原实现
+ * 加载期就调 t() 把译文烤死, 而语言切换发生在 loadSettings 之后, 英文
+ * 模式下 chips 永远是中文。问候语(showEmptyState)本就是渲染期取词, 对齐。 */
 const SUGS_BLANK = [
-  { i: "music", t: t("app.029"), p: t("app.030") },
-  { i: "search", t: t("app.031"), p: t("app.032") },
-  { i: "calendar", t: t("app.033"), p: t("app.034") },
+  { i: "music", t: "app.029", p: "app.030" },
+  { i: "search", t: "app.031", p: "app.032" },
+  { i: "calendar", t: "app.033", p: "app.034" },
 ];
 const SUGS_PROJECT = [
-  { i: "wrench", t: t("app.035"), p: t("app.036") },
-  { i: "layers", t: t("app.037"), p: t("app.038") },
-  { i: "play", t: t("app.039"), p: t("app.040") },
-  { i: "eye", t: t("app.041"), p: t("app.042") },
+  { i: "wrench", t: "app.035", p: "app.036" },
+  { i: "layers", t: "app.037", p: "app.038" },
+  { i: "play", t: "app.039", p: "app.040" },
+  { i: "eye", t: "app.041", p: "app.042" },
 ];
 
 function showEmptyState() {
@@ -772,7 +822,7 @@ function showEmptyState() {
   col.innerHTML =
     "<div class='empty-state welcome'>" +
     "<img class='watermark' src='" + iconUrl() + "' alt=''>" +
-    "<h2>" + greet + t("app.048") +
+    "<h2>" + greet + t("app.048") + "</h2>" +
     "</div>";
   renderDraftChrome();   // 工作区条/建议 chips 挂在输入卡上下, 不随消息列重绘
 }
@@ -796,11 +846,11 @@ function renderSugChips() {
   if (!state.draft) return;
   const sugs = state.draftDir ? SUGS_PROJECT : SUGS_BLANK;
   sug.innerHTML = sugs.map(s =>
-    `<button class='sug-chip'>${SUG_SVG(s.i)}<span>${escapeHtml(s.t)}</span></button>`).join("");
+    `<button class='sug-chip'>${SUG_SVG(s.i)}<span>${escapeHtml(t(s.t))}</span></button>`).join("");
   sug.querySelectorAll(".sug-chip").forEach((chip, i) => {
     chip.onclick = () => {
       const input = $("input");
-      input.value = sugs[i].p;   // 短标签背后填完整指令; 点击即覆盖输入框
+      input.value = t(sugs[i].p);   // 短标签背后填完整指令; 点击即覆盖输入框
       autoGrow(input);
       input.focus();
     };

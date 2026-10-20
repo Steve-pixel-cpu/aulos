@@ -31,33 +31,33 @@
   };
   const CELL_W = 192, CELL_H = 208, SHEET_W = 1536;
 
-  const STATUS_TEXT = {
-    idle: t("pet.001"), running: t("pet.002"), "running-left": t("pet.003"),
-    "running-right": t("pet.004"), waiting: t("pet.005"), failed: t("pet.006"),
-    jumping: t("pet.007"), waving: t("pet.008"), review: t("pet.009"),
+  /* i18n: 状态/台词均改为"键名 + 惰性取词"——原实现加载期就调 t() 把译文
+   * 烤死成字符串, 而语言切换(setI18nLang)发生在 DOMContentLoaded, 晚一步,
+   * 英文模式下状态胶囊永远是中文。惰性取词在展示瞬间查字典, 语言跟随页面。 */
+  const STATUS_KEYS = {
+    idle: "pet.001", running: "pet.002", "running-left": "pet.003",
+    "running-right": "pet.004", waiting: "pet.005", failed: "pet.006",
+    jumping: "pet.007", waving: "pet.008", review: "pet.009",
   };
+  const statusText = (name) => t(STATUS_KEYS[name] || "pet.001");
 
-  /* 内置台词库: 事件台词的随机池, 也是 AI 失败/未开时的回退语料。
-   * 前五组跟事件走(接单/收工/批准/干活点评/摸鱼闲聊), 后七组是事件驱动
-   * 台词(见 initFloat evalEvents): toolstreak 同工具连用 / errstreak 连续
-   * 出错 / longrun 单轮太久 / waitlong 审批等太久 / idlelong 闲太久 /
-   * latenight 深夜 / friday 周五下午。
+  /* 同上: 台词池改为"键名数组 + 惰性取词"(pickLine 展示时才查字典)。
    * 宠物 pet.json 的 persona.lines 同名分组整体覆盖(见 initFloat applyPersona)
    * ——人设注入改 pet.json 即可, 换宠物=换性格。 */
-  const PET_LINES = {
-    ack: [t("pet.010"), t("pet.011"), t("pet.012"), t("pet.013")],
-    done: [t("pet.014"), t("pet.015"), t("pet.016"), t("pet.017")],
-    approve: [t("pet.018"), t("pet.019"), t("pet.020")],
-    quip: [t("pet.021"), t("pet.022"), t("pet.023"),
-      t("pet.024"), t("pet.025"), t("pet.026")],
-    idle: [t("pet.027"), t("pet.028"), t("pet.029"), "zzz…"],
-    toolstreak: [t("pet.030"), t("pet.031"), t("pet.032")],
-    errstreak: [t("pet.033"), t("pet.034"), t("pet.035")],
-    longrun: [t("pet.036"), t("pet.037"), t("pet.038")],
-    waitlong: [t("pet.039"), t("pet.040"), t("pet.041")],
-    idlelong: [t("pet.042"), t("pet.043"), t("pet.044")],
-    latenight: [t("pet.045"), t("pet.046"), t("pet.047")],
-    friday: [t("pet.048"), t("pet.049"), t("pet.050")],
+  const PET_LINE_KEYS = {
+    ack: ["pet.010", "pet.011", "pet.012", "pet.013"],
+    done: ["pet.014", "pet.015", "pet.016", "pet.017"],
+    approve: ["pet.018", "pet.019", "pet.020"],
+    quip: ["pet.021", "pet.022", "pet.023",
+      "pet.024", "pet.025", "pet.026"],
+    idle: ["pet.027", "pet.028", "pet.029", "zzz…"],
+    toolstreak: ["pet.030", "pet.031", "pet.032"],
+    errstreak: ["pet.033", "pet.034", "pet.035"],
+    longrun: ["pet.036", "pet.037", "pet.038"],
+    waitlong: ["pet.039", "pet.040", "pet.041"],
+    idlelong: ["pet.042", "pet.043", "pet.044"],
+    latenight: ["pet.045", "pet.046", "pet.047"],
+    friday: ["pet.048", "pet.049", "pet.050"],
   };
 
   // 注: 不跟随系统的"减弱动效"(prefers-reduced-motion)定格——桌宠是
@@ -181,7 +181,7 @@
       persona: null,         // 宠物人设(pet.json persona 字段, 启动时装载)
     };
 
-    const setStatus = (name) => { statusEl.textContent = STATUS_TEXT[name] || STATUS_TEXT.idle; };
+    const setStatus = (name) => { statusEl.textContent = statusText(name); };
 
     function setBase(name) {
       pet.base = name;
@@ -312,20 +312,26 @@
      * AI 开关与模型在主窗设置页(xc-pet.aiChatter/aiProvider/aiModel),
      * 悬浮窗每次现读 pref(), 主窗改动经 storage 事件天然生效。 */
     const lines = {
-      ack: PET_LINES.ack.slice(), done: PET_LINES.done.slice(),
-      approve: PET_LINES.approve.slice(), quip: PET_LINES.quip.slice(),
-      idle: PET_LINES.idle.slice(),
+      ack: PET_LINE_KEYS.ack.slice(), done: PET_LINE_KEYS.done.slice(),
+      approve: PET_LINE_KEYS.approve.slice(), quip: PET_LINE_KEYS.quip.slice(),
+      idle: PET_LINE_KEYS.idle.slice(),
     };
     const lastPick = {};
     const pick = (group) => {
       const arr = lines[group];
       if (!arr || !arr.length) return "";
-      if (arr.length === 1) return arr[0];
+      if (arr.length === 1) return resolveLine(arr[0]);
       let i;
       do { i = Math.random() * arr.length | 0; } while (i === lastPick[group]);
       lastPick[group] = i;
-      return arr[i];
+      return resolveLine(arr[i]);
     };
+    // 键名("pet.xxx")展示时才查字典——语言切换后无需重载台词包;
+    // 人设覆盖的直文本(applyPersona)与 "zzz…" 直通
+    function resolveLine(entry) {
+      return typeof entry === "string" && entry.startsWith("pet.")
+        ? t(entry) : entry;
+    }
     function applyPersona(persona) {
       pet.persona = persona && typeof persona === "object" ? persona : null;
       const pack = pet.persona && pet.persona.lines;

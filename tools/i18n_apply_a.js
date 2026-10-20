@@ -32,7 +32,7 @@ const T = {
   "app.041": `Code review`, "app.042": `Review the uncommitted changes and point out potential issues`,
   "app.043": `It's late`, "app.044": `Good morning`, "app.045": `Good afternoon`,
   "app.046": `Good afternoon`, "app.047": `Good evening`,
-  "app.048": `Hi there, anything I can help with?</h2>`,
+  "app.048": `! Hi there, anything I can help with?`,
   "app.049": `<span class='ws-x' data-tip='Detach, keep as a standalone task'>×</span>`,
   "app.050": `<span>Choose a workspace</span>`,
   "app.051": `<input class='ws-search' placeholder='Search workspaces'><div class='ws-list'></div>`,

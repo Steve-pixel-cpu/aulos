@@ -432,9 +432,11 @@ function onCtxEsc(e) {
 function showDesktopCtxMenu(ev) {
   closeCtxMenu();
   const selText = String(window.getSelection() || "");
-  const t = ev.target;
-  const editable = t.closest
-    ? (t.closest("textarea, input") || (t.isContentEditable ? t : null))
+  // 注意: 变量名不可用 t —— 会遮蔽全局翻译函数 t(), 后面 item(t("desktop.xxx"))
+  // 依赖它生成菜单文案, 遮蔽后构建菜单时 TypeError: t is not a function
+  const target = ev.target;
+  const editable = target.closest
+    ? (target.closest("textarea, input") || (target.isContentEditable ? target : null))
     : null;
 
   const pop = document.createElement("div");

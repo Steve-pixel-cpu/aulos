@@ -359,6 +359,24 @@ mod tests {
         // 闰年日: 2024-02-29 12:00:00 UTC
         assert_eq!(fmt_utc(1_709_208_000), "2024-02-29 12:00:00 UTC");
     }
+
+    /// 防回归: BRIDGE_JS 是 raw string, 若有人把换行写成字面 `\n`, 注入的
+    /// JS 顶层会出现反斜杠 → 整段脚本语法错误 → 桌面桥(aulosDesktop/
+    /// aulosPickFolder/更新/桌宠桥)全军覆没, 设置页"关于"静默显示
+    /// "浏览器运行"。唯一允许的转义是 cookie 解析正则里的 `\s`, 其余
+    /// 反斜杠一律不允许。
+    #[test]
+    fn bridge_js_不得含字面反斜杠() {
+        let code = BRIDGE_JS.to_string();
+        assert!(code.contains("(() => {"), "BRIDGE_JS 应为可执行 JS");
+        let rest = code.replace("\\s", "");
+        assert!(
+            !rest.contains('\\'),
+            "BRIDGE_JS 内含 {:#?} 处的字面反斜杠\n注: 注入脚本发生顶层语法错误时, 设置页关于栏会显示\"浏览器运行\"",
+            rest.find('\\'),
+        );
+        assert!(code.lines().count() > 50, "BRIDGE_JS 应为多行实际换行");
+    }
 }
 
 fn boot_log(tag: &str, line: &str) {
@@ -1179,7 +1197,152 @@ async fn resize_pet_window(app: AppHandle, scale: f64) {
 /// window.aulosPickFolder() 原生选文件夹桥 + 掐掉浏览器行为。
 /// 幂等（__aulosBridgeInstalled 哨兵）: initialization_script 之外,
 /// on_page_load 还会 eval 重申一次——注入偶发失效时兜底。
-const BRIDGE_JS: &str = r#"\n(() => {\n  // 结构即健壮性: 哨兵必须在全部安装完成后才置位。此前哨兵在最前, 脚本中途\n  // 抛错(注入脚本跑在文档解析前, documentElement 可能为 null → classList\n  // 抛 TypeError)会留下"哨兵已装、桥没装"的半安装态, on_page_load 的重申\n  // 也被哨兵拦截 → aulosPickFolder 永远缺失, 页面静默走进浏览器兜底\n  // (#dir-pop), 用户看到的就是"弹不出原生文件夹对话框"。\n  // 1) 桥最优先: 后面任何一步失败都不影响 aulosPickFolder 存在\n  if (!window.aulosPickFolder) {\n    window.aulosPickFolder = async () => {\n      // 失败必须可见: Promise reject = 真实失败（ACL/IPC/对话框崩溃）,\n      // 页面 catch 据此 toast 报错; 用户取消由 Rust 返回 null 表达, 不走 reject。\n      if (!window.__TAURI_INTERNALS__) {\n        console.error('[aulos] __TAURI_INTERNALS__ 缺失: pick_folder 无法调用');\n        throw new Error('桌面桥未就绪（__TAURI_INTERNALS__ 缺失）');\n      }\n      try {\n        return await window.__TAURI_INTERNALS__.invoke('pick_folder');\n      } catch (e) {\n        console.error('[aulos] pick_folder IPC 失败:', e);\n        throw e;\n      }\n    };\n  }\n  if (!window.aulosDesktop) {\n    Object.defineProperty(window, 'aulosDesktop', { value: true });\n  }\n  // 剪贴板读取桥（右键菜单"粘贴"用）: 必须走 Rust 侧 clipboard API。\n  // 缺桥时前端回退 navigator.clipboard.readText(), WebView2 对网页读剪贴板\n  // 会弹"是否允许"权限窗——用户看到的粘贴弹窗就是它。\n  if (!window.aulosReadClipboard) {\n    window.aulosReadClipboard = async () => {\n      if (!window.__TAURI_INTERNALS__) return null;   // 页面在浏览器里预览: 无壳\n      try {\n        return await window.__TAURI_INTERNALS__.invoke('read_clipboard_text');\n      } catch (e) {\n        console.error('[aulos] read_clipboard_text IPC 失败:', e);\n        throw e;\n      }\n    };\n  }\n  // 剪贴板图片桥（右键粘贴对纯图片剪贴板——系统截图——转附件用）:\n  // 有图返回 PNG dataURL, 无图/失败返回 null（不 reject, 前端据此提示"剪贴板是空的"）\n  if (!window.aulosReadClipboardImage) {\n    window.aulosReadClipboardImage = async () => {\n      if (!window.__TAURI_INTERNALS__) return null;   // 页面在浏览器里预览: 无壳\n      try {\n        return await window.__TAURI_INTERNALS__.invoke('read_clipboard_image');\n      } catch (e) {\n        console.error('[aulos] read_clipboard_image IPC 失败:', e);\n        return null;\n      }\n    };\n  }\n  // 应用版本号桥: 标题栏徽标用。打包后的 Python 后端不带 pyproject.toml,\n  // 服务端读不到版本 → 壳内一律问壳自己。版本号由 Rust 在注入脚本头部\n  // 烤成 window.__AULOS_VERSION__（create_main_window 处拼接）, 这里直接读;\n  // invoke('plugin:app|version') 做兜底（remote 上下文的 ACL 曾实测拒掉该命令,\n  // 故不作为主路径）。\n  if (!window.aulosAppVersion) {\n    window.aulosAppVersion = async () => {\n      if (window.__AULOS_VERSION__) return window.__AULOS_VERSION__;\n      if (!window.__TAURI_INTERNALS__) return null;   // 页面在浏览器里预览: 无壳\n      try {\n        return await window.__TAURI_INTERNALS__.invoke('plugin:app|version');\n      } catch (e) {\n        console.error('[aulos] get app version 失败:', e);\n        return null;\n      }\n    };\n  }\n  // 桌宠悬浮窗桥: petFloat 打开/聚焦悬浮窗（token 从本页 cookie 取——\n  // 后端门禁认它）; petClose 关窗; startDragPet 把拖动交给系统;\n  // setClickThrough 右键鼠标穿透。全部走"失败必须可见": reject 而非静默 null。\n  if (!window.aulosDesktopPet) {\n    const petInvoke = async (cmd, payload) => {\n      if (!window.__TAURI_INTERNALS__) {\n        throw new Error('桌面桥未就绪（__TAURI_INTERNALS__ 缺失）');\n      }\n      try {\n        return await window.__TAURI_INTERNALS__.invoke(cmd, payload);\n      } catch (e) {\n        console.error('[aulos] ' + cmd + ' IPC 失败:', e);\n        throw e;\n      }\n    };\n    window.aulosDesktopPet = {\n      petFloat: (scale) => petInvoke('open_pet_window', {\n        token: (document.cookie.match(/(?:^|;\s*)aulos_token=([^;]*)/) || [])[1]\n          ? decodeURIComponent((document.cookie.match(/(?:^|;\s*)aulos_token=([^;]*)/) || [])[1])\n          : '',\n        scale: Number(scale) || 1\n      }),\n      petClose: () => petInvoke('close_pet'),\n      startDragPet: () => petInvoke('start_drag_pet'),\n      setClickThrough: (ignore) => petInvoke('set_pet_click_through', { ignore: !!ignore }),\n      focusPet: () => petInvoke('focus_pet'),\n      petHitTest: () => petInvoke('pet_hit_test'),\n      movePet: (x, y) => petInvoke('move_pet_window', { x: Number(x), y: Number(y) }),\n      resizePet: (scale) => petInvoke('resize_pet_window', { scale: Number(scale) || 1 }),\n    };\n  }\n  // 自动更新桥: 检查/安装/进度查询。安装进度走轮询而非事件监听——\n  // 远端上下文的事件 ACL 曾实测拒过插件命令, invoke 应用命令是已验证的路子。\n  if (!window.aulosDesktopUpdater) {\n    const updInvoke = async (cmd) => {\n      if (!window.__TAURI_INTERNALS__) {\n        throw new Error('桌面桥未就绪（__TAURI_INTERNALS__ 缺失）');\n      }\n      try {\n        return await window.__TAURI_INTERNALS__.invoke(cmd);\n      } catch (e) {\n        console.error('[aulos] ' + cmd + ' IPC 失败:', e);\n        throw e;\n      }\n    };\n    window.aulosDesktopUpdater = {\n      check: () => updInvoke('check_update'),\n      install: () => updInvoke('install_update'),\n      apply: () => updInvoke('apply_update'),\n      status: () => updInvoke('update_status'),\n    };\n  }\n  // 2) DOM 相关: 注入时机 documentElement 可能尚未创建 → 空值安全 + 就绪后补挂\n  const installDom = () => {\n    if (document.documentElement.dataset.aulosDomInstalled) return;  // 重申幂等\n    document.documentElement.dataset.aulosDomInstalled = '1';\n    // 桌面应用形态, 三层配合:\n    // 1) Rust: SetAreDefaultContextMenusEnabled(false) + SetAreBrowserAcceleratorKeysEnabled(false)\n    // 2) 这里: contextmenu 捕获阶段 preventDefault（右键菜单由 app.js 自建）\n    // 3) 这里: F5/Ctrl+R 兜底拦截——设置应用前的窗口期也不许刷新\n    document.documentElement.classList.add('aulos-desktop');   // 显示自绘标题栏\n    document.addEventListener('contextmenu', e => e.preventDefault(), true);\n    document.addEventListener('keydown', e => {\n      const isReload = e.key === 'F5' || (e.ctrlKey && e.key.toLowerCase() === 'r');\n      if (isReload) { e.preventDefault(); e.stopPropagation(); }\n    }, true);\n    ['dragover', 'drop'].forEach(t =>\n      document.addEventListener(t, e => e.preventDefault()));\n  };\n  if (document.documentElement) installDom();\n  else document.addEventListener('DOMContentLoaded', installDom, { once: true });\n  // 3) 哨兵最后: 只有全部装完才标记——半安装态不再拦截重申, 重申反而能自愈\n  window.__aulosBridgeInstalled = true;\n})();\n"#;
+const BRIDGE_JS: &str = r#"
+(() => {
+  // 结构即健壮性: 哨兵必须在全部安装完成后才置位。此前哨兵在最前, 脚本中途
+  // 抛错(注入脚本跑在文档解析前, documentElement 可能为 null → classList
+  // 抛 TypeError)会留下"哨兵已装、桥没装"的半安装态, on_page_load 的重申
+  // 也被哨兵拦截 → aulosPickFolder 永远缺失, 页面静默走进浏览器兜底
+  // (#dir-pop), 用户看到的就是"弹不出原生文件夹对话框"。
+  // 1) 桥最优先: 后面任何一步失败都不影响 aulosPickFolder 存在
+  if (!window.aulosPickFolder) {
+    window.aulosPickFolder = async () => {
+      // 失败必须可见: Promise reject = 真实失败（ACL/IPC/对话框崩溃）,
+      // 页面 catch 据此 toast 报错; 用户取消由 Rust 返回 null 表达, 不走 reject。
+      if (!window.__TAURI_INTERNALS__) {
+        console.error('[aulos] __TAURI_INTERNALS__ 缺失: pick_folder 无法调用');
+        throw new Error('桌面桥未就绪（__TAURI_INTERNALS__ 缺失）');
+      }
+      try {
+        return await window.__TAURI_INTERNALS__.invoke('pick_folder');
+      } catch (e) {
+        console.error('[aulos] pick_folder IPC 失败:', e);
+        throw e;
+      }
+    };
+  }
+  if (!window.aulosDesktop) {
+    Object.defineProperty(window, 'aulosDesktop', { value: true });
+  }
+  // 剪贴板读取桥（右键菜单"粘贴"用）: 必须走 Rust 侧 clipboard API。
+  // 缺桥时前端回退 navigator.clipboard.readText(), WebView2 对网页读剪贴板
+  // 会弹"是否允许"权限窗——用户看到的粘贴弹窗就是它。
+  if (!window.aulosReadClipboard) {
+    window.aulosReadClipboard = async () => {
+      if (!window.__TAURI_INTERNALS__) return null;   // 页面在浏览器里预览: 无壳
+      try {
+        return await window.__TAURI_INTERNALS__.invoke('read_clipboard_text');
+      } catch (e) {
+        console.error('[aulos] read_clipboard_text IPC 失败:', e);
+        throw e;
+      }
+    };
+  }
+  // 剪贴板图片桥（右键粘贴对纯图片剪贴板——系统截图——转附件用）:
+  // 有图返回 PNG dataURL, 无图/失败返回 null（不 reject, 前端据此提示"剪贴板是空的"）
+  if (!window.aulosReadClipboardImage) {
+    window.aulosReadClipboardImage = async () => {
+      if (!window.__TAURI_INTERNALS__) return null;   // 页面在浏览器里预览: 无壳
+      try {
+        return await window.__TAURI_INTERNALS__.invoke('read_clipboard_image');
+      } catch (e) {
+        console.error('[aulos] read_clipboard_image IPC 失败:', e);
+        return null;
+      }
+    };
+  }
+  // 应用版本号桥: 标题栏徽标用。打包后的 Python 后端不带 pyproject.toml,
+  // 服务端读不到版本 → 壳内一律问壳自己。版本号由 Rust 在注入脚本头部
+  // 烤成 window.__AULOS_VERSION__（create_main_window 处拼接）, 这里直接读;
+  // invoke('plugin:app|version') 做兜底（remote 上下文的 ACL 曾实测拒掉该命令,
+  // 故不作为主路径）。
+  if (!window.aulosAppVersion) {
+    window.aulosAppVersion = async () => {
+      if (window.__AULOS_VERSION__) return window.__AULOS_VERSION__;
+      if (!window.__TAURI_INTERNALS__) return null;   // 页面在浏览器里预览: 无壳
+      try {
+        return await window.__TAURI_INTERNALS__.invoke('plugin:app|version');
+      } catch (e) {
+        console.error('[aulos] get app version 失败:', e);
+        return null;
+      }
+    };
+  }
+  // 桌宠悬浮窗桥: petFloat 打开/聚焦悬浮窗（token 从本页 cookie 取——
+  // 后端门禁认它）; petClose 关窗; startDragPet 把拖动交给系统;
+  // setClickThrough 右键鼠标穿透。全部走"失败必须可见": reject 而非静默 null。
+  if (!window.aulosDesktopPet) {
+    const petInvoke = async (cmd, payload) => {
+      if (!window.__TAURI_INTERNALS__) {
+        throw new Error('桌面桥未就绪（__TAURI_INTERNALS__ 缺失）');
+      }
+      try {
+        return await window.__TAURI_INTERNALS__.invoke(cmd, payload);
+      } catch (e) {
+        console.error('[aulos] ' + cmd + ' IPC 失败:', e);
+        throw e;
+      }
+    };
+    window.aulosDesktopPet = {
+      petFloat: (scale) => petInvoke('open_pet_window', {
+        token: (document.cookie.match(/(?:^|;\s*)aulos_token=([^;]*)/) || [])[1]
+          ? decodeURIComponent((document.cookie.match(/(?:^|;\s*)aulos_token=([^;]*)/) || [])[1])
+          : '',
+        scale: Number(scale) || 1
+      }),
+      petClose: () => petInvoke('close_pet'),
+      startDragPet: () => petInvoke('start_drag_pet'),
+      setClickThrough: (ignore) => petInvoke('set_pet_click_through', { ignore: !!ignore }),
+      focusPet: () => petInvoke('focus_pet'),
+      petHitTest: () => petInvoke('pet_hit_test'),
+      movePet: (x, y) => petInvoke('move_pet_window', { x: Number(x), y: Number(y) }),
+      resizePet: (scale) => petInvoke('resize_pet_window', { scale: Number(scale) || 1 }),
+    };
+  }
+  // 自动更新桥: 检查/安装/进度查询。安装进度走轮询而非事件监听——
+  // 远端上下文的事件 ACL 曾实测拒过插件命令, invoke 应用命令是已验证的路子。
+  if (!window.aulosDesktopUpdater) {
+    const updInvoke = async (cmd) => {
+      if (!window.__TAURI_INTERNALS__) {
+        throw new Error('桌面桥未就绪（__TAURI_INTERNALS__ 缺失）');
+      }
+      try {
+        return await window.__TAURI_INTERNALS__.invoke(cmd);
+      } catch (e) {
+        console.error('[aulos] ' + cmd + ' IPC 失败:', e);
+        throw e;
+      }
+    };
+    window.aulosDesktopUpdater = {
+      check: () => updInvoke('check_update'),
+      install: () => updInvoke('install_update'),
+      apply: () => updInvoke('apply_update'),
+      status: () => updInvoke('update_status'),
+    };
+  }
+  // 2) DOM 相关: 注入时机 documentElement 可能尚未创建 → 空值安全 + 就绪后补挂
+  const installDom = () => {
+    if (document.documentElement.dataset.aulosDomInstalled) return;  // 重申幂等
+    document.documentElement.dataset.aulosDomInstalled = '1';
+    // 桌面应用形态, 三层配合:
+    // 1) Rust: SetAreDefaultContextMenusEnabled(false) + SetAreBrowserAcceleratorKeysEnabled(false)
+    // 2) 这里: contextmenu 捕获阶段 preventDefault（右键菜单由 app.js 自建）
+    // 3) 这里: F5/Ctrl+R 兜底拦截——设置应用前的窗口期也不许刷新
+    document.documentElement.classList.add('aulos-desktop');   // 显示自绘标题栏
+    document.addEventListener('contextmenu', e => e.preventDefault(), true);
+    document.addEventListener('keydown', e => {
+      const isReload = e.key === 'F5' || (e.ctrlKey && e.key.toLowerCase() === 'r');
+      if (isReload) { e.preventDefault(); e.stopPropagation(); }
+    }, true);
+    ['dragover', 'drop'].forEach(t =>
+      document.addEventListener(t, e => e.preventDefault()));
+  };
+  if (document.documentElement) installDom();
+  else document.addEventListener('DOMContentLoaded', installDom, { once: true });
+  // 3) 哨兵最后: 只有全部装完才标记——半安装态不再拦截重申, 重申反而能自愈
+  window.__aulosBridgeInstalled = true;
+})();
+"#;
 
 // ---------- 启动流程 ----------
 

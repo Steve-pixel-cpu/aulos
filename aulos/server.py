@@ -1779,6 +1779,39 @@ async def api_get_messages(session_id: str):
             "workdir": store.get_workdir(session_id)}
 
 
+@app.get("/api/agents")
+async def api_list_agents():
+    """子代理摘要: 供历史回放时回填空白的子代理卡片/选项卡。
+
+    子代理的线级事件(subagent_event)不落盘, 刷新后卡片重建时只有
+    agent_tool 的 spawn 回执(agent_id), 面板内容空白。manifest 已
+    持久化 type/description/status/result 全文, 前端据此补一个摘要
+    气泡, 并在重放时把没有实时流的卡片收进"历史"分组而不是冒充运行中。
+    返回全部 manifest 的摘要字段（不含大体积 output_file 文本）;
+    前端按 agent_id 匹配显示。失败时返回空列表, 不阻塞历史回放。"""
+    try:
+        from aulos.multi_agent import AgentManifest
+        from aulos.agent_tools import get_orchestrator
+        manifests = get_orchestrator().list_agents()
+        data = []
+        for m in manifests:
+            if not getattr(m, "agent_id", None):
+                continue
+            # result 可能很长(汇报全文), 前端要点开才看, 这里不展开
+            data.append({
+                "agent_id": m.agent_id,
+                "subagent_type": getattr(m, "subagent_type", "") or "",
+                "description": getattr(m, "description", "") or "",
+                "status": getattr(m, "status", "") or "",
+                "result_preview": (getattr(m, "result", "") or "")[:200],
+                "error": getattr(m, "error", "") or "",
+                "duration_s": None,
+            })
+        return {"agents": data}
+    except Exception as e:
+        return {"agents": []}
+
+
 # ============================================================================
 # REST: 设置（思考等级 + 权限模式 + 激活模型）
 # ============================================================================

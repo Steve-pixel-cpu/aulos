@@ -2382,11 +2382,11 @@
 #sa-tabs {
   flex: 1; min-width: 0; display: flex; gap: 6px;
   padding: 8px 8px 0;
-  overflow-x: auto; scrollbar-width: none;
+  overflow-x: auto; scrollbar-width: none; align-items: flex-end;
 }
 #sa-tabs::-webkit-scrollbar { display: none; }
 .sa-tab {
-  flex: 0 1 auto; min-width: 0; max-width: 300px;
+  flex: 0 0 auto; min-width: 0; max-width: 300px;
   display: inline-flex; align-items: center; gap: 8px;
   padding: 7px 14px;
   border: 1px solid var(--border);
@@ -2412,6 +2412,53 @@
 .sa-tab .sa-dot {
   flex: none; width: 8px; height: 8px; border-radius: 50%;
   background: var(--text-3); opacity: .45;
+}
+/* ---- 历史分组: 完成的子代理收进胶囊, 点击弹出列表面板 ---- */
+.sa-hist-btn {
+  flex: none; font-weight: 600;
+  border-style: dashed;
+  color: var(--text-2);
+}
+.sa-hist-btn:hover { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+#sa-history {
+  position: fixed; z-index: 300;
+  top: 56px; right: 16px;
+  min-width: 260px; max-width: 340px;
+  max-height: 60vh; overflow-y: auto;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 8px 30px rgba(0,0,0,.18);
+  padding: 6px;
+  display: none;
+}
+#sa-history.open { display: block; }
+.sa-hist-item {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; text-align: left;
+  padding: 8px 10px; border: none; border-radius: 8px;
+  background: none; cursor: pointer;
+  color: var(--text-1); font-size: 13px;
+}
+.sa-hist-item:hover { background: var(--hover); }
+.sa-hist-item .sa-hist-tag {
+  margin-left: auto; flex: none;
+  font-size: 11px; color: var(--text-3);
+  background: var(--bg-2); border-radius: 8px; padding: 1px 6px;
+}
+.sa-hist-item.done-err { color: var(--err); }
+.sa-hist-item.done-err .sa-hist-tag { color: var(--err); background: color-mix(in srgb, var(--err) 12%, transparent); }
+/* ---- 历史回放的摘要气泡: 无实时流的子代理卡, 面板里展示 manifest 摘要 ---- */
+.sa-summary {
+  padding: 12px 16px; border-radius: 12px;
+  background: var(--bg-2); border: 1px solid var(--border);
+  color: var(--text-1); font-size: 13px; line-height: 1.6;
+}
+.sa-summary-meta { font-weight: 600; margin-bottom: 6px; color: var(--text-2); }
+.sa-summary-body {
+  margin: 0; white-space: pre-wrap; word-break: break-word;
+  font-family: inherit; font-size: 12.5px;
+  color: var(--text-2); max-height: 30vh; overflow-y: auto;
 }
 /* 状态点着色: 运行中转圈 / 完成 绿 / 失败 红 */
 .sa-tab.running .sa-dot {
