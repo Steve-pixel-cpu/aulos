@@ -165,6 +165,7 @@ window.I18N_STRINGS_EN = {
   "app.157": "No song selected yet — pick one from the panel",
   "app.158": "♪ Paused",
   "app.159": "Concurrency limit saved, effective immediately",
+  "app.160": "Model service connection error",
   "index.t205": "Global concurrency limit",
   "index.t206": "Max conversation turns running at once; excess turns queue automatically. 1–64, default 4, effective immediately on save",
   "bubbles.001": "Click to view full size",

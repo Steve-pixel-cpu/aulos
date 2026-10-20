@@ -68,6 +68,13 @@ function handleServerMessage(msg, sid) {
     }
     return;
   }
+  // LLM 层连通状态（连接指示器权威源之一）: 全局态而非会话态——后台会话
+  // 的连接收到广播也要立即生效, 因此必须赶在后台会话分支之前处理。
+  if (msg.type === "llm_status") {
+    state.llmStatus = { ok: msg.ok, detail: msg.detail || "" };
+    renderConn();
+    return;
+  }
   // 后台会话: 流式内容照常写进它自己的常驻列（隐藏）, 切回时完整可见;
   // 只对 权限/结果/结束/错误 累计未读。结束/接力时同步运行态。
   if (sid !== state.sessionId) {

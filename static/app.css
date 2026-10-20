@@ -565,6 +565,14 @@
   #conn-state .dot {
     width: 7px; height: 7px; border-radius: 50%; background: var(--text-3); flex: none;
   }
+  #conn-state.wait .dot {
+    background: var(--warn); box-shadow: 0 0 6px var(--warn);
+    animation: conn-wait 1.4s ease-in-out infinite;
+  }
+  @keyframes conn-wait {
+    0%, 100% { opacity: 1; }
+    50% { opacity: .35; }
+  }
   #conn-state.on .dot { background: var(--ok); box-shadow: 0 0 6px var(--ok); }
   #conn-state.err .dot { background: var(--err); }
 

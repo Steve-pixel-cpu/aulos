@@ -80,14 +80,21 @@ function loadUiDialogs() {
 
 // 全量: 真实 index.html 骨架 + ui-dialogs + notify + app (拼接 eval, 共享词法环境)
 // 桌面态: URL 已带 ?desktop=1; music.js/pet.js 按需在测试里自行 runScripts
-function loadApp() {
+// extra: 追加到同一词法环境末尾的源码——用于把顶层 const（state 等）
+// 导出到 window（顶层 const 不挂 window, 分次 eval 拿不到）。
+function loadApp(extra) {
   const window = makeDom(pageHtml());
-  runScripts(window, "i18n/zh.js", "i18n/en.js", "i18n/i18n.js",
+  const files = ["i18n/zh.js", "i18n/en.js", "i18n/i18n.js",
            "ui-dialogs.js", "notify.js", "app.js",
            "settings-extras.js", "desktop.js", "bubbles.js",
            "msg-extras.js", "ws-handlers.js", "sidebar.js",
-           "settings-page.js");   // = index.html 完整 defer 序
+           "settings-page.js"];   // = index.html 完整 defer 序
+  const src = files
+    .map(f => fs.readFileSync(path.join(STATIC, f), "utf-8"))
+    .join("\n;\n");
+  window.eval(extra ? src + "\n;\n" + extra : src);
   return { window };
 }
 
-module.exports = { loadApp, loadUiDialogs, runScript, runScripts, makeDom };
+module.exports = { loadApp, loadUiDialogs, runScript, runScripts, makeDom,
+                   pageHtml };

@@ -42,6 +42,7 @@ const state = {
   // 与该会话实际用的值不一致（用户看到的"串值"大多是这条路径）
   globalDefaults: { permissionMode: "prompt", permissionPlan: false, thinkingLevel: null, modelKey: null },
   runs: {},                 // sessionId → 运行态（多会话并行: 各自 WS/流式指针/审批）
+  llmStatus: { ok: null, detail: "" },  // 后端↔大模型服务连通态（llm_status 事件/建连快照更新）
   fulltext: null,           // 全文搜索态: { query, hits, pending, seq }（null = 无）
 };
 
@@ -73,6 +74,7 @@ function runOf(id) {
       loaded: false,          // 历史是否已加载过（首次切入必拉）
       loading: false,         // 历史加载进行中（防并发重复拉取）
       everConnected: false,   // 该会话 WS 是否成功连过（区分首次连接与断线重连）
+      wsState: null,          // 传输层态: connecting/open/closed/error/gaveup（renderConn 优先于 LLM 层）
       reconnected: false,     // 当前连接是否重连（busy_sync 的 busy=false 校正只信重连）
       rlNote: null,           // 限流退避提示行（原地更新, 轮次有进展/收口即撤）
       awaiting: false,        // 忙碌中且正处于等待模型输出的空窗（await_output 起止）
@@ -799,7 +801,7 @@ async function selectSession(id) {
     if (mKey) modelDd.setValue(mKey);
   }
   syncThinkingIndicator();   // 切会话必须重算: 转圈只属于"正在等待输出的那个会话"
-  setConn(run.ws && run.ws.readyState === 1 ? "on" : "", run.ws ? (run.ws.readyState === 1 ? t("app.026") : t("app.027")) : t("app.028"));
+  renderConn();
   restoreCurrentInput();        // 输入框恢复成该会话未发送的内容
   skillMenuDestroy();           // 切会话收起斜杠菜单; 目录变了下次输入自动重拉
   skillCacheDir = null;         // 会话可能换项目: 强制下次输入重拉技能清单
@@ -1008,7 +1010,8 @@ function startDraft(draftDir = null) {
   syncThinkingIndicator();     // 草稿态没有 run: 收掉从原会话带来的"思考中"转圈
                                  // （切走瞬间原会话正在 prefill 空窗, 否则没人再碰这个 DOM,
                                  //   后台轮次的空窗事件都带 sid 守卫, 不会点亮这里）
-  setConn("", t("app.055"));
+  state.draft = true;   // 指示器按草稿态走灰「未连接」
+  renderConn();
   skillMenuDestroy();           // 切草稿收起斜杠菜单; 预选项目变了下次输入自动重拉
   skillCacheDir = null;
   // 草稿态下拉 = 新会话将用的全局默认值。必须显式重置: 否则残留上一个
@@ -1092,9 +1095,34 @@ function renderHistoryMessage(m) {
 /* ============================================================
  * WebSocket
  * ============================================================ */
-function setConn(cls, text) {
+function setConn(cls, text, title) {
   $("conn-state").className = cls;
   $("conn-text").textContent = text;
+  $("conn-state").title = title || "";
+}
+
+/* 连接指示器合成显示: 「传输层(WS) × 模型层(LLM)」按语义矩阵取优先。
+ * WS 层断开/错误/重连失败优先——传输不通时 LLM 状态无从谈起;
+ * WS 正常时看 state.llmStatus: true 绿已连接 / false 红异常(悬停原因) /
+ * null 灰未连接(未配置或探测中)。全部 6 处旧 setConn 调用点改由它收口。 */
+function renderConn() {
+  const run = curRun();
+  if (state.draft || !run) { setConn("", t("app.055")); return; }
+  const ws = run.ws;
+  // 显式 wsState（WS 回调登记）优先于 readyState 推断——断线重连期间
+  // readyState 可能已回到 0/1, 但回调声明的是 error/gaveup 事实。
+  const wsState = run.wsState || (ws
+    ? (ws.readyState === 1 ? "open" : ws.readyState === 0 ? "connecting" : "closed")
+    : null);
+  if (wsState === "error") { setConn("err", t("app.058")); return; }
+  if (wsState === "gaveup") { setConn("err", t("app.059")); return; }
+  if (wsState === "connecting") { setConn("wait", t("app.027")); return; }
+  if (wsState === "closed") { setConn("", t("app.057")); return; }
+  if (wsState !== "open") { setConn("", t("app.055")); return; }   // 无 WS: 未连接
+  const s = state.llmStatus || {};
+  if (s.ok === true) { setConn("on", t("app.026")); return; }
+  if (s.ok === false) { setConn("err", t("app.160"), s.detail || ""); return; }
+  setConn("", t("app.055"));
 }
 
 function connectWs(id) {
@@ -1107,7 +1135,7 @@ function connectWs(id) {
   run.ws = ws;
 
   ws.onopen = () => {
-    if (id === state.sessionId) setConn("on", t("app.056"));
+    if (id === state.sessionId) { run.wsState = "open"; renderConn(); }
     run.reconnectAttempts = 0;
     // 首连/重连标记: busy_sync 校正只信重连——首连的快照早于在途的乐观
     // 发送（草稿首发先置忙碌再建连）, 快照 false 不能否掉本地忙碌
@@ -1125,11 +1153,11 @@ function connectWs(id) {
     if (reconnected && run.loaded && !run.loading) loadSessionHistory(id);
   };
   ws.onclose = () => {
-    if (id === state.sessionId) setConn("", t("app.057"));
+    if (id === state.sessionId) { run.wsState = "closed"; renderConn(); }
     if (run.ws === ws) run.ws = null;
     scheduleReconnect(id);
   };
-  ws.onerror = () => { if (id === state.sessionId) setConn("err", t("app.058")); };
+  ws.onerror = () => { if (id === state.sessionId) { run.wsState = "error"; renderConn(); } };
   ws.onmessage = ev => {
     let msg;
     try { msg = JSON.parse(ev.data); } catch { return; }
@@ -1156,7 +1184,7 @@ function scheduleReconnect(id) {
   const run = runOf(id);
   if (run.reconnectTimer) return;
   if (++run.reconnectAttempts > 40) {
-    if (id === state.sessionId) setConn("err", t("app.059"));
+    if (id === state.sessionId) { run.wsState = "gaveup"; renderConn(); }
     return;
   }
   const delay = Math.min(2500 * run.reconnectAttempts, 10000);
