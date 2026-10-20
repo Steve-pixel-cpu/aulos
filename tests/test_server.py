@@ -1313,3 +1313,54 @@ def test_纯图片首条消息不回填命名(client, isolated_store):
     mine = [s for s in sessions if s["id"] == sid]
     assert mine[0]["title"] == "(未命名)"
     assert isolated_store.get_title(sid) is None
+
+
+# ------------------------------------------------------------
+# 连接指示器: LLM 层状态（llm_status 建连快照 / _set_llm_status 广播 / 错误分类）
+# ------------------------------------------------------------
+
+def test_ws_connect_llm_status_snapshot(client, isolated_store, monkeypatch):
+    """建连快照: busy_sync 之后紧随 llm_status 全局快照（ok=None = 尚未验证,
+    前端据此显示灰「未连接」）。"""
+    monkeypatch.setattr(server, "_llm_status", {"ok": None, "detail": "", "ts": 0.0})
+    with client.websocket_connect("/ws/s-llm-snap") as ws:
+        first = json.loads(ws.receive_text())
+        second = json.loads(ws.receive_text())
+    assert first == {"type": "busy_sync", "busy": False}
+    assert second == {"type": "llm_status", "ok": None, "detail": ""}
+
+
+def test_set_llm_status_broadcasts(client, isolated_store, monkeypatch):
+    """_set_llm_status: 更新模块级状态并广播 llm_status 给所有活会话连接。"""
+    monkeypatch_status = {"ok": None, "detail": "", "ts": 0.0}
+    monkeypatch.setattr(server, "_llm_status", monkeypatch_status)
+    got = []
+    web_session = server.get_or_create_web_session("s-llm-bc")
+    token = web_session.add_emit(lambda payload: got.append(payload))
+    try:
+        server._set_llm_status(False, "认证失败: bad key")
+    finally:
+        web_session.remove_emit(token)
+    assert monkeypatch_status["ok"] is False
+    assert monkeypatch_status["detail"] == "认证失败: bad key"
+    assert got[-1] == {"type": "llm_status", "ok": False, "detail": "认证失败: bad key"}
+
+
+def test_llm_error_status_classification():
+    """worker 异常 → (ok, detail) 分类: 认证/连接/限流/其余。"""
+    from aulos import retry as retry_mod
+    ok, detail = server._llm_error_status(retry_mod.AuthError("invalid x-api-key"))
+    assert ok is False
+    assert "认证失败" in detail and "invalid x-api-key" in detail
+    ok, detail = server._llm_error_status(retry_mod.ConnectionError("conn refused"))
+    assert ok is False
+    assert "无法连接" in detail
+    ok, detail = server._llm_error_status(retry_mod.HttpApiError(429, "rate limited"))
+    assert ok is False
+    assert "限流" in detail
+    ok, detail = server._llm_error_status(retry_mod.HttpApiError(500, "boom"))
+    assert ok is False
+    assert "请求失败" in detail
+    ok, detail = server._llm_error_status(ValueError("weird"))
+    assert ok is False
+    assert "请求失败" in detail and "weird" in detail

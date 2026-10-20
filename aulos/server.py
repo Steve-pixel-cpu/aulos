@@ -111,6 +111,7 @@ from aulos.main import (
     setup_console,
 )
 from aulos.mcp_client import MCP_TOOL_PREFIX, get_mcp_manager
+from aulos import retry
 from aulos.models import (
     Message,
     Session,
@@ -218,6 +219,70 @@ def _protocol_of(prov: dict) -> str:
         return normalize_protocol(None)
 
 
+# LLM 层连通状态（连接指示器的权威源）: ok=True 探测/最近一轮成功,
+# False 探测/请求失败, None 未配置或尚未验证。detail = 失败原因摘要。
+# 广播给全部活会话连接（全局态, 非会话态）。
+_llm_status: dict = {"ok": None, "detail": "", "ts": 0.0}
+
+
+def _set_llm_status(ok, detail: str = "") -> None:
+    """更新 LLM 连通状态并即时广播到所有活会话连接。线程安全:
+    worker/探测线程调用, 字典赋值原子; 广播自身逐 emit 容错。"""
+    _llm_status["ok"] = ok
+    _llm_status["detail"] = detail
+    _llm_status["ts"] = time.time()
+    for ws in list(_sessions.values()):
+        ws.broadcast({"type": "llm_status", "ok": ok, "detail": detail})
+
+
+def _llm_error_status(e: Exception) -> tuple:
+    """worker 轮次异常 → (ok=False, 分类文案+摘要)。认证/连接/限流各说各话,
+    其余折叠「请求失败」。文案走 i18n, 摘要截断 120 字符。"""
+    if isinstance(e, retry.AuthError):
+        reason = t("server.053")
+    elif isinstance(e, retry.ConnectionError):
+        reason = t("server.054")
+    elif isinstance(e, retry.HttpApiError) and e.status_code == 429:
+        reason = t("server.055")
+    else:
+        reason = t("server.056")
+    return (False, f"{reason}: {str(e)[:120]}")
+
+
+def _probe_active_provider() -> None:
+    """后台探测 active 供应商连通性并落状态（不抛异常、不阻塞调用方）。
+
+    只在「服务启动 + provider 配置变更」两处触发, 不做周期轮询——
+    探测 = 一次 max_tokens=16 的真实请求, 轮询就是烧 token。
+    起守护线程跑: 装载期无 running loop, asyncio.run 在线程内自建事件
+    循环调 async probe_provider（其内部再 to_thread 跑同步 SDK 调用）。"""
+    def _run():
+        try:
+            if not _provider_ready(_provider_cfg):
+                _set_llm_status(None, t("server.057"))
+                return
+            prov = _active_provider_dict()
+            from aulos.web.server_settings import probe_provider  # noqa: PLC0415
+            # 防循环导入: server_settings 顶层 import server, 只能函数内引
+            res = asyncio.run(probe_provider({
+                "protocol": _protocol_of(prov),
+                "base_url": prov.get("base_url"),
+                "api_key": prov.get("api_key") or "",
+                "model": (_provider_cfg.get("active") or {}).get("model") or "",
+            }))
+            _set_llm_status(res["ok"], res["detail"])
+        except Exception as e:   # 探测自身故障按失败落状态, 不炸调用方
+            _set_llm_status(False, f"{t('server.056')}: {str(e)[:120]}")
+    threading.Thread(target=_run, daemon=True, name="llm-status-probe").start()
+
+
+def _active_provider_dict() -> Optional[dict]:
+    """active 指向的供应商条目（探测所需的协议/地址/key/model 字段）。"""
+    active = _provider_cfg.get("active") or {}
+    return next((p for p in _provider_cfg.get("providers", [])
+                 if p.get("id") == active.get("provider")), None)
+
+
 def _apply_provider_config(cfg: dict) -> None:
     """把 active 指向的启用供应商应用到 api_client, 并重挂浏览器镜像观察者。
 
@@ -265,6 +330,15 @@ def _apply_provider_config(cfg: dict) -> None:
     # subagent worker 跟随同一份供应商配置: 每次 spawn 时实时读 api_client
     # 的连接信息（apply 在运行期可反复发生, 工厂闭包引用而非快照）
     set_api_config_provider(_subagent_api_config)
+    # 连接指示器: provider 配置变更即后台重探。只在有 running loop 时触发
+    # （= 运行期的设置保存）: 模块装载期与测试直调无 loop, 跳过——启动后的
+    # 首次探测由 startup 钩子补, 测试不因导入 server 而打真网。
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        pass
+    else:
+        _probe_active_provider()
 
 
 def _rebuild_utility_client() -> None:
@@ -408,6 +482,15 @@ def _reconcile_orphan_agents() -> None:
 
 
 app.router.add_event_handler("startup", _reconcile_orphan_agents)
+
+
+def _startup_probe_llm() -> None:
+    """启动即后台探测一次 active 供应商: 重启后指示器尽快真实。
+    TestClient 不进 lifespan, 测试不会打真网。"""
+    _probe_active_provider()
+
+
+app.router.add_event_handler("startup", _startup_probe_llm)
 
 
 def _subagent_event_sink(session_id: Optional[str]):
@@ -1205,11 +1288,23 @@ def _spawn_turn_thread(web_session: WebSession, text: str,
             repair_interrupted_turn(web_session.runtime.session())
             persist_turn(web_session)
             fallback_title_on_interrupt(web_session, emitter)
+            # 连接指示器: 轮次异常即 LLM 层失败——按异常类型分类原因,
+            # 悬停可见（认证失败/无法连接/限流/请求失败）
+            try:
+                ok, detail = _llm_error_status(e)
+                _set_llm_status(ok, detail)
+            except Exception:
+                pass
             emitter({"type": "error", "message": str(e)})
             emitter({"type": "turn_done", "interrupted": True, "iterations": 0,
                      "budget_exhausted": False, "iterations_exhausted": False})
         else:
             persist_turn(web_session)
+            # 连接指示器: 一轮正常返回 = LLM 已验证可用
+            try:
+                _set_llm_status(True, "")
+            except Exception:
+                pass
             needs_title = not web_session.titled
             u = summary.usage
             emitter({
@@ -2047,6 +2142,10 @@ async def ws_endpoint(websocket: WebSocket, session_id: str):
     # 的悬空工具卡永远保留"运行中"（历史回放的收口被 !busy 跳过）。快照只进
     # 本连接的队列（非广播）: false 而本地忙碌 → 按轮次终点收口; true → 跟上。
     out_queue.put_nowait({"type": "busy_sync", "busy": web_session.busy})
+    # LLM 层全局快照紧随 busy_sync: 指示器要在建连瞬间就是真实值,
+    # 不等下一次状态变化才有。
+    out_queue.put_nowait({"type": "llm_status", "ok": _llm_status["ok"],
+                          "detail": _llm_status["detail"]})
 
     def emit_error(message: str) -> None:
         emit({"type": "error", "message": message})

@@ -307,9 +307,11 @@ class TestWsAutoUnarchive:
             ws.send_json({"type": "user", "text": "还在吗"})
             # _start_turn 已被 stub: user 分支同步处理完即归档状态翻转。
             # session_unarchived 广播走 add_emit 的连接级出口（out_queue 管道）,
-            # 排在 busy_sync 之后; 读两条即拿到, 顺便验证广播真的发出去了
+            # 排在 busy_sync + llm_status 快照之后; 读三条即拿到, 顺便验证
+            # 广播真的发出去了
             first = ws.receive_json()
             assert first["type"] == "busy_sync"
+            assert ws.receive_json()["type"] == "llm_status"
             second = ws.receive_json()
             assert second["type"] == "session_unarchived", \
                 f"应广播 session_unarchived, 实际 {second}"

@@ -86,4 +86,6 @@ def ws_connect(client, session_id: str):
     with client.websocket_connect(f"/ws/{session_id}") as ws:
         first = json.loads(ws.receive_text())
         assert first["type"] == "busy_sync", f"expected busy_sync, got {first}"
+        second = json.loads(ws.receive_text())
+        assert second["type"] == "llm_status", f"expected llm_status, got {second}"
         yield ws
