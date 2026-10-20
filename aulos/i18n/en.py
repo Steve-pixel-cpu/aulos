@@ -166,6 +166,7 @@ STRINGS = {
     "server.049": " max",
     "server.050": "(missing)",
     "server.051": "(unnamed)",
+    "server.052": "pinned must be a boolean",
     "server_settings.042": " does not exist",
     "server_settings.043": "(empty reply)",
     "server_settings.044": "Directory {p0} ",

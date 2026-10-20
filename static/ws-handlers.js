@@ -193,6 +193,11 @@ const ICON_TERM = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" s
 const ICON_FILE = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M6 3h8l4 4v14H6V3z"/><path d="M14 3v4h4"/></svg>';
 const ICON_EDIT = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l4.5-1L20 7.5 16.5 4 5 15.5 4 20z"/></svg>';
 const ICON_TOOL = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="4" y="7" width="16" height="13" rx="2"/><path d="M9 7V5a2 2 0 012-2h2a2 2 0 012 2v2"/></svg>';
+/* 锤子: 折叠头常驻图标(替代工具箱), 运行中由 CSS(.tg-ico2)驱动敲击动画:
+ * 柄尾为轴 抬起-砸下-顿一拍循环。用户提供的老 A 锤(fill 风格, 1024 viewBox),
+ * 去色改 currentColor 跟随主题; 运行时染强调色。
+ * 柄尾(动画轴)在新 SVG 坐标系里 ≈ (888, 860) */
+const ICON_HAMMER = '<svg width="14" height="14" viewBox="0 0 1024 1024" fill="currentColor"><g class="hammer-g"><path d="M277.12 642.986667L59.946667 425.6 298.453333 187.093333l359.253334-87.466666 81.28 81.28-461.866667 462.08z m-108.8-217.386667l108.8 108.8 347.733333-347.733333-287.36 69.76-168.96 168.96z"/><path d="M813.226667 936.106667L351.573333 474.666667l151.04-151.04L964.053333 785.066667l-151.04 151.04zM460.373333 474.666667l352.853334 352.853333 42.453333-42.453333-353.066667-352.853334-42.453333 42.453334z"/></g></svg>';
 // 计划模式图标: TOOL_META 在模块加载即求值, 声明必须位于其前（否则 TDZ 炸掉整个引导）
 const ICON_MODE_PLAN = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6l1 3h3v15H5V6h3l1-3z"/><path d="M9 12h6M9 16h4"/></svg>';
 const ICON_SEARCH = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M16.5 16.5L21 21"/><path d="M8 11h6M11 8v6"/></svg>';
@@ -446,7 +451,7 @@ function groupForNewToolRow(col) {
     const head = document.createElement("button");
     head.type = "button";
     head.className = "tg-head";
-    head.innerHTML = '<span class="tg-ico-wrap"><span class="tg-ico2">' + ICON_TOOL + '</span><span class="tg-ico" aria-hidden="true"></span></span>' +
+    head.innerHTML = '<span class="tg-ico-wrap"><span class="tg-ico2">' + ICON_HAMMER + '</span></span>' +
                      t("ws_handlers.026") +
                      '<span class="tg-sum"></span>' +
                      '<span class="tg-prev" hidden></span>';
@@ -1445,6 +1450,9 @@ function settleBackgroundTurnEnd(run, sid) {
   // 轮次收口: 悬空工具行标"已中断", 清掉流式指针
   sweepPendingToolCards(run);
   collapseFinishedToolGroups(colOf(sid));   // 后台会话已结束的分组回到默认折叠
+  // 后台列收口: 常驻敲击类一并摘除(syncThinkingIndicator 只管前台列)
+  colOf(sid).querySelectorAll(".tool-group.hammering")
+    .forEach(g => g.classList.remove("hammering"));
   clearRateLimitNote(run);   // 限流退避提示一并撤下
   run.curBubble = null;
   // 思考行/乐观胶囊兜底收口（客户端计时）, 与前台 endTurnUiReset 一致;
@@ -2294,6 +2302,13 @@ function syncThinkingIndicator() {
   const show = !!(run && run.busy);
   el.style.display = show ? "flex" : "none";
   if (state.sessionId) {
+    // 锤子敲击与转圈同周期: 轮次运行期间, 本列最后一个工具分组持续敲击;
+    // 组与组之间、工具与工具的间隙不再经历 run 状态翻转带来的"停-重启"
+    // (CSS 动画在同一个元素上不换名就不会归零) —— 修闪一下;
+    // 轮次收口后 show=false, 类摘除, 敲击停。后台列靠 :has(.tg-sum.run) 兜底。
+    const hgroups = colOf(state.sessionId).querySelectorAll(".tool-group");
+    const hlast = hgroups.length ? hgroups[hgroups.length - 1] : null;
+    hgroups.forEach(g => g.classList.toggle("hammering", show && g === hlast));
     // 已在当前列尾就绝不动节点: appendChild 对已连接节点 = 移除+重插,
     // CSS 旋转动画被取消并从头重播。本函数每条 text_delta 都会调,
     // 无条件挪节点曾让流式期间转圈反复归零——"转得不顺畅"的根因。

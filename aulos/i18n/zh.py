@@ -166,6 +166,7 @@ STRINGS = {
     "server.049": " 个",
     "server.050": "(缺失)",
     "server.051": "(未命名)",
+    "server.052": "pinned 必须是布尔值",
     "server_settings.042": "不存在",
     "server_settings.043": "(空回复)",
     "server_settings.044": "目录 {p0} ",

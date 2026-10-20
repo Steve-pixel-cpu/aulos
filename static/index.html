@@ -193,6 +193,9 @@
 <div id="pane">
   <header id="doc-header">
     <span id="doc-title"><span data-i18n="index.t018">未命名任务</span></span>
+    <button id="doc-more" type="button" data-tip="标题操作" aria-label="标题操作" hidden>
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.9"/><circle cx="12" cy="12" r="1.9"/><circle cx="19" cy="12" r="1.9"/></svg>
+    </button>
     <span class="ws-tag" id="ws-tag">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>
       <span id="ws-tag-text">workplace</span>
@@ -574,6 +577,13 @@
             <div class="set-desc"><span data-i18n="index.t109">单轮任务里模型连续调用工具的次数上限，达到后提前收束本轮；1–10000，默认 128，对新会话生效</span></div>
           </div>
           <input id="set-max-iter" class="hex-input num-input" spellcheck="false" inputmode="numeric" placeholder="128" maxlength="5">
+        </div>
+        <div class="set-row">
+          <div class="set-info">
+            <div class="set-name"><span data-i18n="index.t205">全局并发上限</span></div>
+            <div class="set-desc"><span data-i18n="index.t206">同时运行的对话轮次上限，超出的自动排队；1–64，默认 4，保存后立即生效</span></div>
+          </div>
+          <input id="set-max-concurrent" class="hex-input num-input" spellcheck="false" inputmode="numeric" placeholder="4" maxlength="2">
         </div>
         <div class="al-sub"><span data-i18n="index.t110">浏览器可见性</span><span class="set-help" role="button" tabindex="0" aria-label="浏览器可见性说明" data-i18n-aria-label="index.attr033" data-i18n-tip="index.t111"关掉浏览器"再试即可）"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="8" cy="8" r="6.6" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="8" cy="5.1" r=".95" fill="currentColor"/><path d="M8 7.4v4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></span></div>
         <div class="set-row">

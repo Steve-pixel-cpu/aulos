@@ -88,6 +88,10 @@ const curRun = () => (state.sessionId ? runOf(state.sessionId) : null);
 state.customProjects = JSON.parse(localStorage.getItem("xc-projects") || "[]");
 state.collapsedProjects = new Set(JSON.parse(localStorage.getItem("xc-collapsed") || "[]"));
 state.collapsedTasks = localStorage.getItem("xc-collapsed-tasks") === "1";   // 「任务」区块折叠态
+/* 「显示更多」递进展开进度: workdir → 已展开条数 / 任务区块已展开条数。
+ * 值为"当前可见条数"（初始缺省 = 5), 每次 +5 直到全部可见后按钮变「收起」 */
+state.projectReveal = new Map(JSON.parse(localStorage.getItem("xc-project-reveal") || "[]"));
+state.tasksReveal = Number(localStorage.getItem("xc-tasks-reveal")) || 5;
 state.draftInput = "";   // 草稿态未发送的输入
 state.skillCache = null; // 当前工作目录的技能清单（refreshSkillCache 填充, 斜杠补全数据源）
 
@@ -600,19 +604,33 @@ document.addEventListener("click", ev => {
       && !(addBtn && addBtn.contains(ev.target))) closeDirPop();
 });
 
-/* 顶栏标题点击重命名（Notion 式） */
-$("doc-title").onclick = () => {
+/* 顶栏标题旁"…"钮 → 菜单(重命名/置顶/归档), 锚定按钮, 复用 dd-pop 样式 */
+$("doc-more").onclick = ev => {
+  ev.stopPropagation();
   if (state.draft || !state.sessionId) return;   // 草稿态没有可命名的会话
-  if ($("doc-title").querySelector("input")) return;
   const cur = state.sessions.find(s => s.id === state.sessionId);
   if (!cur) return;
-  const input = makeInlineEditor(
-    displayTitle(cur),
-    val => renameSession(state.sessionId, val),
-    () => refreshDocTitle(),   // 取消/完成后恢复标题文本（提交后 rename 也会刷新）
-  );
-  $("doc-title").textContent = "";
-  $("doc-title").appendChild(input);
+  const moreBtn = $("doc-more");
+  if (moreBtn._pop) { moreBtn._pop.close(); moreBtn._pop = null; return; }   // 再点 = 关
+  const pop = window.anchoredPop(moreBtn, "dd-pop title-pop");
+  moreBtn._pop = pop;
+  const origClose = pop.close;
+  pop.close = () => { origClose(); moreBtn._pop = null; };
+  const mkOpt = (icoSvg, labelKey, act) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "dd-opt";
+    b.innerHTML = '<span class="dd-ico">' + icoSvg + '</span><span class="dd-txt"></span>';
+    b.querySelector(".dd-txt").textContent = t(labelKey);
+    b.onclick = async ev2 => { ev2.stopPropagation(); pop.close(); await act(); };
+    pop.appendChild(b);
+  };
+  mkOpt(window.PENCIL_SMALL_SVG, "sidebar.085", async () => {
+    const title = await window.promptDialog(t("sidebar.085"), { title: t("sidebar.085"), value: window.displayTitle(cur) });
+    if (title && title !== window.displayTitle(cur)) window.renameSession(state.sessionId, title);
+  });
+  mkOpt(window.PIN_SMALL_SVG, cur.pinned ? "sidebar.087" : "sidebar.086", () => window.togglePin(cur));
+  mkOpt(window.ARCHIVE_BOX_SVG, "sidebar.083", () => window.setSessionArchived(cur.id, true));
 };
 
 /* ============================================================
@@ -1433,6 +1451,10 @@ async function loadSettings() {
       state.serverMaxIter = s.max_iterations;
       $("set-max-iter").value = String(s.max_iterations);
     }
+    if (s.max_concurrent_turns != null) {
+      state.serverMaxConcurrent = s.max_concurrent_turns;
+      $("set-max-concurrent").value = String(s.max_concurrent_turns);
+    }
     state.serverBrowserHeaded = s.browser_headless === false;
     state.serverBrowserSlowMo = s.browser_slow_mo ?? null;
     syncBrowserVisibilityControls();
@@ -1915,6 +1937,32 @@ function currentMaxIter() {
   });
 }
 
+/* ---------- 设置 → 行为: 全局并发上限（保存即热生效） ---------- */
+function maxConcurrentValid(v) {
+  return Number.isInteger(v) && v >= 1 && v <= 64;
+}
+{
+  const inp = $("set-max-concurrent");
+  const submit = async () => {
+    const cur = state.serverMaxConcurrent;
+    if (inp.value.trim() === "") {   // 清空 = 放弃编辑, 回显当前值
+      if (cur != null) inp.value = String(cur);
+      inp.classList.remove("invalid");
+      return;
+    }
+    const v = parseInt(inp.value, 10);
+    if (!maxConcurrentValid(v)) { inp.classList.add("invalid"); return; }
+    inp.classList.remove("invalid");
+    await saveSettings({ max_concurrent_turns: v });
+    toast(t("app.159"));
+  };
+  inp.addEventListener("blur", submit);
+  inp.addEventListener("keydown", ev => {
+    ev.stopPropagation();   // 别让 Enter/Esc 冒泡成全局快捷键
+    if (ev.key === "Enter") ev.target.blur();
+  });
+}
+
 /* ---------- 设置 → 行为: 浏览器可见性与动作延迟 ---------- */
 function browserSlowMoValid(v) {
   return Number.isInteger(v) && v >= 0 && v <= 10000;
@@ -2236,6 +2284,10 @@ async function saveSettings(patch) {
     if (s.permission_mode) state.globalDefaults.permissionMode = s.permission_mode;
     if (s.permission_plan != null) state.globalDefaults.permissionPlan = !!s.permission_plan;
     if (s.max_iterations != null) $("set-max-iter").value = String(s.max_iterations);
+    if (s.max_concurrent_turns != null) {
+      state.serverMaxConcurrent = s.max_concurrent_turns;
+      $("set-max-concurrent").value = String(s.max_concurrent_turns);
+    }
     if (s.browser_headless != null || s.browser_slow_mo != null) {
       if (s.browser_headless != null) state.serverBrowserHeaded = s.browser_headless === false;
       if (s.browser_slow_mo != null) state.serverBrowserSlowMo = s.browser_slow_mo;

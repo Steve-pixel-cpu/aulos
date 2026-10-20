@@ -69,6 +69,14 @@ class ArchiveRecord(BaseModel):
     timestamp: str
 
 
+class PinRecord(BaseModel):
+    """会话置顶记录: 追加式（同 archive）, 取最新一条为准。
+    pinned=True 在侧栏列表置顶显示, False 取消置顶。不挪文件、不动消息链。"""
+    type: Literal["pin"] = "pin"
+    pinned: bool
+    timestamp: str
+
+
 class SessionMemoryRecord(BaseModel):
     """Session Memory（三层压缩中间层的滚动摘要）记录: 后台消化每合并
     一步追加一条, 恢复时取最新。last_sha = 第 digested-1 条消息内容的
@@ -215,6 +223,15 @@ class SessionStore:
         )
         self._append_entry(self._session_path(session_id), record)
 
+    def pin_session(self, session_id: str, pinned: bool) -> None:
+        """追加一条置顶记录（置顶/取消共用, 展示层取最新）。
+        不挪文件、不动消息链——仅列表排序层面的提升。"""
+        record = PinRecord(
+            pinned=bool(pinned),
+            timestamp=datetime.now(timezone.utc).isoformat(),
+        )
+        self._append_entry(self._session_path(session_id), record)
+
     @staticmethod
     def _message_sha(message: Message) -> str:
         """消息内容的稳定哈希（sort_keys 保证跨进程/跨次 dump 一致）。"""
@@ -353,7 +370,7 @@ class SessionStore:
         失效; 进程重启清零, 派生数据不落盘, 永不与 JSONL 失同步。"""
         empty = {"title": None, "count": 0, "workdir": None, "mode": None,
                  "plan": False, "provider_id": None, "model_id": None,
-                 "first_user_text": None, "archived": False}
+                 "first_user_text": None, "archived": False, "pinned": False}
         file_path = self._session_path(session_id)
         try:
             st = file_path.stat()
@@ -370,6 +387,7 @@ class SessionStore:
         provider_id: Optional[str] = None
         model_id: Optional[str] = None
         archived = False
+        pinned = False
         last_activity: float = 0.0   # 最后一条消息的落盘时间(epoch 秒)
         msg_entries: list[StorageEntry] = []
         for entry in self._read_entries(file_path):
@@ -392,6 +410,8 @@ class SessionStore:
                 provider_id, model_id = entry.provider_id, entry.model_id
             elif isinstance(entry, ArchiveRecord):
                 archived = bool(entry.archived)
+            elif isinstance(entry, PinRecord):
+                pinned = bool(entry.pinned)
         if mode in ("plan", "read-only"):   # 旧数据归一: 同 get_permission_mode
             mode, plan = "prompt", True
         count = 0
@@ -409,7 +429,7 @@ class SessionStore:
                 "mode": mode, "plan": plan,
                 "provider_id": provider_id, "model_id": model_id,
                 "first_user_text": first_user_text, "archived": archived,
-                "last_activity": last_activity}
+                "pinned": pinned, "last_activity": last_activity}
         self._meta_cache[session_id] = (key, meta)
         return dict(meta)
 
@@ -531,6 +551,8 @@ class SessionStore:
                     result.append(SessionMemoryRecord.model_validate(data))
                 elif data.get("type") == "archive":
                     result.append(ArchiveRecord.model_validate(data))
+                elif data.get("type") == "pin":
+                    result.append(PinRecord.model_validate(data))
                 else:
                     result.append(StorageEntry.model_validate(data))
             except json.JSONDecodeError as e:

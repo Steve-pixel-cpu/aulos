@@ -303,17 +303,20 @@
   .session-item:hover .s-workdir .s-del { display: inline-flex; }
   .session-item .s-workdir .s-unarc:hover { color: var(--accent); background: var(--accent-soft); }
   .session-item .s-workdir .s-del:hover { color: var(--err); background: var(--err-soft); }
-  .session-item.renaming .s-arc { display: none; }
-  /* 普通视图归档钮: 裸图标无框, 悬停浅底（与改名/删除同一节奏） */
-  .session-item .s-arc {
+  /* 直操作钮: 置顶/归档（重命名在顶栏标题…菜单）。裸图标, 悬停浅底 */
+  .session-item .s-pin, .session-item .s-arc {
     display: none; flex: none;
     width: 25px; height: 25px; padding: 0;
     border: none; background: none; border-radius: 7px;
     color: var(--text-2); align-items: center; justify-content: center;
     transition: all .12s;
   }
-  .session-item:hover .s-arc { display: inline-flex; }
-  .session-item .s-arc:hover { color: var(--accent); background: var(--accent-soft); }
+  .session-item:hover .s-pin, .session-item:hover .s-arc { display: inline-flex; }
+  .session-item .s-pin:hover, .session-item .s-arc:hover { color: var(--accent); background: var(--accent-soft); }
+  .session-item.pinned .s-pin { color: var(--accent); }   /* 已置顶: 图钉常亮 */
+  /* 已置顶行非悬停时的常亮图钉提示(hover 后让位给操作钮) */
+  .session-item .s-pinned-ico { display: none; flex: none; color: var(--accent); }
+  .session-item.pinned:not(:hover) .s-pinned-ico { display: inline-flex; }
   /* 归档工具行: 标签 + 排序/批量/… 三钮紧凑靠右（覆盖 space-between 摊开） */
   .list-label-row.archived-tools { gap: 2px; }
   .list-label-row.archived-tools .list-label { flex: 1; }
@@ -448,6 +451,20 @@
   }
   .task-collapsed-ph:hover { background: var(--hover); }
 
+  /* 「显示更多（N 条）/收起」递进展开行: 项目组尾与任务区块共用 */
+  .show-more-row {
+    display: flex; align-items: center; gap: 6px;
+    width: calc(100% - 26px); margin: 1px 8px 1px 26px; padding: 0 8px; height: 27px;
+    font-size: calc(12px * var(--fs-ui)); color: var(--text-3);
+    border-radius: var(--r-sm); cursor: pointer; transition: background .12s, color .12s;
+    user-select: none;
+  }
+  .show-more-row:hover { background: var(--hover); color: var(--text-2); }
+  .show-more-row .sm-txt { flex: none; }
+  .show-more-row .sm-chev { flex: none; display: inline-flex; transition: transform .15s; }
+  .show-more-row.open .sm-chev { transform: rotate(180deg); }
+  .show-more-row.in-tasks { margin-left: 12px; width: calc(100% - 24px); }
+
   .session-item {
     position: relative; display: flex; align-items: center; gap: 8px;
     width: calc(100% - 16px); margin: 1px 8px; padding: 0 8px 0 12px; height: 34px;
@@ -490,20 +507,17 @@
     background: var(--accent-soft); color: var(--accent);
     border-radius: 3px; padding: 0 1px;
   }
-  .session-item .s-del, .session-item .s-ren {
+  .session-item .s-del {
     display: none; flex: none;
     width: 25px; height: 25px; padding: 0;
     border: none; background: none; border-radius: 7px;
     color: var(--text-2); align-items: center; justify-content: center;
     transition: all .12s;
   }
-  .session-item:hover .s-del, .session-item:hover .s-ren { display: inline-flex; }
+  .session-item:hover .s-del { display: inline-flex; }
   .session-item:hover .meta { display: none; }   /* 悬停时时间让位给操作钮 */
   .session-item .s-del { margin-right: 2px; }
   .session-item .s-del:hover { color: var(--err); background: var(--err-soft); }
-  .session-item .s-ren:hover { color: var(--accent); background: var(--accent-soft); }
-  .session-item.renaming .title, .session-item.renaming .meta,
-  .session-item.renaming .s-del, .session-item.renaming .s-ren { display: none; }
   /* 并行运行态: 运行中脉冲点 / 排队/未读红点 */
   .session-item .s-run {
     display: none; flex: none; width: 14px; height: 14px;
@@ -533,13 +547,6 @@
   .session-item.awaiting-plan .meta { display: none; }
   .session-item.awaiting-plan.unread .s-unread { display: none; }
   .session-item.awaiting-plan .s-ico { color: var(--warn); }
-  .inline-rename {
-    flex: 1; min-width: 0; height: 24px;
-    font-family: inherit; font-size: calc(12.5px * var(--fs-ui)); color: var(--text);
-    background: var(--surface); border: 1px solid var(--accent); border-radius: 6px;
-    padding: 0 7px;
-  }
-  .inline-rename:focus { outline: none; box-shadow: 0 0 0 3px var(--accent-soft); }
 
   /* 底栏: 连接状态 + 主题切换 */
   .side-bottom {
@@ -587,6 +594,14 @@
     cursor: text;
   }
   #doc-title:hover { color: var(--accent); }
+  /* 标题旁"…"菜单钮: 非草稿态显示(JS 摘 hidden); 点击弹 重命名/置顶/归档 */
+  #doc-more {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; padding: 0; flex: none;
+    border: none; background: none; border-radius: 7px;
+    color: var(--text-3); transition: all .12s;
+  }
+  #doc-more:hover { color: var(--accent); background: var(--accent-soft); }
   .doc-title-input {
     width: 300px; max-width: 36vw;
     font-family: inherit; font-size: calc(14px * var(--fs-ui)); font-weight: 600; color: var(--text);
@@ -2422,7 +2437,7 @@
 .sa-tab .sa-tab-type { color: var(--text-3); font-weight: 500; }
 .sa-tab.on .sa-tab-type { color: var(--text-2); }
 .sa-tab .sa-dot {
-  flex: none; width: 8px; height: 8px; border-radius: 50%;
+  flex: none; width: 10px; height: 10px; border-radius: 50%;
   background: var(--text-3); opacity: .45;
 }
 /* ---- 历史分组: 完成的子代理收进胶囊, 点击弹出列表面板 ---- */
@@ -2472,10 +2487,11 @@
   font-family: inherit; font-size: 12.5px;
   color: var(--text-2); max-height: 30vh; overflow-y: auto;
 }
-/* 状态点着色: 运行中转圈 / 完成 绿 / 失败 红 */
+/* 状态点着色: 运行中转圈（与思考行 #thinking .spin 同款语言:
+ * 轨道 border-strong + 顶部 accent 亮段）/ 完成 绿 / 失败 红 */
 .sa-tab.running .sa-dot {
   background: transparent; opacity: 1;
-  border: 2px solid var(--border-strong); border-top-color: var(--ok);
+  border: 2px solid var(--border-strong); border-top-color: var(--accent);
   animation: spin .8s linear infinite;
 }
 .sa-tab.done-ok .sa-dot { background: var(--ok); opacity: 1; }
@@ -3753,8 +3769,8 @@ body.col-resizing, body.col-resizing * { cursor: col-resize !important; }
   .tool-group .tg-head:active { transform: translateY(0.5px); }
   /* 折叠箭头 ▾ 退休(2026-10-20): 行首已有工具箱图标, 整行即折叠开关 */
   .tool-group .tg-caret { display: none; }
-  /* 头部图标: 常态显示工具箱线性图标(与工具行 .t-ico 同语言, 弱色 14px);
-   * 运行中同一位置换成转圈圆环 —— 位置固定, 图标替换不跳动 */
+  /* 头部图标: 锤子常驻(替代原工具箱线性图标, 弱色 14px);
+   * 运行中同一把锤子做敲击动画(绕柄尾抬起-砸下-顿一拍) —— 不换图标不跳动 */
   .tool-group .tg-ico-wrap {
     flex: none; display: inline-flex; width: 14px; height: 14px;
     position: relative; align-items: center; justify-content: center;
@@ -3762,17 +3778,22 @@ body.col-resizing, body.col-resizing * { cursor: col-resize !important; }
   }
   .tool-group .tg-ico2 { display: inline-flex; line-height: 0; }
   .tool-group .tg-ico2 svg { display: block; }
-  .tool-group .tg-ico {
-    position: absolute; inset: 0; margin: auto; display: none;
-    width: 13px; height: 13px;
-    border-radius: 50%;
-    border: 2px solid color-mix(in srgb, var(--accent) 35%, transparent);
-    border-top-color: var(--accent);
-    animation: spin .8s linear infinite;
+  .tool-group .tg-ico2 .hammer-g { transform-origin: 888px 860px; }   /* 柄尾(1024 viewBox) */
+  /* 敲击的两条触发: hammering = 轮次未结束期间常驻(JS syncThinkingIndicator 挂/摘),
+   * :has(.tg-sum.run) = 组内有未决工具行(后台列兜底)。轮次窗口期不再停-重启,
+   * 动画在同一个元素上连续播放, 消掉"闪一下" */
+  .tool-group:has(.tg-sum.run) .tg-ico2,
+  .tool-group.hammering .tg-ico2 {
+    color: var(--accent);
+    animation: hammer-hit 1s ease-in-out infinite;
   }
-  .tool-group:has(.tg-sum.run) .tg-caret { display: none; }
-  .tool-group:has(.tg-sum.run) .tg-ico2 { visibility: hidden; }
-  .tool-group:has(.tg-sum.run) .tg-ico { display: inline-block; }
+  @keyframes hammer-hit {
+    0%   { transform: rotate(24deg); }    /* 砸到底 */
+    30%  { transform: rotate(24deg); }    /* 砸中顿一拍 */
+    55%  { transform: rotate(-26deg); }   /* 抬起 */
+    78%  { transform: rotate(24deg); }    /* 快速砸下 */
+    100% { transform: rotate(24deg); }
+  }
   .tool-group .tg-title {
     color: var(--text-2);
     font-size: calc(12px * var(--fs-ui));

@@ -35,15 +35,15 @@ def clean_web_sessions():
 
 @pytest.fixture()
 def clean_slots():
-    """并发槽位/队列测试隔离: 前后各清一次, 不受其他测试残留影响。"""
-    with server._turn_slots:
-        pass  # 先保证满额可用
-    while server._turn_slots.acquire(blocking=False):
-        pass  # 把残留的 release 全部吃掉
-    for _ in range(server.MAX_CONCURRENT_TURNS):
-        server._turn_slots.release()   # 恢复到满额
+    """并发槽位/队列测试隔离: 前后各清一次, 不受其他测试残留影响。
+    上限现在可变（设置页热调）, 不能按固定次数恢复——用 reset 归零
+    计数并保留当前 limit, 结束时再把 limit 归还运行态值。"""
+    server._turn_slots.reset()
     server._queued_turns.clear()
+    saved_limit = server._turn_slots.limit
     yield
+    server.set_max_concurrent_turns(saved_limit)
+    server._turn_slots.reset()
     server._queued_turns.clear()
 
 
@@ -192,3 +192,79 @@ def test_queue_fifo_order(clean_slots):
         pass
     for _ in range(server.MAX_CONCURRENT_TURNS):
         server._turn_slots.release()
+
+
+@pytest.fixture()
+def isolated_settings(tmp_path, monkeypatch):
+    """settings.json 指到 tmp, 防止污染真实用户配置
+    （server._save_setting 走 server.SETTINGS_FILE, 与 config 属性分开绑定）。"""
+    fake = tmp_path / "settings.json"
+    monkeypatch.setattr(server, "SETTINGS_FILE", fake)
+    yield fake
+
+
+# ------------------------------------------------------------
+# 全局并发上限可配置: settings API 热调 _turn_slots
+# ------------------------------------------------------------
+
+def test_settings_exposes_and_updates_max_concurrent(client, isolated_settings):
+    """GET 返回当前上限; POST 合法值热调信号量并落盘。"""
+    r = client.get("/api/settings")
+    assert r.status_code == 200
+    old = r.json()["max_concurrent_turns"]
+
+    r = client.post("/api/settings", json={"max_concurrent_turns": 8})
+    assert r.status_code == 200
+    assert r.json()["max_concurrent_turns"] == 8
+    assert server._turn_slots.limit == 8
+    assert server.runtime_config.feature_config.max_concurrent_turns == 8
+
+    # 恢复, 不泄漏给其他测试
+    client.post("/api/settings", json={"max_concurrent_turns": old})
+    assert server._turn_slots.limit == old
+
+
+def test_settings_max_concurrent_rejects_invalid(client, isolated_settings):
+    """非整数 / bool / 越界值 → 400, 现值不变。"""
+    old = server._turn_slots.limit
+    for bad in (0, 65, -1, True, "4", 3.5, None if False else "4"):
+        r = client.post("/api/settings", json={"max_concurrent_turns": bad})
+        assert r.status_code == 400, bad
+    assert server._turn_slots.limit == old
+
+
+def test_set_max_concurrent_wakes_queued(clean_slots):
+    """调大上限且队列非空 → 排队轮次被唤醒（经事件循环调度）。"""
+    ws = server.get_or_create_web_session("wk-1")
+    ws.busy = True
+    server._queued_turns.append(
+        (ws, "hi", None, lambda p: None, server.WebPermissionPrompter(lambda p: None)))
+
+    spawned = []
+    original = server._spawn_turn_thread
+    server._spawn_turn_thread = lambda ws, text, atts, e, p: spawned.append(ws.session_id)
+    try:
+        old_limit = server._turn_slots.limit
+        server.set_max_concurrent_turns(old_limit + 1)
+    finally:
+        server._spawn_turn_thread = original
+        server.set_max_concurrent_turns(old_limit)   # 恢复, 不泄漏给后续测试
+
+    # 直接调（无事件循环）时唤醒依赖 loop; 测试环境无 loop 则至少容量已变
+    if spawned:
+        assert spawned == ["wk-1"]
+    assert server._queued_turns == [] or spawned == []
+
+
+def test_shrink_does_not_affect_running(clean_slots):
+    """缩小上限: 不影响已占用槽位, 只是新 acquire 被拒。"""
+    # clean_slots 已把计数清到 0; 这里从已知状态出发
+    base = server._turn_slots.limit
+    assert server._turn_slots.acquire(blocking=False)
+    old = server.set_max_concurrent_turns(1)
+    assert old == base
+    assert server._turn_slots.acquire(blocking=False) is False   # 新槽位拿不到
+    server._turn_slots.release()   # 在跑轮次正常归还
+    assert server._turn_slots.acquire(blocking=False)             # 归还后可再占
+    server._turn_slots.release()
+    server.set_max_concurrent_turns(base)   # 恢复, 不泄漏

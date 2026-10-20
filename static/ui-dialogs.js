@@ -87,7 +87,7 @@ function confirmDialog(msg, { title = t("ui_dialogs.001"), okText = t("ui_dialog
   });
 }
 window.confirmDialog = confirmDialog;   // 摸鱼电台(music.js)复用
-
+window.promptDialog = promptDialog;     // app.js 顶栏改名复用（script 隔离, 须挂 window）
 /* ============================================================
  * 输入弹窗 — 替代原生 prompt(): Tauri/WebView2 不支持 prompt
  * （返回 null, 调用方当成"取消"静默退出, 功能看着就是"点了没反应"）。
@@ -110,6 +110,7 @@ function promptDialog(msg, { title = t("ui_dialogs.004"), value = "", placeholde
       '</div>';
     document.body.appendChild(ov);
     const input = ov.querySelector("#confirm-input");
+    input.maxLength = 60;   // 与会话改名前后端上限一致
     input.value = value;
     input.placeholder = placeholder;
     let done = false;

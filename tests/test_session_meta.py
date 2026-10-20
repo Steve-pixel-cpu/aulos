@@ -27,7 +27,7 @@ def add_msg(store: SessionStore, sid: str, role: str, text: str,
 def empty_meta() -> dict:
     return {"title": None, "count": 0, "workdir": None, "mode": None,
             "plan": False, "provider_id": None, "model_id": None,
-            "first_user_text": None, "archived": False}
+            "first_user_text": None, "archived": False, "pinned": False}
 
 
 # ------------------------------------------------------------

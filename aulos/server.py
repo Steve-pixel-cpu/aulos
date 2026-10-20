@@ -360,7 +360,7 @@ def _session_system_prompt(workdir: Optional[str]) -> list:
         base.append(skills_section)
     return base
 
-MAX_CONCURRENT_TURNS = 4  # 全局并发上限: 同时跑的轮次超过这个数就排队
+MAX_CONCURRENT_TURNS = 4  # 已废弃硬编码默认值, 仅为向后兼容保留常量名
 def _untitled() -> str:
     return t("server.001")  # 函数化: import 期固化会把宿主语言冻结进常量
 _CANCEL_SENTINEL = "__cancelled__"
@@ -1016,7 +1016,64 @@ def _parse_attachments(raw) -> tuple[Optional[list[dict]], Optional[str]]:
 # 工作线程: 同步 run_turn + 事件桥接
 # ============================================================================
 
-_turn_slots = threading.BoundedSemaphore(MAX_CONCURRENT_TURNS)
+class _TurnSlots:
+    """可调容量的轮次槽位。threading.BoundedSemaphore 的容量在创建后
+    不可调, 设置页热改并发上限需要可变上限的等价物。
+
+    语义对齐 BoundedSemaphore: acquire 非阻塞试占, release 归还。
+    set_limit 可随时调整: 缩小不影响已占用槽位（在跑轮次自然结束后,
+    新轮次按新上限进入）; 调大立即产生可用槽位。"""
+    __slots__ = ("_lock", "_limit", "_count")
+
+    def __init__(self, limit: int):
+        self._lock = threading.Lock()
+        self._limit = limit
+        self._count = 0
+
+    def acquire(self, blocking: bool = False) -> bool:
+        # 仅非阻塞试占（现有调用点全部如此）
+        with self._lock:
+            if self._count < self._limit:
+                self._count += 1
+                return True
+            return False
+
+    def release(self) -> None:
+        with self._lock:
+            if self._count <= 0:
+                raise ValueError("release of unacquired turn slot")
+            self._count -= 1
+
+    def __enter__(self):
+        # 兼容旧 BoundedSemaphore 的 with 用法（测试里 `with _turn_slots:`）
+        if not self.acquire():
+            raise RuntimeError("turn slot context requires a free slot")
+        return self
+
+    def __exit__(self, *exc):
+        self.release()
+        return False
+
+    @property
+    def limit(self) -> int:
+        return self._limit
+
+    def set_limit(self, limit: int) -> int:
+        """调整上限, 返回新增的可用槽位数（>0 时调用方应唤醒排队轮次）。"""
+        with self._lock:
+            old = self._limit
+            self._limit = limit
+            return max(0, limit - old)
+
+    def reset(self) -> None:
+        """计数归零（保留当前上限）。仅供测试隔离: 清掉前序用例泄漏的
+        未释放槽位。"""
+        with self._lock:
+            self._count = 0
+
+
+# 全局并发上限（settings.json maxConcurrentTurns, 默认 4; 设置页可热调）
+_turn_slots = _TurnSlots(runtime_config.feature_config.max_concurrent_turns)
 
 
 def _upgrade_after_plan_impl(web_session: WebSession) -> None:
@@ -1071,7 +1128,7 @@ def _start_turn(web_session: WebSession, text: str, emit: Callable,
 
     if not _turn_slots.acquire(blocking=False):
         # 全局槽位已满: 前端显示排队中, 等有轮结束释放槽位后再起线程
-        emit({"type": "turn_queued", "max_concurrent": MAX_CONCURRENT_TURNS})
+        emit({"type": "turn_queued", "max_concurrent": _turn_slots.limit})
         _queued_turns.append((web_session, text, attachments, emitter, prompter))
         return
 
@@ -1193,6 +1250,23 @@ def _drain_queued_turns() -> None:
                              "budget_exhausted": False, "iterations_exhausted": False})
             continue
         _spawn_turn_thread(web_session, text, attachments, emitter, prompter)
+
+
+def set_max_concurrent_turns(limit: int) -> int:
+    """设置页热调全局并发上限。调整信号量容量; 调大且队列非空时唤醒
+    排队轮次。_drain_queued_turns 约定由事件循环线程独占调用——
+    REST handler 本身就跑在事件循环线程（FastAPI async 端点）, 可直接
+    调用; 若从其他线程调（测试等场景）, 则跳过唤醒, 槽位释放时自然
+    会补跑。返回调整前的旧上限。"""
+    old = _turn_slots.limit
+    gained = _turn_slots.set_limit(limit)
+    if gained > 0 and _queued_turns:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return old
+        loop.call_soon_threadsafe(_drain_queued_turns)
+    return old
 
 
 def _start_pending_turn(web_session: WebSession) -> None:
@@ -1539,6 +1613,8 @@ async def api_list_sessions():
             "workdir": meta["workdir"],
             # 归档状态: 追加式 ArchiveRecord 取最新; 前端据此过滤/渲染归档视图
             "archived": meta["archived"],
+            # 置顶状态: 追加式 PinRecord 取最新; 前端据此置顶排序
+            "pinned": meta["pinned"],
             # 归档视图排序用「最后活动时间」: 最后一条消息的落盘时间——
             # mtime 会被归档动作污染（批量归档瞬间所有文件 mtime 同刷新）
             "mtime": meta.get("last_activity") or 0,
@@ -1551,7 +1627,8 @@ async def api_list_sessions():
     for sid in _pending_sessions:
         meta = store.get_session_meta(sid)   # 未落盘: 全默认值, 仅一次 stat
         items.append({"id": sid, "title": _untitled(), "message_count": 0,
-                      "workdir": None, "archived": False, "mtime": 0,
+                      "workdir": None, "archived": False, "pinned": False,
+                      "mtime": 0,
                       "permission_mode": _mode_name_for(sid, meta),
                       "plan_active": _session_plan(sid, meta),
                       "thinking_level": _session_thinking(sid),
@@ -1684,6 +1761,19 @@ async def api_archive_session(session_id: str, request: dict):
         raise HTTPException(status_code=404, detail=t("server.016"))
     store.archive_session(session_id, archived)
     return {"ok": True, "archived": archived}
+
+
+@app.post("/api/sessions/{session_id}/pin")
+async def api_pin_session(session_id: str, request: dict):
+    """置顶/取消: 追加一条 pin 记录（展示取最新）。置顶不影响对话, busy 不拒。"""
+    pinned = request.get("pinned")
+    if not isinstance(pinned, bool):
+        raise HTTPException(status_code=422, detail=t("server.052"))
+    if session_id not in set(store.list_sessions()) \
+            and session_id not in _pending_sessions:
+        raise HTTPException(status_code=404, detail=t("server.016"))
+    store.pin_session(session_id, pinned)
+    return {"ok": True, "pinned": pinned}
 
 
 @app.post("/api/sessions/{session_id}/rename")

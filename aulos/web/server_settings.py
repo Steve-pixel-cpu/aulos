@@ -304,6 +304,9 @@ async def api_get_settings():
         # 下一次调用按新值重开——与 max_iterations 的会话隔离语义对齐
         "browser_headless": server.runtime_config.feature_config.browser_headless,
         "browser_slow_mo": server.runtime_config.feature_config.browser_slow_mo,
+        # 全局并发上限（同时跑的轮次数, 超出排队）: 与 max_iterations
+        # 不同, 这是进程级全局值而非会话初值——保存即热生效
+        "max_concurrent_turns": server.runtime_config.feature_config.max_concurrent_turns,
         # 前端展示用: 输入栏的模型名 + 顶栏面包屑的工作区名
         "model": server.api_client.model,
         "provider_id": active.get("provider"),
@@ -461,6 +464,22 @@ async def api_post_settings(request: dict):
             )
         server.runtime_config.feature_config.browser_slow_mo = raw_browser_slow_mo
         _save_setting("browserSlowMo", raw_browser_slow_mo)
+
+    # 全局并发上限: 进程级全局值（非会话初值）——校验通过后热调信号量,
+    # 调大时排队中的轮次立即被唤醒起跑。与 max_iterations 的会话隔离
+    # 语义不同: 保存即对所有后续轮次生效
+    raw_max_concurrent = request.get("max_concurrent_turns")
+    if raw_max_concurrent is not None:
+        if (not isinstance(raw_max_concurrent, int)
+                or isinstance(raw_max_concurrent, bool)
+                or not 1 <= raw_max_concurrent <= 64):
+            raise HTTPException(
+                status_code=400,
+                detail=t("server_settings.024", {"p0": repr(raw_max_concurrent)}),
+            )
+        server.runtime_config.feature_config.max_concurrent_turns = raw_max_concurrent
+        _save_setting("maxConcurrentTurns", raw_max_concurrent)
+        server.set_max_concurrent_turns(raw_max_concurrent)
 
     # 切换激活模型（来自输入框模型下拉）
     provider_id = request.get("provider_id")

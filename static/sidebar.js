@@ -49,6 +49,27 @@ const FOLDER_SVG = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" 
 const PLUS_SMALL_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>';
 const UNTITLED_TITLE = () => t("sidebar.010");   // 工厂: 现取
 
+/* 「显示更多」递进展开: 每次点 +5 条, 全部可见后变「收起」(重置回 5 条) */
+const SIDEBAR_REVEAL_STEP = 5;
+const SM_CHEV_SVG = '<svg class="sm-chev" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
+
+/* 「显示更多（N 条）」/「收起」行工厂: extra>0 = 还能再显示 extra 条;
+ * extra===0 = 全部可见, 渲染收起。inTasks: 任务区块变体(缩进对齐) */
+function makeShowMoreRow(extra, inTasks, onClick) {
+  const row = document.createElement("div");
+  row.className = "show-more-row" + (inTasks ? " in-tasks" : "") + (extra ? "" : " open");
+  row.innerHTML = '<span class="sm-txt"></span>' + SM_CHEV_SVG;
+  row.querySelector(".sm-txt").textContent =
+    extra ? t("sidebar.092", { p0: extra }) : t("sidebar.093");
+  row.onclick = ev => { ev.stopPropagation(); onClick(); };
+  return row;
+}
+
+/* reveal 值统一口径: 缺省 5, 下限 5, 上限钳到总数; 无更多条目时无意义 */
+function revealCount(stored, total) {
+  return Math.min(Math.max(Number(stored) || SIDEBAR_REVEAL_STEP, SIDEBAR_REVEAL_STEP), total);
+}
+
 function displayTitle(s) {
   return (!s || s.title === t("sidebar.011")) ? UNTITLED_TITLE() : s.title;
 }
@@ -75,10 +96,17 @@ const TRASH_SMALL_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="n
 const ARCHIVE_BOX_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a2 2 0 002 2h10a2 2 0 002-2V8M10 12h4"/></svg>';
 const UNARCHIVE_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 016 6v4"/></svg>';
 const MORE_SMALL_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>';
+const PIN_SMALL_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 3h6l-1 6 3 3v2H7v-2l3-3-1-6z"/></svg>';
 const CLOSE_SMALL_SVG = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
 
 /* 归档/恢复: POST 后原地更新 state 并重绘（失败 toast, 不动列表） */
 async function setSessionArchived(id, archived) {
+  // 运行中的会话拒归档(后端 409): 先本地拦截, 友好提示且不让用户白点
+  const run = state.runs[id];
+  if (archived && run && run.busy) {
+    toast(t("sidebar.091"));
+    return;
+  }
   try {
     const r = await fetch(`/api/sessions/${id}/archive`, {
       method: "POST",
@@ -87,6 +115,8 @@ async function setSessionArchived(id, archived) {
     });
     if (!r.ok) {
       const err = await r.json().catch(() => ({}));
+      // 后端 409(本地状态滞后, 如另一窗口正在跑): 转成友好文案
+      if (r.status === 409) { toast(t("sidebar.091")); return; }
       throw new Error(err.detail || r.status);
     }
     const s = state.sessions.find(x => x.id === id);
@@ -187,30 +217,8 @@ async function renameSession(id, title) {
   }
 }
 
-/* 通用行内编辑框: Enter/失焦提交，Esc 取消；onDone 无论提交与否都会回调 */
-function makeInlineEditor(initial, onCommit, onDone) {
-  const input = document.createElement("input");
-  input.className = "inline-rename";
-  input.maxLength = 60;
-  input.value = initial;
-  const finish = commit => {
-    if (input._done) return;
-    input._done = true;
-    const val = input.value.trim();
-    input.remove();
-    if (commit && val && val !== initial) onCommit(val);
-    if (onDone) onDone(commit);
-  };
-  input.onclick = ev => ev.stopPropagation();
-  input.onkeydown = ev => {
-    ev.stopPropagation();   // 别让按键冒泡成全局快捷键
-    if (ev.key === "Enter") finish(true);
-    else if (ev.key === "Escape") finish(false);
-  };
-  input.onblur = () => finish(true);
-  requestAnimationFrame(() => { input.focus(); input.select(); });
-  return input;
-}
+/* 通用行内编辑框已移除: 改名统一走 promptDialog 弹窗(侧栏 … 菜单 +
+ * 顶栏标题点击), 空间充足不折叠 */
 
 function makeSessionItem(s) {
   const item = document.createElement("div");
@@ -224,13 +232,15 @@ function makeSessionItem(s) {
    * 主行保持 标题+时间 两元素, 与 mock 一致 */
   item.innerHTML = '<span class="s-ico">' + sessionStateIcon(s) + '</span>'
     + '<span class="s-unread"></span>'
+    + '<span class="s-pinned-ico">' + PIN_SMALL_SVG + '</span>'
     + t("sidebar.030")
     + '<span class="title"></span><span class="meta"></span>'
     + '<div class="s-snippet"></div>'
     + (archivedView ? "" :
-        t("sidebar.031") + ARCHIVE_BOX_SVG + '</button>'
-        + t("sidebar.032") + PENCIL_SMALL_SVG + '</button>');
+        '<button class="s-pin" data-tip="' + t("sidebar.086") + '">' + PIN_SMALL_SVG + '</button>'
+        + '<button class="s-arc" data-tip="' + t("sidebar.083") + '">' + ARCHIVE_BOX_SVG + '</button>');
   item.querySelector(".title").textContent = displayTitle(s);
+  if (s.pinned) item.classList.add("pinned");
   item.querySelector(".meta").textContent = relativeTime(s.id);
   // 全文命中摘录: 标题也命中时同样展示（"正文"前缀区分命中来源）。
   // 高亮用大小写不敏感正则逐段 append 文本节点/mark 节点——不用
@@ -280,28 +290,27 @@ function makeSessionItem(s) {
       + t("sidebar.035") + TRASH_SMALL_SVG + '</button>';
     wd.querySelector("span").textContent = s.workdir ? projectDisplayName(s.workdir) : "default";
     item.appendChild(wd);
+    const unarcBtn = wd.querySelector(".s-unarc");
+    if (unarcBtn) unarcBtn.onclick = ev => {
+      ev.stopPropagation();
+      setSessionArchived(s.id, false);
+    };
+    const delBtn2 = wd.querySelector(".s-del");
+    if (delBtn2) delBtn2.onclick = ev => {
+      ev.stopPropagation();
+      deleteSession(s.id);
+    };
   }
+  /* 直操作按钮: 置顶(切换) + 归档。重命名在顶栏标题的…菜单里, 行内不放 */
+  const pinBtn = item.querySelector(".s-pin");
+  if (pinBtn) pinBtn.onclick = ev => {
+    ev.stopPropagation();
+    togglePin(s);
+  };
   const arcBtn = item.querySelector(".s-arc");
   if (arcBtn) arcBtn.onclick = ev => {
     ev.stopPropagation();
     setSessionArchived(s.id, true);
-  };
-  const unarcBtn = item.querySelector(".s-unarc");
-  if (unarcBtn) unarcBtn.onclick = ev => {
-    ev.stopPropagation();
-    setSessionArchived(s.id, false);
-  };
-  const renBtn = item.querySelector(".s-ren");
-  if (renBtn) renBtn.onclick = ev => {
-    ev.stopPropagation();
-    if (item.classList.contains("renaming")) return;
-    item.classList.add("renaming");   // 编辑期间隐藏标题/时间/按钮
-    const input = makeInlineEditor(
-      displayTitle(s),
-      val => renameSession(s.id, val),
-      () => item.classList.remove("renaming"),
-    );
-    item.appendChild(input);
   };
   const delBtn = item.querySelector(".s-del");
   if (delBtn) delBtn.onclick = ev => {
@@ -342,6 +351,24 @@ async function deleteSession(id) {
     toast(t("sidebar.040"));
   } catch (e) {
     toast(t("sidebar.041") + e.message);
+  }
+}
+
+/* 置顶/取消置顶: POST /pin, 成功更新本地 + 重排 + toast; 失败 toast 报错。
+ * 侧栏…菜单与顶栏…菜单共用。 */
+async function togglePin(s) {
+  const target = !s.pinned;
+  try {
+    const r = await fetch(`/api/sessions/${s.id}/pin`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pinned: target }),
+    });
+    if (!r.ok) throw new Error(r.status);
+    s.pinned = target;
+    renderSessionList();
+    toast(target ? t("sidebar.088") : t("sidebar.089"));
+  } catch (e) {
+    toast(t("sidebar.090") + e.message);
   }
 }
 
@@ -495,8 +522,10 @@ function renderSessionList() {
       return;
     }
     // 会话按时间倒序，分组标签自然按 今天→更早 顺序出现
+    // 置顶会话排最前（时间分组视图与项目/任务视图口径一致）
+    const ordered = [...sessions].sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
     let bucket = -1;
-    for (const s of sessions) {
+    for (const s of ordered) {
       const b = sessionBucket(s.id);
       if (b !== bucket) { bucket = b; addLabel(BUCKET_LABELS()[b]); }
       list.appendChild(makeSessionItem(s));
@@ -548,6 +577,7 @@ function renderSessionList() {
   named.sort((a, b) => (b[1][0]?.id ?? "").localeCompare(a[1][0]?.id ?? ""));  // 组间按最新会话
   const chev = '<svg class="p-chev" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
   for (const [wd, items] of named) {
+    items.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));   // 组内置顶在前
     const collapsed = state.collapsedProjects.has(wd) && !q;   // 搜索时强制展开
     const header = document.createElement("div");
     header.className = "project-item" + (collapsed ? " collapsed" : "");
@@ -569,17 +599,46 @@ function renderSessionList() {
     header.onclick = () => toggleProject(wd);
     list.appendChild(header);
     if (collapsed) continue;
-    for (const s of items) {
+    /* 「显示更多」递进展开: 搜索态/激活会话在可见窗口之外时强制全量,
+     * 避免点开的项目里当前对话条目"看不见" */
+    const reveal = revealCount(state.projectReveal.get(wd), items.length);
+    const activeIdx = items.findIndex(s => s.id === state.sessionId);
+    const forceAll = !!q || activeIdx >= reveal;
+    const visible = forceAll ? items.length : reveal;
+    for (const s of items.slice(0, visible)) {
       const it = makeSessionItem(s);
       it.classList.add("in-project");
       list.appendChild(it);
+    }
+    /* 总数超过单屏限额才出「显示更多/收起」行; 搜索态/激活项在窗口外
+     * 时不渲染（激活项会话下"收起"会立刻再藏掉它, 等于按钮失效） */
+    if (!forceAll && items.length > SIDEBAR_REVEAL_STEP) {
+      const extra = items.length - visible;
+      const row = makeShowMoreRow(extra, false, () => {
+        /* 未全部展开: +5 直到顶满; 已全部展开: 收起重置 */
+        const total = items.length;
+        const cur = revealCount(state.projectReveal.get(wd), total);
+        if (cur < total) {
+          state.projectReveal.set(wd, Math.min(cur + SIDEBAR_REVEAL_STEP, total));
+          localStorage.setItem("xc-project-reveal",
+            JSON.stringify([...state.projectReveal]));
+        } else {
+          state.projectReveal.delete(wd);
+          localStorage.setItem("xc-project-reveal",
+            JSON.stringify([...state.projectReveal]));
+        }
+        renderSessionList();
+      });
+      list.appendChild(row);
     }
   }
 
   // 任务 = 没有选择文件夹的会话; 标题行带 + 与项目分组一致
   // 标题行可点: 折叠/展开整个区块（与项目组折叠交互一致; 搜索时强制展开）
   const taskCollapsed = state.collapsedTasks && !q;
-  const loose = sessions.filter(s => !s.workdir);
+  // 置顶会话排最前(组内), 其余按原序
+  const loose = sessions.filter(s => !s.workdir)
+    .sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
   const taskRow = document.createElement("div");
   taskRow.className = "list-label-row" + (loose.length ? " tappable" : "")
     + (taskCollapsed ? " collapsed" : "");
@@ -619,7 +678,25 @@ function renderSessionList() {
     };
     list.appendChild(ph);
   } else {
-    for (const s of loose) list.appendChild(makeSessionItem(s));
+    /* 「显示更多」递进展开: 口径与项目组一致, 进度存 tasksReveal */
+    const tReveal = revealCount(state.tasksReveal, loose.length);
+    const activeIdx = loose.findIndex(s => s.id === state.sessionId);
+    const forceAll = !!q || activeIdx >= tReveal;
+    const visible = forceAll ? loose.length : tReveal;
+    for (const s of loose.slice(0, visible)) list.appendChild(makeSessionItem(s));
+    if (!forceAll && loose.length > SIDEBAR_REVEAL_STEP) {
+      const extra = loose.length - visible;
+      list.appendChild(makeShowMoreRow(extra, true, () => {
+        if (tReveal < loose.length) {
+          state.tasksReveal = Math.min(tReveal + SIDEBAR_REVEAL_STEP, loose.length);
+          localStorage.setItem("xc-tasks-reveal", String(state.tasksReveal));
+        } else {
+          state.tasksReveal = SIDEBAR_REVEAL_STEP;
+          localStorage.setItem("xc-tasks-reveal", String(state.tasksReveal));
+        }
+        renderSessionList();
+      }));
+    }
   }
 }
 
@@ -776,6 +853,8 @@ async function removeProject(wd, count) {
   localStorage.setItem("xc-projects", JSON.stringify(state.customProjects));
   state.collapsedProjects.delete(wd);
   localStorage.setItem("xc-collapsed", JSON.stringify([...state.collapsedProjects]));
+  state.projectReveal.delete(wd);   // 「显示更多」进度一并清掉
+  localStorage.setItem("xc-project-reveal", JSON.stringify([...state.projectReveal]));
   renderSessionList();
   toast(t("sidebar.080") + name);
 }
@@ -807,5 +886,18 @@ function markActiveSession() {
 function refreshDocTitle() {
   const cur = state.sessions.find(s => s.id === state.sessionId);
   $("doc-title").textContent = cur ? displayTitle(cur) : UNTITLED_TITLE();
+  // "…"菜单钮: 草稿态(无会话)隐藏, 有会话才可操作
+  $("doc-more").hidden = !cur;
   refreshWorkdirTag();
 }
+
+/* 供 app.js 顶栏…菜单复用（script 顶层 const 不跨文件可见） */
+window.anchoredPop = anchoredPop;
+window.renameSession = renameSession;
+window.setSessionArchived = setSessionArchived;
+window.displayTitle = displayTitle;
+window.PIN_SMALL_SVG = PIN_SMALL_SVG;
+window.PENCIL_SMALL_SVG = PENCIL_SMALL_SVG;
+window.ARCHIVE_BOX_SVG = ARCHIVE_BOX_SVG;
+window.renderSessionList = renderSessionList;
+window.togglePin = togglePin;

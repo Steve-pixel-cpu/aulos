@@ -67,12 +67,12 @@ test("归档视图: 只显示已归档, 子行带恢复+删除钮与项目名(de
     "无项目的归档会话子行显示 default");
 });
 
-test("普通视图: 行只带改名+归档钮, 无删除/恢复钮", async () => {
+test("普通视图: 行带置顶+归档直操作钮, 无恢复钮", async () => {
   const w = await bootWith([sess("a")], []);
   const html = listHtml(w);
-  assert.ok(/data-tip="重命名"/.test(html), "普通视图行应有改名钮");
+  assert.ok(/data-tip="置顶"/.test(html), "普通视图行应有置顶钮");
   assert.ok(/data-tip="归档"/.test(html), "普通视图行应有归档钮");
-  assert.ok(!/data-tip="删除会话"/.test(html), "普通视图行不应有删除钮");
+  assert.ok(!/data-tip="删除会话"/.test(html), "普通视图行不应有独立删除钮");
   assert.ok(!/data-tip="恢复"/.test(html), "普通视图行不应有恢复钮");
 });
 
@@ -97,9 +97,9 @@ test("点行归档钮: POST archive archived=true, 行原地移出主列表", as
   const calls = [];
   const w = await bootWith([sess("a"), sess("keep")], calls);
   const row = w.document.getElementById("session-a") || [...w.document.querySelectorAll(".session-item")].find(el => el.dataset.id === "a");
-  row.querySelector(".s-arc").click();
+  row.querySelector(".s-arc").click();                       // 直操作钮
   await new Promise(r => setTimeout(r, 0));
-  const hit = calls.find(c => c.url.includes("/archive"));
+  const hit = calls.find(c => c.url.includes("/archive") && c.opt.method === "POST");
   assert.ok(hit, "应发归档请求");
   assert.equal(JSON.parse(hit.opt.body).archived, true);
   assert.ok(hit.url.includes("/a/"), "归档的是 a 不是别的会话");
@@ -112,7 +112,8 @@ test("归档视图点恢复钮: POST archive archived=false, 行回主列表", a
   w.setArchiveView(true);
   w.document.querySelector(".session-item .s-unarc").click();
   await new Promise(r => setTimeout(r, 0));
-  const hit = calls.find(c => c.url.includes("/archive"));
+  const hit = calls.find(c => c.url.includes("/archive") && c.opt.method === "POST");
+  assert.ok(hit, "应发恢复(archive archived=false)请求");
   assert.equal(JSON.parse(hit.opt.body).archived, false);
   w.setArchiveView(false);
   assert.ok(listHtml(w).includes(">b<"), "恢复后应回到主列表");

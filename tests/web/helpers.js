@@ -49,6 +49,9 @@ function makeDom(html) {
   window.fetch = window.fetch || (async () => {
     throw new TypeError("fetch stub: no backend in tests");
   });
+  // rAF 走 setTimeout, 会吊住事件循环导致 node --test 不退出。
+  // window.close() 清掉所有定时器; dom 引用挂在 window 上供测试收尾。
+  window.__dom = dom;
   return window;
 }
 

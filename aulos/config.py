@@ -253,6 +253,10 @@ class RuntimeFeatureConfig(BaseModel):
     # browser_tools.launch_options）。
     browser_headless: bool = True
     browser_slow_mo: int = Field(default=0, ge=0)
+    # 全局并发上限: 同时运行的对话轮次超过该值即排队（Web 端多会话
+    # 并行时的节流阀）。历史为 server.MAX_CONCURRENT_TURNS=4 硬编码,
+    # 接线到设置页后可热调（1–64, 调大即唤醒排队轮次）。
+    max_concurrent_turns: int = Field(default=4, ge=1, le=64)
     # MCP 服务器列表（配置 mcpServers key）。空列表 = 未配置, 零开销。
     mcp_servers: list[McpServerConfig] = Field(default_factory=list)
 
@@ -517,6 +521,16 @@ class ConfigLoader:
                 f"browserSlowMo: expected non-negative integer, got {browser_slow_mo!r}",
                 kind="parse",
             )
+        # 全局并发上限: 口径同 maxIterations 的正整数校验（bool 显式排除）
+        max_concurrent_turns = merged.get("maxConcurrentTurns", 4)
+        if (not isinstance(max_concurrent_turns, int)
+                or isinstance(max_concurrent_turns, bool)
+                or not 1 <= max_concurrent_turns <= 64):
+            raise ConfigError(
+                f"maxConcurrentTurns: expected integer in [1, 64], "
+                f"got {max_concurrent_turns!r}",
+                kind="parse",
+            )
 
         return RuntimeFeatureConfig(
             hooks_pre_tool_use=pre,
@@ -545,6 +559,7 @@ class ConfigLoader:
             delegation_hard_files=delegation_thresholds["hard_files"],
             browser_headless=browser_headless,
             browser_slow_mo=browser_slow_mo,
+            max_concurrent_turns=max_concurrent_turns,
             mcp_servers=_parse_mcp_servers(merged),
         )
 
