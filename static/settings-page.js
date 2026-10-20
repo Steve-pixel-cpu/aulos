@@ -941,7 +941,8 @@ $("btn-mcp-reload").onclick = async () => {
 };
 
 function openSettings() {
-  themeDd.setValue(themePref());   // 每次打开回显当前值  $("fs-ui-input").value = String(fsUiPref());
+  themeDd.setValue(themePref());   // 每次打开回显当前值
+  $("fs-ui-input").value = String(fsUiPref());
   $("fs-code-input").value = String(fsChatPref());
   $("bg-bright").value = String(bgBrightPref());
   $("bg-bright-val").textContent = String(bgBrightPref());
