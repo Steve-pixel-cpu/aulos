@@ -2430,6 +2430,17 @@
 #sa-body .sa-stream.hosted {
   width: auto; margin: 0; padding: 14px 16px 18px;
 }
+/* 面板内"回到底部"悬浮钮: 脱离贴底时出现(流式跟随已让位) */
+#sa-scroll-btn {
+  position: absolute; right: 14px; bottom: 18px; z-index: 5;
+  width: 34px; height: 34px; border-radius: 50%;
+  border: 1px solid var(--border-strong); background: var(--surface);
+  color: var(--text-2); box-shadow: var(--shadow-md);
+  display: none; align-items: center; justify-content: center;
+  transition: all .15s;
+}
+#sa-scroll-btn.show { display: inline-flex; }
+#sa-scroll-btn:hover { color: var(--text); border-color: var(--accent-border); }
 
 #plan-panel {
   display: none;

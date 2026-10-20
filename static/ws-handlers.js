@@ -982,6 +982,25 @@ function saPlaceCol(card, attach) {
   }
 }
 
+/* 面板滚动跟随: 与主列同一套"贴底跟随/上翻让位"语义。此前
+ * onSubagentEvent 无条件拽底, 子agent流式输出期间面板完全锁死。 */
+let saNearBottom = true;
+$("sa-body").addEventListener("scroll", () => {
+  const el = $("sa-body");
+  saNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+  $("sa-scroll-btn").classList.toggle("show", !saNearBottom);
+});
+$("sa-body").addEventListener("wheel", ev => {
+  if (ev.deltaY >= 0) return;
+  saNearBottom = false;
+  $("sa-scroll-btn").classList.add("show");
+}, { passive: true });
+$("sa-scroll-btn").onclick = () => {
+  saNearBottom = true;
+  $("sa-scroll-btn").classList.remove("show");
+  $("sa-body").scrollTo({ top: $("sa-body").scrollHeight, behavior: "smooth" });
+};
+
 function openSaPanel(agentId, cardRef) {
   const card = cardRef || saCardOf(runOf(state.sessionId), agentId);
   if (!card || !card.isConnected) return;
@@ -998,6 +1017,8 @@ function openSaPanel(agentId, cardRef) {
   saPlaceCol(card, true);
   card.classList.add("sa-open-in-panel");
   saRenderTabs(runOf(state.sessionId));
+  saNearBottom = true;                       // 打开即看最新: 重置贴底态
+  $("sa-scroll-btn").classList.remove("show");
   const body = $("sa-body");
   body.scrollTop = body.scrollHeight;   // 打开即看最新
 }
@@ -1150,8 +1171,8 @@ function onSubagentEvent(msg, sid) {
     default: return;
   }
   if (card.classList.contains("sa-open")) scrollToBottom();   // 面板停泊时跟随主列滚动（防御性: 现已无内联展开路径）
-  // 侧栏模式: 滚侧栏容器到底（仅当前会话且面板开着）
-  if (_saOpenAgent === msg.agent_id && sid === state.sessionId) {
+  // 侧栏模式: 用户贴底时才跟随(上翻让位, 交给 wheel/scroll 监听切换)
+  if (_saOpenAgent === msg.agent_id && sid === state.sessionId && saNearBottom) {
     const body = $("sa-body");
     body.scrollTop = body.scrollHeight;
   }

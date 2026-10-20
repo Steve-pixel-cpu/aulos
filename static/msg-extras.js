@@ -18,6 +18,7 @@
  * 滚动: 贴底自动跟随; 用户上翻时不拽人, 悬浮钮一键回底
  * ============================================================ */
 let nearBottom = true;
+let scrollInteracting = false;   // 用户正操作自绘滑块(拖拽/点轨道): 流式跟随让位
 $("messages").addEventListener("scroll", () => {
   const el = $("messages");
   nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
@@ -25,11 +26,20 @@ $("messages").addEventListener("scroll", () => {
   updateMsgThumb();
   mmUpdateActive();
 });
+/* wheel 先于 scroll 事件到达: 上滚立即脱离贴底态, 消除"滚轮已按下
+ * 但 scroll 未触发"窗口内被流式 delta 拽回底部的竞态——这是流式
+ * 输出期间滚动"推不动/被拽回"的直接根因 */
+$("messages").addEventListener("wheel", ev => {
+  if (ev.deltaY >= 0) return;
+  nearBottom = false;
+  $("scroll-btn").classList.add("show");
+}, { passive: true });
 $("scroll-btn").onclick = () => {
   nearBottom = true;
   $("messages").scrollTo({ top: $("messages").scrollHeight, behavior: "smooth" });
 };
 function scrollToBottom(force) {
+  if (!force && scrollInteracting) return;   // 滑块交互中: 手势优先, 不拽底
   if (!force && !nearBottom) return;
   const el = $("messages");
   el.scrollTop = el.scrollHeight;
@@ -64,6 +74,7 @@ window.addEventListener("resize", updateMsgThumb);
 /* 拖拽滑块: 按位移比例反算 scrollTop */
 msgThumbBar.addEventListener("pointerdown", ev => {
   ev.preventDefault();
+  scrollInteracting = true;   // 流式 delta 让位于用户手势
   msgThumb.classList.add("dragging");
   msgThumbBar.setPointerCapture(ev.pointerId);
   const el = $("messages");
@@ -76,6 +87,7 @@ msgThumbBar.addEventListener("pointerdown", ev => {
     el.scrollTop = startScroll + (e2.clientY - startY) / track * max;
   };
   const onUp = () => {
+    scrollInteracting = false;
     msgThumb.classList.remove("dragging");
     msgThumbBar.removeEventListener("pointermove", onMove);
     msgThumbBar.removeEventListener("pointerup", onUp);
@@ -87,10 +99,14 @@ msgThumbBar.addEventListener("pointerdown", ev => {
 /* 点击轨道空白: 跳到对应位置(与原生行为一致) */
 msgThumb.addEventListener("pointerdown", ev => {
   if (ev.target === msgThumbBar) return;   // 滑块自身走拖拽
+  scrollInteracting = true;   // 点轨道跳位同样是用户手势: 期间不被拽底
   const el = $("messages");
   const track = msgThumb.clientHeight - MSG_THUMB_H;
   const max = el.scrollHeight - el.clientHeight;
-  if (track <= 0 || max <= 0) return;
+  const end = () => { scrollInteracting = false;
+    window.removeEventListener("pointerup", end); };
+  window.addEventListener("pointerup", end);
+  if (track <= 0 || max <= 0) { end(); return; }
   const y = ev.clientY - msgThumb.getBoundingClientRect().top - MSG_THUMB_H / 2;
   el.scrollTop = Math.max(0, Math.min(track, y)) / track * max;
 });
