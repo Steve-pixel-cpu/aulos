@@ -3754,9 +3754,10 @@ body.col-resizing, body.col-resizing * { cursor: col-resize !important; }
   .tool-group:not(.collapsed) .tg-head { margin-bottom: 2px; }
 
   /* ============ 子智能体卡片（agent_tool 派出的 subagent） ============
-   * v3 纯文本行(参考 zcode): 无图标无框, 与"思考"胶囊同一语言;
-   * 类型词(探索/验证/通用)用强调色且可点(开侧栏), 描述弱色跟随;
-   * 状态/耗时仍在行尾。整行可点开侧栏, 类型词是显式入口。 */
+   * v3 纯文本行(参考 zcode): 无框, 与"思考"胶囊同一语言;
+   * 图标位保留机器人图标(升级时换 ICON_BOT), 与"等待子代理"等
+   * 普通工具行左端对齐; 类型词(探索/验证/通用)用强调色且可点(开侧栏),
+   * 描述弱色跟随; 状态/耗时仍在行尾。整行可点开侧栏, 类型词是显式入口。 */
   .tool-row.sa-card { cursor: pointer; border-left: none; padding-left: 9px; }
   .tool-row.sa-card:hover { background: color-mix(in srgb, var(--text) 6%, transparent); }
   .tool-row.sa-card .tname2 { color: var(--text-2); }

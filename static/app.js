@@ -1874,6 +1874,7 @@ const utProviderDd = makeDropdown($("ut-provider"), {
     const m = $("ut-model");
     if (!v) m.value = "";
     m.disabled = !v;
+    m.placeholder = v ? "模型名，如 glm-4.5-air" : "跟主模型";
     scheduleUtilitySave();
   },
 });
@@ -1891,6 +1892,7 @@ function syncUtilityControls() {
   utProviderDd.setItems(items, state.utilityCfg?.provider || "");
   $("ut-model").value = state.utilityCfg?.model || "";
   $("ut-model").disabled = !state.utilityCfg?.provider;
+  $("ut-model").placeholder = state.utilityCfg?.provider ? "模型名，如 glm-4.5-air" : "跟主模型";
   renderUtilityStatus();
 }
 function renderUtilityStatus() {
@@ -1949,6 +1951,7 @@ const wkProviderDd = makeDropdown($("wk-provider"), {
     const m = $("wk-model");
     if (!v) m.value = "";
     m.disabled = !v;
+    m.placeholder = v ? "模型名，如 glm-4.5-air" : "跟主对话模型";
     scheduleWorkerSave();
   },
 });
@@ -1966,6 +1969,7 @@ function syncWorkerControls() {
   wkProviderDd.setItems(items, state.workerCfg?.provider || "");
   $("wk-model").value = state.workerCfg?.model || "";
   $("wk-model").disabled = !state.workerCfg?.provider;
+  $("wk-model").placeholder = state.workerCfg?.provider ? "模型名，如 glm-4.5-air" : "跟主对话模型";
   renderWorkerStatus();
 }
 function renderWorkerStatus() {

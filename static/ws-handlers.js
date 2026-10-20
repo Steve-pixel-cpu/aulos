@@ -198,6 +198,10 @@ const ICON_MODE_PLAN = '<svg width="15" height="15" viewBox="0 0 24 24" fill="no
 const ICON_SEARCH = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M16.5 16.5L21 21"/><path d="M8 11h6M11 8v6"/></svg>';
 const ICON_GLOB = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h5M4 11h7M4 16h5"/><path d="M14 5l6 7-6 7"/><path d="M20 12H10"/></svg>';
 const ICON_TODO = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.5l1.5 1.5L8 5.5"/><path d="M4 13.5l1.5 1.5L8 12.5"/><path d="M11 7h9M11 14h9M11 20h6"/></svg>';
+// 子智能体机器人: 方头 + 天线 + 双眼, 与其他工具图标同笔画口径
+// (stroke 1.8 / round)。agent 系工具统一用它, 子智能体卡升级时换上,
+// 与下方"等待子代理"等普通工具行的图标位对齐
+const ICON_BOT = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="8" width="14" height="11" rx="2.5"/><path d="M12 8V5.5"/><circle cx="12" cy="4" r="1.2"/><path d="M9.2 13v1.6M14.8 13v1.6"/></svg>';
 const TOOL_META = {
   bash:       { label: "终端",     icon: ICON_TERM },
   powershell: { label: "终端",     icon: ICON_TERM },
@@ -207,11 +211,11 @@ const TOOL_META = {
   todo: { label: "任务清单", icon: ICON_TODO },
   grep: { label: "搜索内容", icon: ICON_SEARCH },
   glob: { label: "查找文件", icon: ICON_GLOB },
-  agent_tool:  { label: "子智能体",   icon: ICON_TOOL },
-  agent_status:{ label: "子代理状态", icon: ICON_TOOL },
-  agent_wait:  { label: "等待子代理", icon: ICON_TOOL },
-  agent_reap:  { label: "收割子代理", icon: ICON_TOOL },
-  agent_list:  { label: "子代理列表", icon: ICON_TOOL },
+  agent_tool:  { label: "子智能体",   icon: ICON_BOT },
+  agent_status:{ label: "子代理状态", icon: ICON_BOT },
+  agent_wait:  { label: "等待子代理", icon: ICON_BOT },
+  agent_reap:  { label: "收割子代理", icon: ICON_BOT },
+  agent_list:  { label: "子代理列表", icon: ICON_BOT },
 };
 
 function fmtDuration(ms) {
@@ -1069,9 +1073,10 @@ function upgradeToSubagentCard(card, agentId) {
   if (!card || card._saAgentId) return;
   card._saAgentId = agentId;
   card.classList.add("sa-card");
-  // 纯文本行(参考 zcode): 图标不参与, 直接摘掉
+  // 保留图标位但换成机器人图标: 与同组的"等待子代理"等普通工具行
+  // 左端对齐（原先摘掉图标, 文字起点比别的行凸出, 视觉错位）
   const meta = card.querySelector(".t-ico");
-  if (meta) meta.remove();
+  if (meta) meta.innerHTML = ICON_BOT;
   const desc = card.querySelector(".tdesc");
   const input = card.dataset.input || "";
   try {

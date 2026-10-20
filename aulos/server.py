@@ -267,21 +267,27 @@ def _apply_provider_config(cfg: dict) -> None:
 
 def _rebuild_utility_client() -> None:
     """side-call 专用 client: 主供应商配置变化时一并重建。未配置/无效 =
-    None, side-call 回落主模型（与未配置前一致）。既有会话 runtime 持有
-    的旧引用随下次 load_runtime_for 刷新——热更新分钟级生效, 不追即时。"""
+    None, side-call 回落主模型（与未配置前一致）。"""
     global _utility_client
     uprov = load_utility_provider()
     if not uprov:
         _utility_client = None
-        return
-    protocol = _protocol_of(uprov)
-    _utility_client = make_api_client(
-        protocol, api_key=uprov.get("api_key") or "",
-        model=uprov.get("model") or api_client.model or "",
-        base_url=_normalize_base_url(uprov.get("base_url"), protocol=protocol) or None,
-        tools=TOOLS, emit_output=False,
-        thinking_level="low",
-    )
+    else:
+        protocol = _protocol_of(uprov)
+        _utility_client = make_api_client(
+            protocol, api_key=uprov.get("api_key") or "",
+            model=uprov.get("model") or api_client.model or "",
+            base_url=_normalize_base_url(uprov.get("base_url"), protocol=protocol) or None,
+            tools=TOOLS, emit_output=False,
+            thinking_level="low",
+        )
+    # 即时热更新到所有活会话: load_runtime_for 仅在组装时拷贝一次引用,
+    # 不推的话已开会话（尤其配置前组装的, 引用还是 None）永远拿旧值,
+    # "立即生效"沦为只在重启后成立。图片转述缓存按图 sha 键, 新旧
+    # client 通用, 无需清理。
+    for ws in _sessions.values():
+        if ws.runtime is not None:
+            ws.runtime.set_utility_client(_utility_client)
 
 
 def _subagent_api_config() -> tuple[str, Optional[str], str, str]:
@@ -376,6 +382,13 @@ def _api_config_for_session(session_id: Optional[str]
         model = client.model
     return (client.api_key, client.base_url, model, client.protocol)
 
+
+# 活会话注册表: 声明必须早于首次 _apply_provider_config（模块装载期即
+# 调用, 其内部 _rebuild_utility_client 要遍历活会话热更新 utility
+# client 引用）——原先在 WebSession 类之后才初始化, 那条路径会踩
+# NameError。导入期不可能有请求进来, 空 dict 即正确初值; 带引号的注解
+# 不求值, WebSession 在文件后部定义也不受影响。
+_sessions: "dict[str, WebSession]" = {}
 
 _provider_cfg = load_providers()
 _apply_provider_config(_provider_cfg)
@@ -701,9 +714,6 @@ class WebSession:
                 em(payload)
             except Exception:
                 pass
-
-
-_sessions: dict[str, WebSession] = {}
 
 
 class AppState:
