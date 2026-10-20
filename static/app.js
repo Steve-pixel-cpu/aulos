@@ -1456,6 +1456,32 @@ async function loadSettings() {
   } catch (e) { console.error("加载设置失败", e); }
 }
 
+/* 语言热切换: 不整页 reload —— reload 断开 WS, 后端 WebSocketDisconnect
+ * 一律 request_stop(等于用户点停止): 运行中轮次被掐、排队清空。
+ * 步骤 = loadSettings 语言相关五步 + 动态 UI 重渲染。 */
+window.applyLanguageHot = function (v) {
+  setI18nLang(v);
+  try { localStorage.setItem("xc-lang", v); } catch (e) {}   // 卫星页镜像
+  const de = document.documentElement;                        // 对齐首帧内联脚本
+  de.lang = v === "en" ? "en" : "zh-CN";
+  de.dataset.lang = v === "en" ? "en" : "zh";
+  if (window.__resyncSettingsDropdowns) window.__resyncSettingsDropdowns();
+  if (window.__langDd) window.__langDd.setValue(v);
+  applyI18n();                       // 静态 data-i18n(177 处)一次刷完
+  // 动态 UI: 各渲染入口现取 t(), 重复调用安全
+  try { renderDraftChrome(); renderSugChips(); renderWsChip(); } catch (e) {}
+  try { if (typeof renderQueueCards === "function") renderQueueCards(); } catch (e) {}
+  try { renderSessionList(); } catch (e) {}
+  try { syncBrowserVisibilityControls(); renderUtilityStatus(); renderWorkerStatus(); } catch (e) {}
+  try { if (typeof renderProviderSettings === "function") renderProviderSettings(); } catch (e) {}
+  try { if (typeof window.__mmRebuild === "function") window.__mmRebuild(); } catch (e) {}
+  // 消息区: 空闲时重拉历史让工具卡等标签换语言; 忙碌时不打扰流式 DOM
+  const run = state.runs && state.runs[state.sessionId];
+  if (state.sessionId && (!run || !run.busy)) {
+    loadSessionHistory(state.sessionId).catch(() => {});
+  }
+};
+
 /* ---------- 应用图标: 设置 → 外观 可上传替换, 服务端落盘 ~/.aulos/appearance/icon.png ---------- */
 let iconVer = 0;   // 图标文件版本（mtime）: 用 ?v= 穿透浏览器缓存
 const iconUrl = () => "/api/icon" + (iconVer ? `?v=${iconVer}` : "");

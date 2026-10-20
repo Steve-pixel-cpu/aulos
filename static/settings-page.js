@@ -43,8 +43,8 @@ const LANG_ITEMS = () => [
 const langDd = makeDropdown($("sel-lang"), {
   items: LANG_ITEMS, value: "zh",   // 真值由 loadSettings 回显（异步 fetch 后）
   onChange: async v => {
-    await saveSettings({ language: v });  // 失败: toast+回显, reload 后自然回落
-    location.reload();                    // 语言切换 = 整页重载（spec §4.3）
+    const s = await saveSettings({ language: v });  // 失败: toast+回显真值
+    if (s && s.language) applyLanguageHot(s.language);   // 热切换, 不 reload
   },
 });
 window.__langDd = langDd;   // loadSettings 回显钩子（先例: __zenDd）
