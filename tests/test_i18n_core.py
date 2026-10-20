@@ -7,9 +7,13 @@ import aulos.i18n as i18n
 
 
 @pytest.fixture(autouse=True)
-def _reset_lang():
+def _reset_lang(tmp_path, monkeypatch):
+    # 隔离: 不让用例间的语言缓存串味; 同时挡住真实用户配置
+    # (本机 settings.json 可能 language=en, current_language 懒读会串味)
+    from aulos import config
+    monkeypatch.setattr(config, "SETTINGS_FILE", tmp_path / "none.json")
     yield
-    i18n._current["lang"] = None   # 隔离: 不让用例间的语言缓存串味
+    i18n._current["lang"] = None
 
 
 def test_zh_en_key_sets_identical():
