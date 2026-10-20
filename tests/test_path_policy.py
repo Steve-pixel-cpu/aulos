@@ -525,6 +525,20 @@ def test_powershell_readonly_aliases():
         assert ro(c) is False, c
 
 
+def test_bash_echo_printf_readonly_but_not_with_redirect():
+    """bash 白名单收录 echo/printf/true/false(纯 stdout, 无副作用):
+    分隔组合探查(ls && echo --- && ls)不再因 echo 段整体被拒。
+    写文件重定向仍一票否决——echo 的唯一变异面就是 > 重定向。"""
+    ro = lambda c: shell_command_is_read_only(
+        "bash", json.dumps({"command": c}))
+    for c in ("echo hi", "printf \"%s\" x", "true", "false",
+              "ls && echo \"---\" && ls frontend 2>/dev/null",
+              "echo hi > /dev/null"):
+        assert ro(c) is True, c
+    for c in ("echo x > f.txt", "printf x >> f.txt"):
+        assert ro(c) is False, c
+
+
 def test_user_sensitive_paths(tmp_path):
     """P5: 用户声明的敏感路径(相对根或绝对)与内置清单同一语义——
     写入强制裁决, 破坏族点名弹问; 未命中照常分级。"""

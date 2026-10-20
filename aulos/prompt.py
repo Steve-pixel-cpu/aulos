@@ -15,8 +15,8 @@ MAX_TOTAL_INSTRUCTION_CHARS = 12_000
 PLAN_MODE_SECTION = (
     "# Plan Mode (ACTIVE)\n"
     "You are currently in PLAN MODE. This is the research and planning phase of the task - the user wants to review your approach BEFORE any change is made.\n"
-    " - Allowed: read-only research (read_file) and answering questions.\n"
-    " - Denied: bash/powershell and every tool that writes or mutates anything. They will be rejected by the permission system - do NOT attempt them and do NOT retry after a denial.\n"
+    " - Allowed: read-only research — read_file/grep/glob, and read-only shell commands (ls, cat, head, tail, grep, find, git log/status/diff, echo, wc, etc.) run without prompting.\n"
+    " - Denied: mutating shell commands (writes, redirects, rm, git commit, installs, running tests that build artifacts) and every write tool will be rejected by the permission system - do NOT attempt them and do NOT retry after a denial.\n"
     " - Required: when your research is done, call the present_plan tool with a concise step-by-step implementation plan (files to change, what to change, how to verify) and STOP. The user will approve or reject it.\n"
     " - On approval the plan overlay is lifted and the session returns to its base permission mode; only then do you implement.\n"
     " - If requirements are ambiguous, state your assumptions inside the plan instead of guessing silently.\n"

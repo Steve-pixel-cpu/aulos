@@ -122,15 +122,23 @@ def test_plan_mode_allows_agent_reap():
     assert r.decision == PermissionDecision.DENY
 
 
-def test_plan_mode_denies_shell_even_with_prompter():
-    """bash 默认 required=DANGER, 计划生效(1) 走不了"相邻升级"弹问:
-    与 workspace-write(2)→DANGER(3) 不同, 1→3 差两档, 设计上直接拒绝。
-    研究期只许读, 命令执行属于实施阶段。"""
+def test_plan_mode_allows_readonly_shell_but_denies_mutating():
+    """bash 默认 required=DANGER, 但只读命令经保守判定确为只读时降档到
+    READ_ONLY——计划生效(1>=1) 直接放行, 不弹问; 变异命令维持 DANGER,
+    计划(1)→DANGER(3) 差两档, 设计上直接拒绝（不弹）。
+    研究期探查(含 ls && echo --- && ls 组合)畅通, 命令执行属于实施阶段。"""
     p = _plan_policy()
     prompter = RecordingPrompter(approved=True)
-    r = p.authorize("bash", "ls", prompter)
-    assert r.decision == PermissionDecision.DENY
-    assert prompter.requests == []   # 根本不弹
+    for cmd in ("ls -la", "cat a.txt", "git log --oneline -5",
+                "ls && echo \"---\" && ls frontend 2>/dev/null"):
+        r = p.authorize("bash", json.dumps({"command": cmd}), prompter)
+        assert r.decision == PermissionDecision.ALLOW, cmd
+        assert prompter.requests == [], cmd        # 只读: 根本不弹
+    for cmd in ("rm -rf x", "echo hi > f.txt", "uv run pytest"):
+        r = p.authorize("bash", json.dumps({"command": cmd}), prompter)
+        assert r.decision == PermissionDecision.DENY, cmd
+        assert prompter.requests == [], cmd        # 差两档: 也不弹
+        assert "present_plan" in r.reason, cmd     # 教学指引
 
 
 def test_plan_mode_denies_writes_even_with_prompter():

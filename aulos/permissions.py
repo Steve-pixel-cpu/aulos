@@ -135,6 +135,10 @@ READONLY_SHELL_COMMANDS = frozenset({
     "grep", "egrep", "fgrep", "rg", "strings", "cut", "uniq", "tr", "jq",
     "diff", "cmp", "comm", "nl", "tac", "rev", "fold", "fmt", "xxd", "od",
     "md5sum", "sha1sum", "sha256sum", "cksum",
+    # 纯 stdout 输出/控制命令: 无副作用, 分隔组合探查的常客
+    # (ls && echo --- && ls)。写文件的唯一途径是 > 重定向——已被
+    # 重定向否决拦住; $(...) 命令替换也一票否决, echo $(rm x) 不命中。
+    "echo", "printf", "true", "false",
 })
 
 # git 只读子命令。branch/tag/remote 虽可创建引用, 但不改工作树文件内容;
