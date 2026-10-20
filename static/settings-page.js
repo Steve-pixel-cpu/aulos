@@ -16,7 +16,9 @@
 /* ============================================================
  * 设置弹窗: 主题外观（深色 / 浅色 / 跟随系统）
  * ============================================================ */
-const THEME_ITEMS = [
+/* i18n: label 延迟求值(工厂函数)——顶层执行时语言未注入会固化 zh;
+ * makeDropdown 原生支持 items 为函数, 打开/同步时现取 t() */
+const THEME_ITEMS = () => [
   { value: "dark", label: t("settings_page.001") },
   { value: "light", label: t("settings_page.002") },
   { value: "system", label: t("settings_page.003") },
@@ -34,7 +36,7 @@ const themeDd = makeDropdown($("sel-theme"), {
 });
 
 /* ---------- 语言: 中文 / English（i18n 骨架; 界面文案迁移在二期） ---------- */
-const LANG_ITEMS = [
+const LANG_ITEMS = () => [
   { value: "zh", label: t("settings_page.004") },     // 语言名按惯例用各自语言书写,
   { value: "en", label: "English" },  // 与界面语言无关 → 无时序问题
 ];
@@ -46,6 +48,13 @@ const langDd = makeDropdown($("sel-lang"), {
   },
 });
 window.__langDd = langDd;   // loadSettings 回显钩子（先例: __zenDd）
+/* i18n: 语言注入后所有设置下拉统一重同步 —— 构造时 label 固化了当时的
+ * 语言快照; loadSettings 拿到后端语言后调用本函数现取 t() 刷新 */
+window.__resyncSettingsDropdowns = () => {
+  for (const dd of [themeDd, langDd, styleDd, hlDd, densityDd, msgstyleDd, zenDd, soundDd, desktopDd]) {
+    try { dd.syncLabel ? dd.syncLabel() : dd.setValue(dd.value); } catch (e) { /* 容错: 单个失败不阻塞其余 */ }
+  }
+};
 
 /* ---------- 界面风格: 默认 / Fluent · 系统云母 ---------- */
 const STYLE_KEY = "xc-style";
@@ -95,7 +104,7 @@ function syncMica() {
     else delete de.dataset.mica;
   });
 }
-const STYLE_ITEMS = [
+const STYLE_ITEMS = () => [
   { value: "default", label: t("settings_page.005") },
   { value: "fluent-mica", label: t("settings_page.006") },
 ];
@@ -140,7 +149,7 @@ function applyDensity() {
   if (v === "comfortable") delete de.dataset.density;
   else de.dataset.density = v;
 }
-const DENSITY_ITEMS = [
+const DENSITY_ITEMS = () => [
   { value: "compact", label: t("settings_page.008") },
   { value: "comfortable", label: t("settings_page.009") },
   { value: "cozy", label: t("settings_page.010") },
@@ -159,7 +168,7 @@ function applyMsgstyle() {
   if (v === "document") delete de.dataset.msgstyle;
   else de.dataset.msgstyle = v;
 }
-const MSGSTYLE_ITEMS = [
+const MSGSTYLE_ITEMS = () => [
   { value: "document", label: t("settings_page.011") },
   { value: "bubble", label: t("settings_page.012") },
 ];
@@ -186,7 +195,7 @@ function syncZenUi() {
   if (window.__zenDd) window.__zenDd.setValue(zenPref() ? "1" : "0");
 }
 const zenDd = makeDropdown($("sel-zen"), {
-  items: [{ value: "0", label: t("settings_page.013") }, { value: "1", label: t("settings_page.014") }],
+  items: () => [{ value: "0", label: t("settings_page.013") }, { value: "1", label: t("settings_page.014") }],
   value: zenPref() ? "1" : "0",
   onChange: v => {
     localStorage.setItem(ZEN_KEY, v === "1" ? "1" : "0");
@@ -223,7 +232,7 @@ document.addEventListener("keydown", ev => {
 applyZen();
 
 /* ---------- 通知: 完成提示音 + 桌面通知, 开关即时生效并持久化 ---------- */
-const ONOFF_ITEMS = [{ value: "1", label: t("settings_page.015") }, { value: "0", label: t("settings_page.016") }];
+const ONOFF_ITEMS = () => [{ value: "1", label: t("settings_page.015") }, { value: "0", label: t("settings_page.016") }];
 const writeBoolPref = key => v => localStorage.setItem(key, v);
 const soundDd = makeDropdown($("sel-notify-sound"), {
   items: ONOFF_ITEMS, value: notifySoundPref() ? "1" : "0",
