@@ -11,6 +11,8 @@ import pytest
 import aulos.server as server
 from aulos.skills import discover_skills
 
+pytestmark = pytest.mark.slow  # 真实子进程/浏览器/网络集成, 快循环跳过
+
 
 @pytest.fixture()
 def client():

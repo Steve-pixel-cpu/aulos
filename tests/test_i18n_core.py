@@ -84,12 +84,3 @@ def test_current_language_reads_settings_json(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "SETTINGS_FILE", tmp_path / "s.json")
     i18n._current["lang"] = None   # conftest 的 _force_zh_language 已置 zh; 本用例要验证懒读
     assert i18n.current_language() == "en"
-
-
-def test_language_directive():
-    assert i18n.language_directive("en") == \
-        "Always write your user-facing replies in English."
-    assert i18n.language_directive("zh") is None
-    i18n.set_language("en")
-    assert i18n.language_directive() == \
-        "Always write your user-facing replies in English."

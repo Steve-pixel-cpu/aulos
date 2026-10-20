@@ -16,6 +16,8 @@ import pytest
 
 import aulos.tools as tools
 
+pytestmark = pytest.mark.slow  # 真实子进程/浏览器/网络集成, 快循环跳过
+
 
 def reset(monkeypatch, tmp_path, env_home=None, which=None, home=None):
     """重置进程内缓存, 固定环境变量 / PATH 探测 / 用户目录。"""

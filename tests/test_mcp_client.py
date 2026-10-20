@@ -15,6 +15,8 @@ from aulos.mcp_client import (MCP_TOOL_PREFIX, McpManager, mcp_tool_name)
 from aulos.runtime import ToolError
 from aulos.tools import ToolRegistry
 
+pytestmark = pytest.mark.slow  # 真实子进程/浏览器/网络集成, 快循环跳过
+
 TESTS_DIR = Path(__file__).parent
 ECHO_SERVER = TESTS_DIR / "mcp_echo_server.py"
 

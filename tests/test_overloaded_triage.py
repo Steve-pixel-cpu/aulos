@@ -61,7 +61,7 @@ def test_529_recovers_midway(sleeps):
     assert calls["n"] == 3
 
 
-def test_exhausted_429_message_carries_model_switch_hint():
+def test_exhausted_429_message_carries_model_switch_hint(sleeps):
     """429 耗尽: 消息带"换模型/供应商"指引, 指向原始 429。"""
     with pytest.raises(RetriesExhausted) as ei:
         send_with_retry(_always(HttpApiError(429, "rate limited")), max_retries=0)
@@ -70,7 +70,7 @@ def test_exhausted_429_message_carries_model_switch_hint():
     assert "model" in msg.lower()
 
 
-def test_exhausted_529_message_carries_model_switch_hint():
+def test_exhausted_529_message_carries_model_switch_hint(sleeps):
     with pytest.raises(RetriesExhausted) as ei:
         send_with_retry(_always(HttpApiError(529, "overloaded")), max_retries=0)
     msg = str(ei.value)

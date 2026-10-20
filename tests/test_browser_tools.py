@@ -19,6 +19,8 @@ from aulos.browser_tools import (BROWSER_TOOL_NAMES, BROWSER_TOOL_SPECS,
                            register_browser_tools, _clamp_ms)
 from aulos.main import TOOLS, TOOL_REQUIREMENTS, build_registry
 
+pytestmark = pytest.mark.slow  # 真实子进程/浏览器/网络集成, 快循环跳过
+
 
 # --- spec / registry / 权限档 一致性 ---
 

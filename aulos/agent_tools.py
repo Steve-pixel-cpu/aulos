@@ -385,7 +385,8 @@ def agent_wait_tool(params: dict, workdir: Optional[str] = None) -> str:
         return "ERROR: agent_ids is required (comma-separated ids)"
     agent_ids = [a.strip() for a in raw_ids.split(",") if a.strip()]
     try:
-        timeout_s = float(params.get("timeout_s") or 180.0)
+        # 显式 0/0.0 应走钳制下限 1s, 而非被 or 回落成默认 180s
+        timeout_s = float(params["timeout_s"]) if "timeout_s" in params else 180.0
     except (TypeError, ValueError):
         return "ERROR: timeout_s must be a number"
     timeout_s = max(1.0, min(600.0, timeout_s))

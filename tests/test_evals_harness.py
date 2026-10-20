@@ -19,6 +19,8 @@ from harness import (Check, diff_baseline, discover_tasks, judge_verdict,  # noq
                      load_checks, parse_agent_output, prepare_workspace,
                      render_report, usage_total)
 
+pytestmark = pytest.mark.slow  # 真实子进程/浏览器/网络集成, 快循环跳过
+
 STUB_AGENT = ROOT / "tests" / "evals_stub_agent.py"
 
 

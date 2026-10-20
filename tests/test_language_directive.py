@@ -1,4 +1,4 @@
-"""语言指令注入: en 追加到系统提示词末尾, zh 不追加（现状零漂移）。"""
+"""回复语言不注入提示词: AI 跟随用户输入语言, 语言设置只管 UI 文案。"""
 import pytest
 
 import aulos.i18n as i18n
@@ -12,23 +12,16 @@ def _reset_lang():
     i18n._current["lang"] = None
 
 
-def test_session_prompt_zh_has_no_directive():
-    i18n.set_language("zh")
-    sections = server._session_system_prompt(None)
-    assert all(
-        "Always write your user-facing replies" not in s for s in sections)
+def test_session_prompt_has_no_language_directive():
+    for lang in ("zh", "en"):
+        i18n.set_language(lang)
+        sections = server._session_system_prompt(None)
+        assert all(
+            "Always write your user-facing replies" not in s for s in sections)
 
 
-def test_session_prompt_en_appends_directive_last():
-    i18n.set_language("en")
-    sections = server._session_system_prompt(None)
-    assert sections[-1] == i18n.AI_LANGUAGE_DIRECTIVES["en"]
-
-
-def test_pet_prompt_follows_language():
+def test_pet_prompt_has_no_language_directive():
     persona = {"name": "小猫", "style": ""}
-    i18n.set_language("zh")
-    assert "Always write" not in _pet_system_prompt(persona)
-    i18n.set_language("en")
-    assert _pet_system_prompt(persona).endswith(
-        i18n.AI_LANGUAGE_DIRECTIVES["en"])
+    for lang in ("zh", "en"):
+        i18n.set_language(lang)
+        assert "Always write" not in _pet_system_prompt(persona)

@@ -540,7 +540,7 @@ def test_promote_pending_提到队首并叫停当前轮():
     assert s.stop_requested is True
     # 受理反馈与 request_stop 对齐: 前端靠 turn_interrupting 显示「正在中断」,
     # 不广播则收束静默期(秒级)里用户以为没点上而连点
-    assert {"type": "turn_interrupting"} in s.broadcasts
+    assert {"type": "turn_interrupting", "reason": "promote"} in s.broadcasts
 
 
 def test_promote_pending_不在队列时静默忽略():
@@ -1234,6 +1234,11 @@ class _InterruptRuntime:
         self._ws.runtime_messages = [Message.user_text(first_text)]
 
     def set_cancel_check(self, fn):
+        return self
+
+    def set_utility_client(self, client):
+        # 协议对齐: _rebuild_utility_client 会遍历 _sessions 调它,
+        # 本用例的会话残留在 _sessions 时不能让 AttributeError 炸到别的测试
         return self
 
     def session(self):
