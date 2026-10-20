@@ -51,3 +51,6 @@ demo/video/public/raw/
 
 # 本地会话诊断数据（历史遗留目录, 不入库）
 docs/superpowers/
+
+# agent 并行工作区 (git worktree, 由 using-git-worktrees 技能管理)
+.worktrees/
