@@ -754,6 +754,7 @@ window.I18N_STRINGS_ZH = {
   "ws_handlers.118": "历史 {n}",
   "ws_handlers.119": "完成 · {n} 秒",
   "ws_handlers.120": "失败",
+  "ws_handlers.121": "（结果超长，已截断）",
   "index.attr001": "唤出侧栏",
   "index.attr002": "最小化",
   "index.attr003": "最大化",

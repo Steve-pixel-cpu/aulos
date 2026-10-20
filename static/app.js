@@ -743,9 +743,21 @@ async function reconcileSaCardsFromManifests(id) {
       : m.status === "failed" ? t("ws_handlers.053") : m.status || "";
     meta.textContent = (zh ? zh + " · " : "") + (m.description || m.agent_id.slice(0, 8)) +
       (stLabel ? " — " + stLabel : "");
-    const body = document.createElement("pre");
+    // 正文走 markdown 渲染: result 是 worker 汇报原文, 与主列气泡
+    // 同一套 renderMd（失败自动降级转义纯文本）; 用 div 不用 pre,
+    // 渲染出的 <p>/<strong>/<code> 才有正常排版
+    const body = document.createElement("div");
     body.className = "sa-summary-body";
-    body.textContent = m.result_preview || m.error || "";
+    body.innerHTML = renderMd(m.result_preview || m.error || "");
+    sum.appendChild(meta);
+    sum.appendChild(body);
+    // 超长截断提示: /api/agents 只回前 1200 字符, 明示省略
+    if (m.result_truncated) {
+      const tip = document.createElement("span");
+      tip.className = "sa-sum-trunc";
+      tip.textContent = t("ws_handlers.121");
+      meta.appendChild(tip);
+    }
     sum.appendChild(meta);
     sum.appendChild(body);
     card.appendChild(sum);

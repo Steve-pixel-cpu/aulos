@@ -762,6 +762,7 @@ window.I18N_STRINGS_EN = {
   "ws_handlers.118": "History {n}",
   "ws_handlers.119": "Done · {n}s",
   "ws_handlers.120": "Failed",
+  "ws_handlers.121": "(truncated)",
   "index.attr001": "Show sidebar",
   "index.attr002": "Minimize",
   "index.attr003": "Maximize",

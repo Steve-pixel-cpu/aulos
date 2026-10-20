@@ -2011,7 +2011,9 @@ async def api_list_agents():
                 "subagent_type": getattr(m, "subagent_type", "") or "",
                 "description": getattr(m, "description", "") or "",
                 "status": getattr(m, "status", "") or "",
-                "result_preview": (getattr(m, "result", "") or "")[:200],
+                "result_preview": (getattr(m, "result", "") or "")[:1200],
+                # 明示截断: 前端据此在摘要行尾加"已截断"提示
+                "result_truncated": len(getattr(m, "result", "") or "") > 1200,
                 "error": getattr(m, "error", "") or "",
                 "duration_s": None,
             })
