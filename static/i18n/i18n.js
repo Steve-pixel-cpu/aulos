@@ -58,6 +58,9 @@
     doc.querySelectorAll("[data-i18n-title]").forEach(el => {
       el.setAttribute("title", t(el.getAttribute("data-i18n-title")));
     });
+    doc.querySelectorAll("[data-i18n-tip]").forEach(el => {
+      el.setAttribute("data-tip", t(el.getAttribute("data-i18n-tip")));
+    });
   }
 
   window.i18nLang = i18nLang;

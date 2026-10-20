@@ -15,11 +15,8 @@ from aulos.i18n.zh import STRINGS as ZH_STRINGS
 SUPPORTED_LANGUAGES = ("zh", "en")
 DEFAULT_LANGUAGE = "zh"
 
-# AI 回复语言指令（spec §5.2）: en → 英文指令追加在系统提示词末尾;
-# zh 不追加（现状即中文, 零行为漂移）。指令本身用英文写, 模型遵循最稳。
-AI_LANGUAGE_DIRECTIVES = {
-    "en": "Always write your user-facing replies in English.",
-}
+# AI 回复语言不做全局注入: 模型自然跟随用户输入语言。
+# 语言设置只管 UI 文案（历史方案见 spec §5.2, 已废弃）。
 
 _DICTS = {"zh": ZH_STRINGS, "en": EN_STRINGS}
 _current: dict = {"lang": None}
@@ -77,8 +74,3 @@ def t(key: str, params: dict | None = None, lang: str | None = None) -> str:
         return _fmt(_DICTS[DEFAULT_LANGUAGE][key], params)
     print(f"[i18n] missing key {key!r} in all dictionaries", file=sys.stderr)
     return key
-
-
-def language_directive(lang: str | None = None) -> str | None:
-    """追加到系统提示词末尾的回复语言指令; zh/未知 → None（不追加）。"""
-    return AI_LANGUAGE_DIRECTIVES.get(lang or current_language())

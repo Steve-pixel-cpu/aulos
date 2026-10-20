@@ -404,6 +404,15 @@ function updateToolGroupHeader(group) {
     else bad++;   // err / denied / stopped 归为需注意
   });
   group.classList.toggle("running", run > 0);
+  // 头部预览: 优先正在运行的那个工具, 否则组内最后一个 —— 不展开也能跟上 AI 的动作
+  const prevEl = group.querySelector(".tg-prev");
+  if (prevEl) {
+    const src = group.querySelector('.tool-row[data-state="run"]') || rows[rows.length - 1];
+    const d = src && src.querySelector(".tdesc");
+    const txt = d ? d.textContent : "";
+    prevEl.textContent = txt;
+    prevEl.hidden = !txt;
+  }
   if (run > 0) {
     const done = rows.length - run;
     sum.textContent = rows.length === 1 ? t("ws_handlers.024") : t("ws_handlers.025") + done + "/" + rows.length + "…";
@@ -437,8 +446,10 @@ function groupForNewToolRow(col) {
     const head = document.createElement("button");
     head.type = "button";
     head.className = "tg-head";
-    head.innerHTML = t("ws_handlers.026") +
-                     '<span class="tg-sum"></span>';
+    head.innerHTML = '<span class="tg-ico-wrap"><span class="tg-ico2">' + ICON_TOOL + '</span><span class="tg-ico" aria-hidden="true"></span></span>' +
+                     t("ws_handlers.026") +
+                     '<span class="tg-sum"></span>' +
+                     '<span class="tg-prev" hidden></span>';
     head.onclick = () => {
       g.classList.toggle("collapsed");
       if (!g.classList.contains("collapsed")) g._userOpen = true;   // 手动展开: 运行中不自动收回

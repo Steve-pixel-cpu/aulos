@@ -344,7 +344,7 @@
           <div class="set-row">
             <div class="set-info">
               <div class="set-name"><span data-i18n="index.t036">语言</span></div>
-              <div class="set-desc"><span data-i18n="index.t037">界面与 AI 回复使用的语言</span></div>
+              <div class="set-desc"><span data-i18n="index.t037">界面语言</span></div>
             </div>
             <button type="button" class="dd set-dd" id="sel-lang">
               <span class="dd-label"><span data-i18n="index.t038">中文</span></span>
@@ -545,8 +545,7 @@
         <div class="prov-actions">
           <span id="prov-save-status" class="prov-save-status" aria-live="polite"></span>
         </div>
-        <div class="al-sub"><span data-i18n="index.t100">辅助模型（自动起名、摘要、看图等后台任务）</span></div>
-        <div class="sp-section-desc"><span data-i18n="index.t101">会话自动起名、长对话自动压缩成摘要、跨会话记忆整理、图片转述——这些后台任务默认也在用你的主力对话模型。这里可以指定一个更便宜的模型专门干这些活——省钱，且不影响对话本身；不配置就跟主模型。注意选带视觉能力的模型：主模型不吃图片时（部分纯文本部署会直接拒图），会把图交给辅助模型转述成文字再继续；配了纯文本模型这条救场通道就不可用。改动停顿后自动保存，立即生效</span></div>
+        <div class="al-sub"><span data-i18n="index.t100">辅助模型（自动起名、摘要、看图等后台任务）</span><span class="set-help" role="button" tabindex="0" aria-label="辅助模型说明" data-i18n-aria-label="index.attr031" data-i18n-tip="index.t101"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="8" cy="8" r="6.6" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="8" cy="5.1" r=".95" fill="currentColor"/><path d="M8 7.4v4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></span></div>
         <div class="al-add-row">
           <!-- mem-cat-dd: 与记忆分区分类下拉同款边框样式（app.css 设置页分区） -->
           <button type="button" class="dd set-dd mem-cat-dd" id="ut-provider" aria-label="辅助模型供应商" data-i18n-aria-label="index.attr014">
@@ -556,8 +555,7 @@
           <input id="ut-model" class="hex-input txt-input" spellcheck="false" placeholder="跟主模型" data-i18n-placeholder="index.attr015" maxlength="100" style="flex: none; width: 300px;">
         </div>
         <span id="ut-status" class="prov-save-status" aria-live="polite"></span>
-        <div class="al-sub"><span data-i18n="index.t103">子代理模型（执行层分层）</span></div>
-        <div class="sp-section-desc"><span data-i18n="index.t104">派出去的子代理默认跟主对话用同一个模型。这里可以指定一个更便宜的模型专职执行——主对话继续用强模型做诊断与规划，子代理用便宜模型干活，省执行成本且不牺牲决策质量；不配置就跟主对话模型。改动停顿后自动保存，对下一次派发生效</span></div>
+        <div class="al-sub"><span data-i18n="index.t103">子代理模型（执行层分层）</span><span class="set-help" role="button" tabindex="0" aria-label="子代理模型说明" data-i18n-aria-label="index.attr032" data-i18n-tip="index.t104"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="8" cy="8" r="6.6" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="8" cy="5.1" r=".95" fill="currentColor"/><path d="M8 7.4v4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></span></div>
         <div class="al-add-row">
           <button type="button" class="dd set-dd mem-cat-dd" id="wk-provider" aria-label="子代理模型供应商" data-i18n-aria-label="index.attr016">
             <span class="dd-label"><span data-i18n="index.t105">不使用（跟主对话模型）</span></span>
@@ -577,8 +575,7 @@
           </div>
           <input id="set-max-iter" class="hex-input num-input" spellcheck="false" inputmode="numeric" placeholder="128" maxlength="5">
         </div>
-        <div class="al-sub"><span data-i18n="index.t110">浏览器可见性</span></div>
-        <div class="sp-section-desc"><span data-i18n="index.t111">AI 用内置浏览器实测网页时是否显示真实浏览器窗口，以及每个动作之间的延迟（毫秒）。开可见、加延迟适合演示与录屏——能看清 AI 在点哪里；日常用保持关闭 + 0 毫秒最快。改完对新打开的浏览器生效（说"关掉浏览器"再试即可）</span></div>
+        <div class="al-sub"><span data-i18n="index.t110">浏览器可见性</span><span class="set-help" role="button" tabindex="0" aria-label="浏览器可见性说明" data-i18n-aria-label="index.attr033" data-i18n-tip="index.t111"关掉浏览器"再试即可）"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="8" cy="8" r="6.6" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="8" cy="5.1" r=".95" fill="currentColor"/><path d="M8 7.4v4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></span></div>
         <div class="set-row">
           <div class="set-info">
             <div class="set-name"><span data-i18n="index.t112">显示浏览器窗口</span></div>
@@ -593,22 +590,19 @@
           </div>
           <input id="set-browser-slowmo" class="hex-input num-input" spellcheck="false" inputmode="numeric" placeholder="0" maxlength="5">
         </div>
-        <div class="al-sub"><span data-i18n="index.t116">命令白名单</span></div>
-        <div class="sp-section-desc"><span data-i18n="index.t117">匹配规则的 shell 命令不再弹权限确认，直接执行。规则按词序前缀匹配（如 "git push" 命中 "git push origin main"）；组合命令里每一段"命中规则或属于只读探查"即可放行，带命令替换或写文件重定向的段永远不命中。保存后立即对所有会话生效</span></div>
+        <div class="al-sub"><span data-i18n="index.t116">命令白名单</span><span class="set-help" role="button" tabindex="0" aria-label="命令白名单说明" data-i18n-aria-label="index.attr034" data-i18n-tip="index.t117"git push" 命中 "git push origin main"）；组合命令里每一段"命中规则或属于只读探查"即可放行，带命令替换或写文件重定向的段永远不命中。保存后立即对所有会话生效"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="8" cy="8" r="6.6" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="8" cy="5.1" r=".95" fill="currentColor"/><path d="M8 7.4v4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></span></div>
         <div class="al-add-row">
           <input id="al-rule-input" class="hex-input txt-input" spellcheck="false" placeholder="例如: uv run pytest" data-i18n-placeholder="index.attr018" maxlength="200">
           <button type="button" id="btn-al-add" class="icon-act"><span data-i18n="index.t118">添加规则</span></button>
         </div>
         <div id="al-rule-list" class="al-rule-list"></div>
-        <div class="al-sub"><span data-i18n="index.t119">命令拒绝清单</span></div>
-        <div class="sp-section-desc"><span data-i18n="index.t120">任一命令段命中这里的前缀即直接拒绝，优先于白名单与所有放行路径——用来表达例外：白名单放行 "git push" 的同时在这里加 "git push --force" 拦住强推。保存后立即对所有会话生效</span></div>
+        <div class="al-sub"><span data-i18n="index.t119">命令拒绝清单</span><span class="set-help" role="button" tabindex="0" aria-label="命令拒绝清单说明" data-i18n-aria-label="index.attr035" data-i18n-tip="index.t120"git push" 的同时在这里加 "git push --force" 拦住强推。保存后立即对所有会话生效"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="8" cy="8" r="6.6" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="8" cy="5.1" r=".95" fill="currentColor"/><path d="M8 7.4v4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></span></div>
         <div class="al-add-row">
           <input id="dl-rule-input" class="hex-input txt-input" spellcheck="false" placeholder="例如: git push --force" data-i18n-placeholder="index.attr019" maxlength="200">
           <button type="button" id="btn-dl-add" class="icon-act"><span data-i18n="index.t121">添加规则</span></button>
         </div>
         <div id="dl-rule-list" class="al-rule-list"></div>
-        <div class="al-sub"><span data-i18n="index.t122">敏感路径</span></div>
-        <div class="sp-section-desc"><span data-i18n="index.t123">写入这些路径（或被 rm/mv 等命令点名）时任何权限模式都会强制弹确认，白名单也不能豁免。内置已覆盖 .git、~/.ssh、shell 配置与本应用配置；这里可以加项目里的 secrets/、.env.production 等。相对路径按会话工作目录解析。保存后立即对所有会话生效</span></div>
+        <div class="al-sub"><span data-i18n="index.t122">敏感路径</span><span class="set-help" role="button" tabindex="0" aria-label="敏感路径说明" data-i18n-aria-label="index.attr036" data-i18n-tip="index.t123"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="8" cy="8" r="6.6" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="8" cy="5.1" r=".95" fill="currentColor"/><path d="M8 7.4v4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></span></div>
         <div class="al-add-row">
           <input id="sp-path-input" class="hex-input txt-input" spellcheck="false" placeholder="例如: secrets 或 .env.production" data-i18n-placeholder="index.attr020" maxlength="400">
           <button type="button" id="btn-sp-add" class="icon-act"><span data-i18n="index.t124">添加路径</span></button>
@@ -631,8 +625,7 @@
         </div>
       </div>
       <div class="sp-section-body" data-section="skills" style="display:none">
-        <div class="sp-section">Skills</div>
-        <div class="sp-section-desc"><span data-i18n="index.t129">技能包是一份 SKILL.md（可捆绑脚本/模板），任务匹配时模型自动读取并遵循。项目级技能放在 &lt;项目&gt;/.claude/skills/&lt;名称&gt;/，随仓库走；这里安装的是用户级技能（~/.aulos/skills/），装完即时生效，无需重启</span></div>
+        <div class="sp-section">Skills<span class="set-help" role="button" tabindex="0" aria-label="Skills 说明" data-i18n-aria-label="index.attr037" data-i18n-tip="index.t129"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="8" cy="8" r="6.6" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="8" cy="5.1" r=".95" fill="currentColor"/><path d="M8 7.4v4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></span></div>
         <div class="skill-install-row">
           <input id="skill-repo-input" class="hex-input txt-input" spellcheck="false" placeholder="GitHub 仓库，如 anthropics/skills 或完整 URL" data-i18n-placeholder="index.attr021" maxlength="300">
           <input id="skill-subpath-input" class="hex-input skill-subpath txt-input" spellcheck="false" placeholder="子目录（可选）" data-i18n-placeholder="index.attr022" maxlength="200">
@@ -643,8 +636,7 @@
         <div id="skill-list"></div>
       </div>
       <div class="sp-section-body" data-section="memory" style="display:none">
-        <div class="sp-section"><span data-i18n="index.t132">记忆</span></div>
-        <div class="sp-section-desc"><span data-i18n="index.t133">Agent 在对话中自动沉淀的用户画像与长期事实，跨会话注入系统提示——它因此更懂你。这里添加的条目标记为"用户"来源，不会被自动淘汰；其余条目由 Agent 维护（写入时可在对话流里看到）</span></div>
+        <div class="sp-section"><span data-i18n="index.t132">记忆</span><span class="set-help" role="button" tabindex="0" aria-label="记忆说明" data-i18n-aria-label="index.attr038" data-i18n-tip="index.t133"用户"来源，不会被自动淘汰；其余条目由 Agent 维护（写入时可在对话流里看到）"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="8" cy="8" r="6.6" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="8" cy="5.1" r=".95" fill="currentColor"/><path d="M8 7.4v4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></span></div>
         <div class="al-add-row">
           <textarea id="mem-input" class="hex-input txt-input mem-input" rows="1" spellcheck="false" placeholder="添加一条记忆，例如: 偏好简洁的回复风格（Enter 发送，Shift+Enter 换行）" data-i18n-placeholder="index.attr023" maxlength="500"></textarea>
           <button type="button" class="dd set-dd mem-cat-dd" id="mem-category">

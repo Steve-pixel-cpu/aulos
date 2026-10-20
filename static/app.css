@@ -1581,8 +1581,18 @@
   /* 行为分区内的子节标题（命令白名单等并入行为后的分节） */
   .al-sub {
     font-size: calc(12px * var(--fs-ui)); color: var(--text-3); font-weight: 600;
-    letter-spacing: .04em; margin: 14px 2px 0; padding-top: 12px;
-    border-top: 1px solid var(--border);
+    letter-spacing: .04em; margin: 14px 2px 0;
+  }
+
+  /* 分区标题旁的 ⓘ 说明图标: 悬停浮出完整说明(tooltip.js data-tip), 取代内联长段落 */
+  .set-help {
+    display: inline-flex; vertical-align: -2px; margin-left: 6px;
+    color: var(--accent); opacity: .85; cursor: help; border-radius: 50%;
+    transition: opacity .12s, color .12s, transform .12s;
+  }
+  .set-help:hover, .set-help:focus-visible {
+    opacity: 1; color: var(--accent); outline: none;
+    transform: scale(1.12);
   }
 
   /* ============ 模型供应商: 左栏列表 + 右栏详情 ============ */
@@ -1742,6 +1752,9 @@
     transition: color .15s;
   }
   .prov-save-status.err { color: var(--err); }
+  /* 直接放在分区体里的状态行(辅助/子代理模型、Skills 安装状态):
+     跟上方表单行左对齐, 不沿用 prov-actions 里的靠右布局 */
+  .sp-section-body > .prov-save-status { margin-left: 2px; }
   /* MCP: 连接状态徽标（表单头部）与失败原因行 */
   .mcp-badge {
     margin-left: auto; flex: none;
@@ -2242,17 +2255,16 @@
 
   /* 统一悬浮提示 (JS 接管原生 title 后的气泡) */
   #tip {
-    position: fixed; z-index: 400; max-width: 280px;
-    padding: 5px 10px; border-radius: 8px;
-    background: var(--surface);
+    position: fixed; z-index: 400; max-width: 360px;
+    padding: 10px 14px; border-radius: 10px;
     background: var(--pop-bg);
     -webkit-backdrop-filter: blur(18px) saturate(1.5); backdrop-filter: blur(18px) saturate(1.5);
     border: 1px solid var(--border);
-    box-shadow: var(--shadow-pop);
-    color: var(--text); font-size: calc(12px * var(--fs-ui)); line-height: 1.5;
-    white-space: pre-line; word-break: break-all;
+    box-shadow: 0 8px 28px rgba(0, 0, 0, .16), 0 2px 8px rgba(0, 0, 0, .08);
+    color: var(--text); font-size: calc(12px * var(--fs-ui)); line-height: 1.65;
+    white-space: pre-line; word-break: break-word;
     pointer-events: none; opacity: 0;
-    transform: translateY(2px);
+    transform: translateY(4px);
     transition: opacity .12s, transform .12s;
   }
   #tip.show { opacity: 1; transform: none; }
@@ -3611,33 +3623,10 @@ body.col-resizing, body.col-resizing * { cursor: col-resize !important; }
   .tool-group .tg-head:hover {
     background: color-mix(in srgb, var(--text) 4%, transparent);
   }
-  /* 标题前状态点: 默认绿(全对) / run accent 脉冲 / bad 橙 */
-  .tool-group .tg-title::before {
-    content: ""; display: inline-block;
-    width: 6px; height: 6px; border-radius: 50%;
-    margin-right: 6px; vertical-align: 1px;
-    background: var(--ok);
-  }
-  .tool-group:has(.tg-sum.run) .tg-title::before {
-    background: var(--accent); animation: pulse 1.2s infinite;
-  }
-  .tool-group:has(.tg-sum.bad) .tg-title::before { background: var(--warn); }
+  /* 标题前状态点退休(2026-10-20): 运行中由头部转圈图标表达, 不再用圆点+染色 */
 
-  /* ---------- ①c 分组摘要计数胶囊: 取代 "✓5 · !1" 细杆符号 ----------
-   * 小胶囊数字比 11.5px 等宽体里的 ✓/! 好认得多; 耗时 .tg-dur 保持
-   * 等宽小字原语言, 放胶囊右侧弱展示。 */
+  /* ---------- ①c 分组摘要计数: 已并入末尾扁平层 (2026-10-20) ---------- */
   .tool-group .tg-sum { display: inline-flex; align-items: center; gap: 5px; }
-  .tool-group .tg-sum .cnt {
-    min-width: 17px; padding: 0 5px; text-align: center;
-    border-radius: 999px; line-height: 15px;
-    font-size: calc(10.5px * var(--fs-ui)); font-weight: 600;
-  }
-  .tool-group .tg-sum .cnt.ok {
-    background: var(--ok-soft); color: color-mix(in srgb, var(--ok) 80%, var(--text-2));
-  }
-  .tool-group .tg-sum .cnt.bad {
-    background: var(--warn-soft); color: var(--warn);
-  }
   .tool-group .tg-sum .tg-dur {
     font-family: var(--font-mono); font-size: calc(10.5px * var(--fs-ui));
     color: var(--text-3); opacity: .85;
@@ -3745,53 +3734,76 @@ body.col-resizing, body.col-resizing * { cursor: col-resize !important; }
    * 全部基于既有令牌, 与 data-theme / data-mica 正交。
    * ============================================================ */
 
-  /* ---------- 折叠头: hug 宽芯片 ---------- */
+  /* ---------- 折叠头: 扁平行 (2026-10-20) ----------
+   * 与普通工具行(.tool-row)同一语言: 无底无框纯文字行,
+   * hover 极淡底示意可点; 状态语义在计数颜色与 run 脉冲里,
+   * 出错时标题/计数转 warn 色, 不再用描边和染色底表达。 */
   .tool-group .tg-head {
     width: fit-content; max-width: 100%;
     gap: 7px;
-    padding: 5px 12px 5px 10px;
-    border: 1px solid color-mix(in srgb, var(--text) 9%, transparent);
-    border-radius: 999px;
-    background: color-mix(in srgb, var(--text) 3.5%, transparent);
-    transition: background .15s, border-color .15s, box-shadow .15s;
+    padding: 4px 9px;
+    border: none;
+    border-radius: var(--r-sm);
+    background: transparent;
+    transition: background .15s;
   }
   .tool-group .tg-head:hover {
-    background: color-mix(in srgb, var(--text) 6.5%, transparent);
-    border-color: color-mix(in srgb, var(--text) 16%, transparent);
+    background: color-mix(in srgb, var(--text) 4%, transparent);
   }
   .tool-group .tg-head:active { transform: translateY(0.5px); }
-  .tool-group .tg-caret { width: 9px; font-size: calc(10px * var(--fs-ui)); opacity: .75; }
+  /* 折叠箭头 ▾ 退休(2026-10-20): 行首已有工具箱图标, 整行即折叠开关 */
+  .tool-group .tg-caret { display: none; }
+  /* 头部图标: 常态显示工具箱线性图标(与工具行 .t-ico 同语言, 弱色 14px);
+   * 运行中同一位置换成转圈圆环 —— 位置固定, 图标替换不跳动 */
+  .tool-group .tg-ico-wrap {
+    flex: none; display: inline-flex; width: 14px; height: 14px;
+    position: relative; align-items: center; justify-content: center;
+    color: var(--text-3);
+  }
+  .tool-group .tg-ico2 { display: inline-flex; line-height: 0; }
+  .tool-group .tg-ico2 svg { display: block; }
+  .tool-group .tg-ico {
+    position: absolute; inset: 0; margin: auto; display: none;
+    width: 13px; height: 13px;
+    border-radius: 50%;
+    border: 2px solid color-mix(in srgb, var(--accent) 35%, transparent);
+    border-top-color: var(--accent);
+    animation: spin .8s linear infinite;
+  }
+  .tool-group:has(.tg-sum.run) .tg-caret { display: none; }
+  .tool-group:has(.tg-sum.run) .tg-ico2 { visibility: hidden; }
+  .tool-group:has(.tg-sum.run) .tg-ico { display: inline-block; }
   .tool-group .tg-title {
     color: var(--text-2);
     font-size: calc(12px * var(--fs-ui));
     font-weight: 500;
     letter-spacing: .1px;
   }
-  /* 状态点退休: 计数颜色即状态语言(见下方计数段) */
-
-  .tool-group:has(.tg-sum.run) .tg-head {
-    border-color: var(--accent-border);
-    background: var(--accent-soft);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 7%, transparent);
-  }
-  .tool-group:has(.tg-sum.bad) .tg-head {
-    border-color: color-mix(in srgb, var(--warn) 38%, transparent);
-    background: color-mix(in srgb, var(--warn) 7%, transparent);
-  }
+  /* 运行中的动态感交给转圈图标, 标题/预览不再染色不再呼吸 */
+  .tool-group:has(.tg-sum.run) .tg-title { color: var(--text-2); }
+  .tool-group:has(.tg-sum.bad) .tg-title { color: var(--warn); }
 
   /* ---------- 状态圆点退休: 用户不要圆点, 计数颜色即状态语言 ---------- */
 
-  /* ---------- 计数: 着色粗体数字, 无符号无容器 ----------
-   * 绿色数字=全部成功, 橙色=含失败; 耗时小字缀尾保持弱展示 */
+  /* ---------- 计数: 正常大小的普通数字, 无底色 ----------
+   * 颜色仅区分状态: 绿=全部成功, 橙=含失败; 耗时小字缀尾保持弱展示 */
   .tool-group .tg-sum { gap: 7px; margin-left: 1px; }
   .tool-group .tg-sum .cnt {
-    font-size: calc(12.5px * var(--fs-ui));
-    font-weight: 700;
     font-family: var(--font-mono);
+    font-size: inherit;
+    font-weight: 400;
   }
   .tool-group .tg-sum .cnt.ok { color: var(--ok); }
   .tool-group .tg-sum .cnt.bad { color: var(--warn); }
   .tool-group .tg-sum .tg-dur { margin-left: 3px; }
+  /* 头部动作预览: 组内最后一个(运行中优先)工具的输入摘要, 与工具行 .tdesc
+   * 同一语言(等宽弱色单行截断); 运行中带轻微呼吸不抢眼, 结束即静止 */
+  .tool-group .tg-prev {
+    flex: 0 1 auto; min-width: 0; margin-left: 2px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-family: var(--font-mono); font-size: calc(11.5px * var(--fs-ui));
+    color: var(--text-3);
+  }
 
   /* ---------- 展开态: 左竖轨转渐隐时间轴, 折叠时竖轨净空 ---------- */
   .tool-group { border-left-color: transparent; transition: border-color .15s; }

@@ -20,7 +20,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from aulos.api_client import make_api_client, normalize_base_url as _normalize_base_url, \
     normalize_protocol
 from aulos.config import USER_DIR
-from aulos.i18n import language_directive, t
+from aulos.i18n import t
 # TOOLS 经 server_common 转出（它已 from main import TOOLS 并保留在命名空间）:
 # 拆分约定是功能域只依赖 server_common, 不反向 import 内核 main
 from aulos.web.server_common import TOOLS, api_client, app
@@ -258,10 +258,6 @@ def _pet_system_prompt(persona: dict) -> str:
         "换行、序号和 emoji; 不复述代码或命令内容。",
         '输出格式: 只输出一个 JSON 对象: {"say": "你要说的话"}。',
     ]
-    # i18n: en 时末行追加英文回复指令（与主会话同一口径）
-    directive = language_directive()
-    if directive:
-        lines.append(directive)
     return "\n".join(lines)
 
 
