@@ -1220,38 +1220,43 @@ function saColFor(pseudo) {
  * subagent 的任务提示往往极长（几百上千字的调研指令）, 一进来就把
  * 侧栏/嵌套流顶满一屏, 真正想看的子代理执行过程被挤到视野外。
  * 复用用户气泡但默认折叠: 限高 + 底部渐隐 + 「展开」胶囊（视觉与
- * 长代码块折叠同语言）。短提示（≤8 行）不折叠, 保持原样。 */
-const SA_TASK_FOLD_MAX = 176;   // px, 约合 8 行正文
+ * 长代码块折叠同语言）。短提示不折叠, 保持原样。
+ * 判定用内容长度而非像素测量: 事件到达时气泡几乎总写在游离列上
+ * （card._saStream, 面板没开就不挂 DOM）——游离节点无布局盒,
+ * scrollHeight 恒为 0, "量高度定折叠"永远判短, 折叠从未生效
+ * （2026-10-20 现场: 整段 prompt 满屏展开）。行数/字符数阈值与
+ * 挂载状态、rAF 时序彻底解耦, 任何路径同步判定, 且 jsdom 可测。 */
+const SA_TASK_FOLD_MAX = 176;    // px, 折叠态限高（约 8 行正文）
+const SA_TASK_FOLD_LINES = 8;    // 行数超过 → 折叠
+const SA_TASK_FOLD_CHARS = 300;  // 字符数超过（长段无换行）→ 同样折叠
 
 function addSaTaskBubble(text, col) {
   const bubble = addUserBubble(text, null, col);
   const msgEl = bubble.closest(".msg");
   if (!msgEl) return bubble;
-  // 气泡内容被渲染成多个节点（u-text/附件等）: 量 u-text 的高度
   const uText = bubble.querySelector(".u-text");
   if (!uText) return bubble;
-  requestAnimationFrame(() => {
-    if (uText.scrollHeight <= SA_TASK_FOLD_MAX + 40) return;   // 短任务: 不折叠
-    msgEl.classList.add("sa-task-folded");
-    uText.style.maxHeight = SA_TASK_FOLD_MAX + "px";
-    const fade = document.createElement("div");
-    fade.className = "sa-task-fade";
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "sa-task-expand";
-    btn.innerHTML = CHEVRON_SVG + t("ws_handlers.049");
-    let open = false;
-    btn.addEventListener("click", ev => {
-      ev.stopPropagation();
-      open = !open;
-      msgEl.classList.toggle("sa-task-open", open);
-      btn.classList.toggle("open", open);
-      uText.style.maxHeight = open ? "none" : SA_TASK_FOLD_MAX + "px";
-      btn.querySelector("span").textContent = open ? t("ws_handlers.050") : t("ws_handlers.051");
-    });
-    bubble.appendChild(fade);
-    bubble.appendChild(btn);
+  if (text.split("\n").length <= SA_TASK_FOLD_LINES &&
+      text.length <= SA_TASK_FOLD_CHARS) return bubble;   // 短任务: 不折叠
+  msgEl.classList.add("sa-task-folded");
+  uText.style.maxHeight = SA_TASK_FOLD_MAX + "px";
+  const fade = document.createElement("div");
+  fade.className = "sa-task-fade";
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "sa-task-expand";
+  btn.innerHTML = CHEVRON_SVG + t("ws_handlers.049");
+  let open = false;
+  btn.addEventListener("click", ev => {
+    ev.stopPropagation();
+    open = !open;
+    msgEl.classList.toggle("sa-task-open", open);
+    btn.classList.toggle("open", open);
+    uText.style.maxHeight = open ? "none" : SA_TASK_FOLD_MAX + "px";
+    btn.querySelector("span").textContent = open ? t("ws_handlers.050") : t("ws_handlers.051");
   });
+  bubble.appendChild(fade);
+  bubble.appendChild(btn);
   return bubble;
 }
 
