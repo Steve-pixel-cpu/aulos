@@ -27,6 +27,9 @@ test("applyLanguageHot 热切换: t()/lang 镜像/固化标签全部跟随, 不�
   assert.equal(w.t("sidebar.006"), "Today");
   assert.equal(w.t("ws_handlers.002"), "Terminal");
   assert.equal(w.t("sidebar.010"), "Untitled task");
+  // 固化点工厂化: BUCKET_LABELS/UNTITLED_TITLE 已是工厂, 热切换后现取即英文;
+  // (侧栏 DOM 级断言见 archive-view.test.js —— 拼接 eval 的顶层 state
+  //  不暴露到 window, 本文件不再旁路灌数据)
   assert.equal(de.getAttribute("lang"), "en");
   assert.equal(de.dataset.lang, "en");
   assert.equal(w.localStorage.getItem("xc-lang"), "en");

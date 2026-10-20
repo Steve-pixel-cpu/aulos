@@ -202,21 +202,34 @@ const ICON_TODO = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" s
 // (stroke 1.8 / round)。agent 系工具统一用它, 子智能体卡升级时换上,
 // 与下方"等待子代理"等普通工具行的图标位对齐
 const ICON_BOT = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="8" width="14" height="11" rx="2.5"/><path d="M12 8V5.5"/><circle cx="12" cy="4" r="1.2"/><path d="M9.2 13v1.6M14.8 13v1.6"/></svg>';
-const TOOL_META = {
-  bash:       { label: t("ws_handlers.002"),     icon: ICON_TERM },
-  powershell: { label: t("ws_handlers.003"),     icon: ICON_TERM },
-  read_file:  { label: t("ws_handlers.004"), icon: ICON_FILE },
-  write_file: { label: t("ws_handlers.005"), icon: ICON_EDIT },
-  present_plan: { label: t("ws_handlers.006"), icon: ICON_MODE_PLAN },
-  todo: { label: t("ws_handlers.007"), icon: ICON_TODO },
-  grep: { label: t("ws_handlers.008"), icon: ICON_SEARCH },
-  glob: { label: t("ws_handlers.009"), icon: ICON_GLOB },
-  agent_tool:  { label: t("ws_handlers.010"),   icon: ICON_BOT },
-  agent_status:{ label: t("ws_handlers.011"), icon: ICON_BOT },
-  agent_wait:  { label: t("ws_handlers.012"), icon: ICON_BOT },
-  agent_reap:  { label: t("ws_handlers.013"), icon: ICON_BOT },
-  agent_list:  { label: t("ws_handlers.014"), icon: ICON_BOT },
-};
+const TOOL_META = {};   // 惰性填充: 首次使用时现取 t()（热切换后新卡即新语言）
+function toolMeta(name) {
+  if (!TOOL_META[name]) {
+    const labels = {
+      bash: t("ws_handlers.002"), powershell: t("ws_handlers.003"),
+      read_file: t("ws_handlers.004"), write_file: t("ws_handlers.005"),
+      present_plan: t("ws_handlers.006"), todo: t("ws_handlers.007"),
+      grep: t("ws_handlers.008"), glob: t("ws_handlers.009"),
+      agent_tool: t("ws_handlers.010"), agent_status: t("ws_handlers.011"),
+      agent_wait: t("ws_handlers.012"), agent_reap: t("ws_handlers.013"),
+      agent_list: t("ws_handlers.014"),
+    };
+    for (const k in labels) {
+      TOOL_META[k] = {
+        label: labels[k],
+        icon: k.startsWith("agent") ? ICON_BOT
+          : (k === "bash" || k === "powershell") ? ICON_TERM
+          : k === "read_file" ? ICON_FILE
+          : k === "write_file" ? ICON_EDIT
+          : k === "present_plan" ? ICON_MODE_PLAN
+          : k === "todo" ? ICON_TODO
+          : k === "grep" ? ICON_SEARCH
+          : k === "glob" ? ICON_GLOB : ICON_TOOL,
+      };
+    }
+  }
+  return TOOL_META[name] || { label: name, icon: ICON_TOOL };
+}
 
 function fmtDuration(ms) {
   const s = ms / 1000;
@@ -490,7 +503,7 @@ function describeInput(raw, name) {  // 卡片标题一行摘要: JSON 先取 co
 }
 
 function addToolCard({ id, name, input, result }, col) {
-  const meta = TOOL_META[name] || { label: name, icon: ICON_TOOL };
+  const meta = toolMeta(name);
   const row = document.createElement("div");
   row.className = "tool-row";
   row.innerHTML =
@@ -1626,7 +1639,7 @@ function onPermissionRequest(msg, sid) {
   run.awaiting = run.busy;
   if (sid2 === state.sessionId) syncThinkingIndicator();
 
-  const meta = TOOL_META[msg.tool_name] || { label: msg.tool_name, icon: ICON_TOOL };
+  const meta = toolMeta(msg.tool_name);
   if (msg.tool_name === "present_plan") {
     renderPlanCard(msg, sid2, run);
     return;

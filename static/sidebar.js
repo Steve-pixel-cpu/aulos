@@ -44,13 +44,13 @@ function sessionBucket(id) {
   if (days < 7) return 2;       // 7 天内
   return 3;                     // 更早
 }
-const BUCKET_LABELS = [t("sidebar.006"), t("sidebar.007"), t("sidebar.008"), t("sidebar.009")];
+const BUCKET_LABELS = () => [t("sidebar.006"), t("sidebar.007"), t("sidebar.008"), t("sidebar.009")];   // 工厂: 现取, 热切换后即时换语言
 const FOLDER_SVG = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>';
 const PLUS_SMALL_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>';
-const UNTITLED_TITLE = t("sidebar.010");
+const UNTITLED_TITLE = () => t("sidebar.010");   // 工厂: 现取
 
 function displayTitle(s) {
-  return (!s || s.title === t("sidebar.011")) ? UNTITLED_TITLE : s.title;
+  return (!s || s.title === t("sidebar.011")) ? UNTITLED_TITLE() : s.title;
 }
 
 async function loadSessions() {
@@ -498,7 +498,7 @@ function renderSessionList() {
     let bucket = -1;
     for (const s of sessions) {
       const b = sessionBucket(s.id);
-      if (b !== bucket) { bucket = b; addLabel(BUCKET_LABELS[b]); }
+      if (b !== bucket) { bucket = b; addLabel(BUCKET_LABELS()[b]); }
       list.appendChild(makeSessionItem(s));
     }
     return;
@@ -806,6 +806,6 @@ function markActiveSession() {
 
 function refreshDocTitle() {
   const cur = state.sessions.find(s => s.id === state.sessionId);
-  $("doc-title").textContent = cur ? displayTitle(cur) : UNTITLED_TITLE;
+  $("doc-title").textContent = cur ? displayTitle(cur) : UNTITLED_TITLE();
   refreshWorkdirTag();
 }

@@ -130,7 +130,7 @@ function applyHl() {
   if (v === "auto") delete de.dataset.hl;
   else de.dataset.hl = v;
 }
-const HL_ITEMS = [
+const HL_ITEMS = () => [   // 工厂: 现取, 热切换后 syncLabel 即新语言
   { value: "auto", label: t("settings_page.007") },
   { value: "onedark", label: "One Dark" },
   { value: "dracula", label: "Dracula" },
@@ -270,14 +270,20 @@ $("btn-notify-test").onclick = () => {
 /* ---------- 强调颜色: 预设色板 + 自定义调色盘, 覆盖 --accent 令牌 ---------- */
 const ACCENT_KEY = "xc-accent";
 const ACCENT_CUSTOM_KEY = "xc-accent-custom";
-const ACCENTS = [
-  { id: "gray",   name: t("settings_page.024"), dark: "#b9bec7", light: "#757b85" },
-  { id: "blue",   name: t("settings_page.025"), dark: "#6aa6ff", light: "#2f6fd6" },
-  { id: "violet", name: t("settings_page.026"), dark: "#8b80f9", light: "#6a5be0" },
-  { id: "green",  name: t("settings_page.027"), dark: "#4ade80", light: "#17803b" },
-  { id: "orange", name: t("settings_page.028"), dark: "#f97316", light: "#e5622a" },
-  { id: "rose",   name: t("settings_page.029"), dark: "#fb7185", light: "#cf3a5c" },
+const ACCENTS = [   // name 经 accentName() 现取: 数组本身只存颜色与 id
+  { id: "gray",   dark: "#b9bec7", light: "#757b85" },
+  { id: "blue",   dark: "#6aa6ff", light: "#2f6fd6" },
+  { id: "violet", dark: "#8b80f9", light: "#6a5be0" },
+  { id: "green",  dark: "#4ade80", light: "#17803b" },
+  { id: "orange", dark: "#f97316", light: "#e5622a" },
+  { id: "rose",   dark: "#fb7185", light: "#cf3a5c" },
 ];
+function accentName(id) {   // 现取 t(): 热切换后即时换语言
+  const names = { gray: t("settings_page.024"), blue: t("settings_page.025"),
+    violet: t("settings_page.026"), green: t("settings_page.027"),
+    orange: t("settings_page.028"), rose: t("settings_page.029") };
+  return names[id] || id;
+}
 function accentPref() { return localStorage.getItem(ACCENT_KEY) || "gray"; }
 function customAccent() { return localStorage.getItem(ACCENT_CUSTOM_KEY) || "#8b80f9"; }
 
