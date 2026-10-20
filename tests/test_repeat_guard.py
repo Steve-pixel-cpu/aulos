@@ -205,10 +205,41 @@ def test_确定性只读命令不清零(cmd):
     "touch newfile",
     'find . -name "*.tmp" -delete',                    # find 的变异动作
     "sort -o out.txt in.txt",
-    "sed -n '1,10p' main.py",                          # 保守排除: sed 有 w/e 命令面
     "sudo cat /etc/shadow",
 ])
 def test_可能变异的命令照旧清零(cmd):
+    assert _ro("bash", cmd) is False
+
+
+# sed 条件收编: 无 -i/-f/w/r/e 危险面的用法视为只读（原先是整条排除——
+# 探查场景 `sed -n '…p'` / 流式替换被迫绕道 read_file, 多烧调用数）。
+@pytest.mark.parametrize("cmd", [
+    "sed -n '1,10p' main.py",                          # 原先钉死的排除形状, 现放行
+    "sed -n '1182,1184p' src/main.rs | cat -A | head -5 && echo ---- "
+    "&& sed -n '1182,1184p' src/main.rs | wc -l",      # 真实 plan 模式被拒命令
+    "cat x | sed -n '1,5p'",                           # 管道中段
+    "sed 's/\\r$//' file.txt",                         # 流式替换(CRLF 清理)
+    "sed -n 's/error/ERROR/p' log.txt",                # 替换+打印
+    "sed --expression='s/a/b/' f.txt",                 # 长选项表达式
+    "sed -e 's/a/b/' -e 's/c/d/' f.txt",               # 多段 -e
+])
+def test_sed_无危险面用法视为只读(cmd):
+    assert _ro("bash", cmd) is True
+
+
+@pytest.mark.parametrize("cmd", [
+    "sed -i 's/a/b/' f.txt",                           # 就地改写
+    "sed --in-place 's/a/b/' f.txt",                   # 长选项就地改写
+    "sed -i.bak 's/a/b/' f.txt",                       # 带备份后缀的就地改写
+    "sed 's/a/b/w out.txt' f.txt",                     # s///w 写文件
+    "sed 's/a/b/ge' f.txt",                            # e 标志=执行任意命令
+    "sed '10r extra.txt' f.txt",                       # r 命令: 读文件入流
+    "sed '10r/etc/hosts' f.txt",                       # r 紧贴地址数字(无词边界)
+    "sed '$e id' f.txt",                               # e 命令: 执行 shell
+    "sed 's/a/b/gw out.txt' f.txt",                    # s 标志含 w: 写文件
+    "sed -f script.sed f.txt",                         # 外部脚本内容不可见
+])
+def test_sed_危险面照旧视为变异(cmd):
     assert _ro("bash", cmd) is False
 
 

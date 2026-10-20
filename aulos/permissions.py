@@ -102,8 +102,9 @@ class PermissionPrompter(Protocol):
 # 不再被硬拒/弹问）; 护栏用它决定 bash 是否推进变异序号。
 # 判定必须保守: 白名单 + 危险构造一票否决, 拿不准一律视为可能变异
 # （权限层误判"只读"的代价是放行了一条写命令——所以白名单刻意排除
-# 解释器(python/node/awk/sed 可执行任意逻辑)、网络(curl/wget)、
-# 归档与构建(tar/make 有写入面)）。
+# 解释器(python/node/awk 可执行任意逻辑)、网络(curl/wget)、
+# 归档与构建(tar/make 有写入面)。sed 例外: 脚本可见时可做旗帜级
+# 判定——变异面(-i/-f/w/r/e)否决, 其余放行, 见 _sed_is_read_only）。
 # ============================================================================
 
 MUTATING_SHELL_TOOLS = frozenset({"bash", "powershell"})
@@ -171,6 +172,82 @@ _FIND_MUTATING_ACTIONS = frozenset({
     "-delete", "-exec", "-execdir", "-ok", "-okdir",
     "-fprint", "-fprintf", "-fls",
 })
+
+# sed 条件收编（原先是整条排除——解释器否决的保守面太宽, 探查场景
+# `sed -n '…p'` 被迫绕道 read_file, 多烧调用数）。判定口径:
+#   变异旗否决: -i/--in-place(就地改写)、-f/--file(外部脚本内容不可见)。
+#   脚本表达式否决: s 命令标志含 e/E(执行流中内容)/w/W(写文件); 命令位
+#     出现 w/W/r/R(把流写进/读进文件)/e(shell 执行)。
+#   其余（-n 'Np'、s///替换、地址删除等）只动 stdout → 放行。
+# 脚本解析不追求完备——s/y 命令用定界符回引用正则摘除后, 残片里出现
+# 危险命令字母才否决; 摘除失配、表达式形状怪异时残片更大, 只会更严不
+# 会更松（fail-closed）。
+_SED_SAFE_S_FLAGS = frozenset("gpnIimM")
+_SED_S_Y_CMD = re.compile(
+    r"[sy](?P<d>[^\s\w])"                       # s/y + 非词定界符
+    r"(?:\\.|(?!(?P=d)).)*(?P=d)"               # 正则(定界符可转义)
+    r"(?:\\.|(?!(?P=d)).)*(?P=d)"               # 替换
+    r"(?P<fl>[a-zA-Z]*)")                       # 标志
+_SED_DANGEROUS_CMD = re.compile(r"(?:\b|\d)[wWrReE]")  # 残片里的命令位危险字母
+# 注意 (?:\b|\d) 不能只写 \b: `10r data.txt` / `10e id` 里命令字母紧跟
+# 地址数字, \b 在"数字→字母"之间不成立（都是词字符）, 会漏掉这类形状。
+
+
+def _sed_script_is_read_only(script: str) -> bool:
+    stripped = _SED_S_Y_CMD.sub(" ", script)
+    # s/// 的标志串逐一核对: e/E(执行)/w/W(写文件)不在安全集即否决
+    for m in _SED_S_Y_CMD.finditer(script):
+        if m.group("fl") and m.group(0)[0] == "s" \
+                and not set(m.group("fl")) <= _SED_SAFE_S_FLAGS:
+            return False
+    return not _SED_DANGEROUS_CMD.search(stripped)
+
+
+def _sed_is_read_only(tokens: list) -> bool:
+    """sed 的旗帜级只读判定（调用前提: 已过重定向/命令替换否决）。
+    按 POSIX 参数序找脚本: 无 -e 时首个裸参数是脚本、其余是文件名
+    （文件名不做字符扫描——report.txt 不是写命令）。拿不准一律 False。"""
+    scripts, saw_expr, seen_bare = [], False, False
+    expect_expr = False        # 上一个 -e/--expression 在等下一个参数
+    for t in tokens:
+        if expect_expr:
+            scripts.append(t)
+            expect_expr = False
+            continue
+        if t.startswith("--"):
+            name, _, val = t.partition("=")
+            if name == "--in-place":
+                return False
+            if name == "--file":
+                return False
+            if name == "--expression":
+                saw_expr = True
+                if val:
+                    scripts.append(val)
+                else:
+                    expect_expr = True
+            continue
+        if t.startswith("-") and len(t) > 1:
+            letters = t[1:]
+            for j, ch in enumerate(letters):
+                if ch == "i":
+                    return False          # -i 与 -i.suffix 就地改写
+                if ch == "f":
+                    return False          # -f 与 -fscript 外部脚本
+                if ch == "e":
+                    arg = letters[j + 1:]
+                    saw_expr = True
+                    if arg:
+                        scripts.append(arg)
+                    else:
+                        expect_expr = True
+                    break
+            continue
+        # 裸参数: 未见 -e 时首个是脚本, 其余全是文件名
+        if not saw_expr and not seen_bare:
+            scripts.append(t)
+        seen_bare = True
+    return all(_sed_script_is_read_only(s) for s in scripts)
 
 # 纯版本/帮助查询标志: 命令行只有这些标志(不带任何位置参数)时命令
 # "无事可做"——只打印版本或用法就退出。node --version / git --version /
@@ -249,6 +326,8 @@ def _segment_is_read_only(seg: str, powershell: bool) -> bool:
         return not any(t.lower() in _FIND_MUTATING_ACTIONS for t in tokens[1:])
     if word == "sort":          # sort -o 写文件; 其余用法只读
         return not any(t.lower().startswith("-o") for t in tokens[1:])
+    if word == "sed":           # 条件收编: -i/-f/w/r/e 变异面否决, 其余只读
+        return _sed_is_read_only(tokens[1:])
     return word in READONLY_SHELL_COMMANDS
 
 
