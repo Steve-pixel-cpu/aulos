@@ -52,6 +52,9 @@
     doc.querySelectorAll("[data-i18n-placeholder]").forEach(el => {
       el.setAttribute("placeholder", t(el.getAttribute("data-i18n-placeholder")));
     });
+    doc.querySelectorAll("[data-i18n-aria-label]").forEach(el => {
+      el.setAttribute("aria-label", t(el.getAttribute("data-i18n-aria-label")));
+    });
     doc.querySelectorAll("[data-i18n-title]").forEach(el => {
       el.setAttribute("title", t(el.getAttribute("data-i18n-title")));
     });

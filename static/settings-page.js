@@ -17,9 +17,9 @@
  * 设置弹窗: 主题外观（深色 / 浅色 / 跟随系统）
  * ============================================================ */
 const THEME_ITEMS = [
-  { value: "dark", label: "深色" },
-  { value: "light", label: "浅色" },
-  { value: "system", label: "跟随系统" },
+  { value: "dark", label: t("settings_page.001") },
+  { value: "light", label: t("settings_page.002") },
+  { value: "system", label: t("settings_page.003") },
 ];
 const themeDd = makeDropdown($("sel-theme"), {
   items: THEME_ITEMS, value: themePref(),
@@ -35,7 +35,7 @@ const themeDd = makeDropdown($("sel-theme"), {
 
 /* ---------- 语言: 中文 / English（i18n 骨架; 界面文案迁移在二期） ---------- */
 const LANG_ITEMS = [
-  { value: "zh", label: "中文" },     // 语言名按惯例用各自语言书写,
+  { value: "zh", label: t("settings_page.004") },     // 语言名按惯例用各自语言书写,
   { value: "en", label: "English" },  // 与界面语言无关 → 无时序问题
 ];
 const langDd = makeDropdown($("sel-lang"), {
@@ -96,8 +96,8 @@ function syncMica() {
   });
 }
 const STYLE_ITEMS = [
-  { value: "default", label: "默认" },
-  { value: "fluent-mica", label: "Fluent · 系统云母" },
+  { value: "default", label: t("settings_page.005") },
+  { value: "fluent-mica", label: t("settings_page.006") },
 ];
 const styleDd = makeDropdown($("sel-style"), {
   items: STYLE_ITEMS, value: stylePref(),
@@ -119,7 +119,7 @@ function applyHl() {
   else de.dataset.hl = v;
 }
 const HL_ITEMS = [
-  { value: "auto", label: "跟随主题" },
+  { value: "auto", label: t("settings_page.007") },
   { value: "onedark", label: "One Dark" },
   { value: "dracula", label: "Dracula" },
   { value: "monokai", label: "Monokai" },
@@ -141,9 +141,9 @@ function applyDensity() {
   else de.dataset.density = v;
 }
 const DENSITY_ITEMS = [
-  { value: "compact", label: "紧凑" },
-  { value: "comfortable", label: "舒适" },
-  { value: "cozy", label: "宽松" },
+  { value: "compact", label: t("settings_page.008") },
+  { value: "comfortable", label: t("settings_page.009") },
+  { value: "cozy", label: t("settings_page.010") },
 ];
 const densityDd = makeDropdown($("sel-density"), {
   items: DENSITY_ITEMS, value: densityPref(),
@@ -160,8 +160,8 @@ function applyMsgstyle() {
   else de.dataset.msgstyle = v;
 }
 const MSGSTYLE_ITEMS = [
-  { value: "document", label: "文档流" },
-  { value: "bubble", label: "气泡卡片" },
+  { value: "document", label: t("settings_page.011") },
+  { value: "bubble", label: t("settings_page.012") },
 ];
 const msgstyleDd = makeDropdown($("sel-msgstyle"), {
   items: MSGSTYLE_ITEMS, value: msgstylePref(),
@@ -186,7 +186,7 @@ function syncZenUi() {
   if (window.__zenDd) window.__zenDd.setValue(zenPref() ? "1" : "0");
 }
 const zenDd = makeDropdown($("sel-zen"), {
-  items: [{ value: "0", label: "关" }, { value: "1", label: "开" }],
+  items: [{ value: "0", label: t("settings_page.013") }, { value: "1", label: t("settings_page.014") }],
   value: zenPref() ? "1" : "0",
   onChange: v => {
     localStorage.setItem(ZEN_KEY, v === "1" ? "1" : "0");
@@ -223,7 +223,7 @@ document.addEventListener("keydown", ev => {
 applyZen();
 
 /* ---------- 通知: 完成提示音 + 桌面通知, 开关即时生效并持久化 ---------- */
-const ONOFF_ITEMS = [{ value: "1", label: "开启" }, { value: "0", label: "关闭" }];
+const ONOFF_ITEMS = [{ value: "1", label: t("settings_page.015") }, { value: "0", label: t("settings_page.016") }];
 const writeBoolPref = key => v => localStorage.setItem(key, v);
 const soundDd = makeDropdown($("sel-notify-sound"), {
   items: ONOFF_ITEMS, value: notifySoundPref() ? "1" : "0",
@@ -235,7 +235,7 @@ const desktopDd = makeDropdown($("sel-notify-desktop"), {
     writeBoolPref(NOTIFY_DESKTOP_KEY)(v);
     if (v === "1") {
       // 用户手势上下文里才申请权限（浏览器禁止静默弹权限框）
-      if (ensureNotifyPermission() !== "granted") toast("浏览器未授予通知权限，弹窗将不生效");
+      if (ensureNotifyPermission() !== "granted") toast(t("settings_page.017"));
     }
   },
 });
@@ -243,15 +243,15 @@ $("btn-notify-test").onclick = () => {
   playChime();
   // 桌面壳: 直接发一条原生 toast, 让用户当场验证系统通知链路通不通
   if (DESKTOP) {
-    nativeNotify("Aulos 桌面通知测试", "收到这条说明原生通知链路正常");
-    toast("已播放提示音并发送系统通知");
+    nativeNotify(t("settings_page.018"), t("settings_page.019"));
+    toast(t("settings_page.020"));
     return;
   }
   // 未授权时回落 toast, 让用户立刻知道桌面弹窗这条路通不通
   if ("Notification" in window && Notification.permission !== "granted") {
     ensureNotifyPermission();
-    toast("已播放提示音；桌面通知未授权" +
-      (Notification.permission === "denied" ? "（被浏览器拒绝）" : "，可再点一次确认授权"));
+    toast(t("settings_page.021") +
+      (Notification.permission === "denied" ? t("settings_page.022") : t("settings_page.023")));
   }
 };
 
@@ -259,12 +259,12 @@ $("btn-notify-test").onclick = () => {
 const ACCENT_KEY = "xc-accent";
 const ACCENT_CUSTOM_KEY = "xc-accent-custom";
 const ACCENTS = [
-  { id: "gray",   name: "浅灰", dark: "#b9bec7", light: "#757b85" },
-  { id: "blue",   name: "蓝色", dark: "#6aa6ff", light: "#2f6fd6" },
-  { id: "violet", name: "靛紫", dark: "#8b80f9", light: "#6a5be0" },
-  { id: "green",  name: "翠绿", dark: "#4ade80", light: "#17803b" },
-  { id: "orange", name: "暖橙", dark: "#f97316", light: "#e5622a" },
-  { id: "rose",   name: "玫红", dark: "#fb7185", light: "#cf3a5c" },
+  { id: "gray",   name: t("settings_page.024"), dark: "#b9bec7", light: "#757b85" },
+  { id: "blue",   name: t("settings_page.025"), dark: "#6aa6ff", light: "#2f6fd6" },
+  { id: "violet", name: t("settings_page.026"), dark: "#8b80f9", light: "#6a5be0" },
+  { id: "green",  name: t("settings_page.027"), dark: "#4ade80", light: "#17803b" },
+  { id: "orange", name: t("settings_page.028"), dark: "#f97316", light: "#e5622a" },
+  { id: "rose",   name: t("settings_page.029"), dark: "#fb7185", light: "#cf3a5c" },
 ];
 function accentPref() { return localStorage.getItem(ACCENT_KEY) || "gray"; }
 function customAccent() { return localStorage.getItem(ACCENT_CUSTOM_KEY) || "#8b80f9"; }
@@ -399,8 +399,8 @@ accentAutoChk.addEventListener("change", () => {
   syncAccentSwatch();
   syncAccentInput();
   toast(accentAutoChk.checked
-    ? (localStorage.getItem(ACCENT_AUTO_HEX_KEY) ? "已启用壁纸取色" : "已开启, 上传或更换壁纸后自动取色")
-    : "已改回手动强调色");
+    ? (localStorage.getItem(ACCENT_AUTO_HEX_KEY) ? t("settings_page.030") : t("settings_page.031"))
+    : t("settings_page.032"));
 });
 function applyAccent() {
   const v = accentPref();
@@ -582,7 +582,7 @@ function mcpStatus(text, isErr = false) {
 }
 function scheduleMcpSave() {
   mcpDirty = true;
-  mcpStatus("未保存…");
+  mcpStatus(t("settings_page.033"));
   clearTimeout(mcpSaveTimer);
   mcpSaveTimer = setTimeout(persistMcpServers, MCP_SAVE_DELAY);
 }
@@ -594,15 +594,15 @@ async function persistMcpServers() {
   for (const [name, spec] of Object.entries(mcpCfg.mcpServers)) {
     const t = spec.type || "stdio";
     if (t === "stdio" && !(spec.command || "").trim()) {
-      mcpStatus(`「${name}」缺少 command, 暂未保存`, true);
+      mcpStatus(t("settings_page.034", { p0: name }), true);
       return;
     }
     if (t !== "stdio" && !(spec.url || "").trim()) {
-      mcpStatus(`「${name}」缺少 URL, 暂未保存`, true);
+      mcpStatus(t("settings_page.035", { p0: name }), true);
       return;
     }
   }
-  mcpStatus("保存并连接中…");
+  mcpStatus(t("settings_page.036"));
   try {
     const r = await fetch("/api/mcp/servers", {
       method: "POST",
@@ -611,19 +611,19 @@ async function persistMcpServers() {
     });
     if (!r.ok) {
       const err = await r.json().catch(() => ({}));
-      mcpStatus("保存失败: " + (err.detail || r.status), true);
-      toast("MCP 保存失败: " + (err.detail || r.status));
+      mcpStatus(t("settings_page.037") + (err.detail || r.status), true);
+      toast(t("settings_page.038") + (err.detail || r.status));
       return;
     }
     const saved = await r.json();
     mcpDirty = false;
     mcpCfg = { mcpServers: saved.mcpServers || mcpCfg.mcpServers };
     mcpStatus(saved.servers.every(s => s.status !== "connected")
-      ? "已保存（无已连接服务器）" : "已保存");
+      ? t("settings_page.039") : t("settings_page.040"));
     renderMcpSettings();
   } catch (e) {
-    mcpStatus("保存失败: " + e.message, true);
-    toast("保存失败: " + e.message);
+    mcpStatus(t("settings_page.041") + e.message, true);
+    toast(t("settings_page.042") + e.message);
   }
 }
 async function loadMcpServers() {
@@ -651,7 +651,7 @@ function buildMcpItem(name) {
     dot.title = err;
     label.title = `${name} — ${err}`;
   } else {
-    dot.title = st === "connected" ? "已连接" : "未连接";
+    dot.title = st === "connected" ? t("settings_page.043") : t("settings_page.044");
   }
   item.append(label, dot);
   item.onclick = () => {
@@ -672,7 +672,7 @@ function renderMcpDetail() {
   if (!spec) {
     const empty = document.createElement("div");
     empty.className = "prov-empty";
-    empty.textContent = "左侧选择服务器，或点击「＋ 添加服务器」";
+    empty.textContent = t("settings_page.045");
     wrap.appendChild(empty);
     return;
   }
@@ -687,7 +687,7 @@ function renderMcpDetail() {
   const name = document.createElement("input");
   name.className = "prov-name";
   name.value = mcpSelected;
-  name.title = "服务器名即工具前缀 mcp__<名>__*；改名等于删除后重建";
+  name.title = t("settings_page.046");
   /* 改名 = 换 key。用 input 事件实时提交（而非 change）: change 只在失焦
    * 时触发, 用户改完名直接去点其他字段时, 后续编辑会写进旧 key（实测踩过:
    * 磁盘上是 new-server, UI 显示 time, 参数改了却不落盘）。实时换 key 后
@@ -700,7 +700,7 @@ function renderMcpDetail() {
     if (!nn) return;   // 清空过程中不动 key, 留给 blur 兜底恢复
     if (mcpCfg.mcpServers[nn] != null) {   // 撞名: 回退到上一个合法名
       name.value = lastName;
-      toast("同名服务器已存在");
+      toast(t("settings_page.047"));
       return;
     }
     const next = {};
@@ -728,24 +728,24 @@ function renderMcpDetail() {
     }
     if (name.value.trim() !== lastName) {
       name.value = lastName;
-      mcpStatus(`名称未变化（${lastName}）`, false);
+      mcpStatus(t("settings_page.048", { p0: lastName }), false);
     }
   });
   const badge = document.createElement("span");
   badge.className = "mcp-badge" + (st?.status === "connected" ? " ok"
     : st?.status === "failed" ? " bad" : "");
   badge.textContent = st?.status === "connected"
-    ? `已连接 · ${st.tools.length} 工具`
-    : st?.status === "failed" ? "连接失败" : "未连接";
+    ? t("settings_page.049", { p0: st.tools.length })
+    : st?.status === "failed" ? t("settings_page.050") : t("settings_page.051");
   badge.title = st?.error || badge.textContent;
   const del = document.createElement("button");
   del.type = "button";
   del.className = "prov-del";
   del.innerHTML = TRASH_SMALL_SVG;
-  del.dataset.tip = "删除服务器";
+  del.dataset.tip = t("settings_page.052");
   del.onclick = async () => {
-    if (!await confirmDialog(`删除 MCP 服务器「${mcpSelected}」？其工具将立即从会话中移除。`,
-        { title: "删除服务器", okText: "删除", danger: true })) return;
+    if (!await confirmDialog(t("settings_page.053", { p0: mcpSelected }),
+        { title: t("settings_page.054"), okText: t("settings_page.055"), danger: true })) return;
     delete mcpCfg.mcpServers[mcpSelected];
     mcpSelected = null;
     renderMcpSettings();
@@ -759,13 +759,13 @@ function renderMcpDetail() {
   grid.className = "prov-grid";
   const typeField = document.createElement("div");
   typeField.className = "prov-field";
-  typeField.innerHTML = "<label>传输类型</label>";
+  typeField.innerHTML = t("settings_page.056");
   const typeSel = document.createElement("select");
   typeSel.className = "set-input";
   for (const [val, label] of [
-    ["stdio", "stdio（本地子进程）"],
-    ["http", "HTTP（Streamable）"],
-    ["sse", "SSE（已废弃，兼容旧服务器）"],
+    ["stdio", t("settings_page.057")],
+    ["http", t("settings_page.058")],
+    ["sse", t("settings_page.059")],
   ]) {
     const o = document.createElement("option");
     o.value = val; o.textContent = label;
@@ -782,7 +782,7 @@ function renderMcpDetail() {
 
   const timeoutField = document.createElement("div");
   timeoutField.className = "prov-field";
-  timeoutField.innerHTML = "<label>调用超时（秒）</label>";
+  timeoutField.innerHTML = t("settings_page.060");
   const timeout = document.createElement("input");
   timeout.type = "number"; timeout.min = "1"; timeout.className = "set-input";
   timeout.value = spec.timeout ?? 60;
@@ -809,7 +809,7 @@ function renderMcpDetail() {
 
     const argsF = document.createElement("div");
     argsF.className = "prov-field";
-    argsF.innerHTML = '<label>参数（JSON 数组）</label>';
+    argsF.innerHTML = t("settings_page.061");
     const args = document.createElement("input");
     args.className = "set-input mono";
     args.placeholder = '["-y", "@modelcontextprotocol/server-everything"]';
@@ -826,7 +826,7 @@ function renderMcpDetail() {
 
     const envF = document.createElement("div");
     envF.className = "prov-field";
-    envF.innerHTML = "<label>环境变量（JSON 对象）</label>";
+    envF.innerHTML = t("settings_page.062");
     const env = document.createElement("input");
     env.className = "set-input mono";
     env.placeholder = '{"API_KEY": "${MY_KEY}"}';
@@ -855,7 +855,7 @@ function renderMcpDetail() {
 
     const hdF = document.createElement("div");
     hdF.className = "prov-field";
-    hdF.innerHTML = "<label>请求头（JSON 对象）</label>";
+    hdF.innerHTML = t("settings_page.063");
     const hd = document.createElement("input");
     hd.className = "set-input mono";
     hd.placeholder = '{"Authorization": "Bearer ${TOKEN}"}';
@@ -904,21 +904,21 @@ $("btn-mcp-reload").onclick = async () => {
   // 重连却跑在旧配置上（实测踩过: 改完参数点重连, 改动全丢）
   if (mcpDirty) await persistMcpServers();
   if (mcpSaveTimer) {   // 落盘被校验拦下(红字提示)时不再继续, 保留现场
-    toast("先解决未保存的配置, 再重连");
+    toast(t("settings_page.064"));
     return;
   }
-  mcpStatus("重连中…");
+  mcpStatus(t("settings_page.065"));
   try {
     const r = await fetch("/api/mcp/reload", { method: "POST" });
     const d = await r.json();
     if (!r.ok) throw new Error(d.detail || r.status);
     mcpStatuses = d.servers || [];
     mcpStatus(d.servers.every(s => s.status !== "connected")
-      ? "已重连（无已连接服务器）" : "已重连");
+      ? t("settings_page.066") : t("settings_page.067"));
     renderMcpSettings();
   } catch (e) {
-    mcpStatus("重连失败: " + e.message, true);
-    toast("重连失败: " + e.message);
+    mcpStatus(t("settings_page.068") + e.message, true);
+    toast(t("settings_page.069") + e.message);
   }
 };
 

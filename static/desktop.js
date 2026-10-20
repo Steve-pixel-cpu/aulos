@@ -96,7 +96,7 @@ function updateBadgeMark(on, verText) {
   const badge = $("tb-version");
   if (!badge) return;
   badge.classList.toggle("up", !!on);
-  badge.title = on ? `发现新版本 v${verText}, 点击更新` : "检查更新";
+  badge.title = on ? t("desktop.001", { p0: verText }) : t("desktop.002");
 }
 
 /* ---------- 标题栏进度 pill: 下载中/已就绪/失败 三态 ---------- */
@@ -123,29 +123,29 @@ function startUpdatePolling() {
     if (st.phase === 1) {
       if (st.total > 0) {
         const pct = Math.min(100, Math.round((st.received / st.total) * 100));
-        setUpdatePill("dl", `更新下载中 ${pct}%`);
+        setUpdatePill("dl", t("desktop.003", { p0: pct }));
         if (UPD.dlg) syncUpdateDialog(st, pct);
       } else {
-        setUpdatePill("dl", "正在连接…");
+        setUpdatePill("dl", t("desktop.004"));
         if (UPD.dlg) syncUpdateDialog(st, 0);
       }
     } else if (st.phase === 4) {
       stopUpdatePolling();
-      setUpdatePill("ready", "更新已就绪 · 点击安装");
+      setUpdatePill("ready", t("desktop.005"));
       if (!UPD.readyShown) {
         UPD.readyShown = true;
-        toast("更新包已下载完成, 点击标题栏进度条安装", 4200);
-        syncAboutStatus("更新包已就绪, 点击安装");
+        toast(t("desktop.006"), 4200);
+        syncAboutStatus(t("desktop.007"));
       }
       if (UPD.dlg) renderUpdateReady(UPD.dlg);
     } else if (st.phase === 3) {
       stopUpdatePolling();
-      setUpdatePill("err", "更新下载失败 · 点击重试");
-      syncAboutStatus("下载失败, 可点击标题栏进度条重试");
-      if (UPD.dlg) updateInstallFail(UPD.dlg, "下载出错（详见 ~/.aulos/boot.log）");
+      setUpdatePill("err", t("desktop.008"));
+      syncAboutStatus(t("desktop.009"));
+      if (UPD.dlg) updateInstallFail(UPD.dlg, t("desktop.010"));
     } else if (st.phase === 2) {
       // apply_update 进行中（拉安装器/重启）, pill 显示过渡态
-      setUpdatePill("dl", "正在启动安装…");
+      setUpdatePill("dl", t("desktop.011"));
     }
   }, 300);
 }
@@ -160,7 +160,7 @@ function syncUpdateDialog(st, pct) {
   const fill = ov.querySelector("#update-progress-bar");
   const status = ov.querySelector("#update-status-text");
   if (fill) fill.style.width = pct + "%";
-  if (status) status.textContent = `下载中 ${pct}%（${fmtMB(st.received)} / ${fmtMB(st.total)}）· 可关闭窗口, 后台继续`;
+  if (status) status.textContent = t("desktop.012", { p0: pct, p1: fmtMB(st.received), p2: fmtMB(st.total) });
 }
 
 /* pill 当前状态: null=隐藏 "dl"=下载中 "ready"=已就绪 "err"=失败 */
@@ -181,14 +181,14 @@ function renderUpdateReady(ov) {
   delete ov.dataset.busy;
   if (fill) fill.style.width = "100%";
   if (bar) bar.hidden = true;
-  if (status) { status.textContent = "更新包已就绪"; status.classList.remove("upd-err"); }
+  if (status) { status.textContent = t("desktop.013"); status.classList.remove("upd-err"); }
   if (actions) {
     actions.hidden = false;
     const ok = actions.querySelector("[data-act='ok']");
     ok.hidden = false;
-    ok.textContent = "立即安装";
+    ok.textContent = t("desktop.014");
     ok.onclick = () => applyUpdateNow(ov);
-    actions.querySelector("[data-act='cancel']").textContent = "以后再说";
+    actions.querySelector("[data-act='cancel']").textContent = t("desktop.015");
   }
 }
 
@@ -200,18 +200,18 @@ async function checkForUpdates(manual = false) {
     UPD.info = info;
     if (info && info.hasUpdate) {
       updateBadgeMark(true, info.version);
-      syncAboutStatus(`发现新版本 v${info.version}`);
+      syncAboutStatus(t("desktop.016", { p0: info.version }));
       if (manual) openUpdateDialog();
-      else toast(`发现新版本 v${info.version}, 点击标题栏版本号更新`, 3600);
+      else toast(t("desktop.017", { p0: info.version }), 3600);
     } else {
       updateBadgeMark(false);
-      syncAboutStatus(info ? `已是最新版本（v${info.currentVersion}）` : "未检查");
-      if (manual) toast(`已是最新版本（v${info.currentVersion}）`);
+      syncAboutStatus(info ? t("desktop.018", { p0: info.currentVersion }) : t("desktop.019"));
+      if (manual) toast(t("desktop.020", { p0: info.currentVersion }));
     }
     return info;
   } catch (e) {
-    syncAboutStatus("检查失败: " + (e?.message || e));
-    if (manual) toast("检查更新失败: " + (e?.message || e));
+    syncAboutStatus(t("desktop.021") + (e?.message || e));
+    if (manual) toast(t("desktop.022") + (e?.message || e));
     return null;
   } finally {
     UPD.checking = false;
@@ -249,8 +249,8 @@ async function retryUpdateDownload() {
     await window.aulosDesktopUpdater.install();
     startUpdatePolling();
   } catch (e) {
-    setUpdatePill("err", "更新下载失败 · 点击重试");
-    toast("重试失败: " + (e?.message || e));
+    setUpdatePill("err", t("desktop.023"));
+    toast(t("desktop.024") + (e?.message || e));
   }
 }
 
@@ -259,15 +259,15 @@ async function applyUpdateNow(ov) {
     if (ov) {
       const actions = ov.querySelector("#update-actions");
       const status = ov.querySelector("#update-status-text");
-      if (status) status.textContent = "正在启动安装程序…";
+      if (status) status.textContent = t("desktop.025");
       if (actions) actions.hidden = true;
     }
-    setUpdatePill("dl", "正在启动安装…");
+    setUpdatePill("dl", t("desktop.026"));
     await window.aulosDesktopUpdater.apply();
     // 成功 = 壳重启中; 什么都不用做
   } catch (e) {
-    setUpdatePill("ready", "更新已就绪 · 点击安装");
-    toast("安装失败: " + (e?.message || e));
+    setUpdatePill("ready", t("desktop.027"));
+    toast(t("desktop.028") + (e?.message || e));
     if (ov) renderUpdateReady(ov);
   }
 }
@@ -284,7 +284,7 @@ function openUpdateDialog() {
     '<div id="update-modal" role="alertdialog" aria-modal="true">' +
       '<div id="update-title">' +
         '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9"/><path d="M21 3v6h-6"/></svg>' +
-        '<span>发现新版本</span>' +
+        t("desktop.029") +
       '</div>' +
       '<div id="update-versions">v' + escapeHtml(info?.currentVersion || "?") +
         ' <span class="upd-arrow">→</span> v' + escapeHtml(info?.version || "?") + '</div>' +
@@ -292,8 +292,8 @@ function openUpdateDialog() {
       '<div id="update-progress" hidden><div id="update-progress-bar"></div></div>' +
       '<div id="update-status-text"></div>' +
       '<div id="update-actions">' +
-        '<button type="button" data-act="cancel">以后再说</button>' +
-        '<button type="button" data-act="ok">' + (ready ? "立即安装" : "立即更新") + '</button>' +
+        t("desktop.030") +
+        '<button type="button" data-act="ok">' + (ready ? t("desktop.031") : t("desktop.032")) + '</button>' +
       '</div>' +
     '</div>';
   document.body.appendChild(ov);
@@ -314,7 +314,7 @@ function openUpdateDialog() {
   if (pillMode() === "dl") {
     ov.querySelector("#update-progress").hidden = false;
     ov.querySelector("#update-actions").hidden = true;
-    ov.querySelector("#update-status-text").textContent = "正在连接更新服务器…";
+    ov.querySelector("#update-status-text").textContent = t("desktop.033");
     window.aulosDesktopUpdater?.status?.().then(st => {
       if (st.phase === 1 && st.total > 0) syncUpdateDialog(st,
         Math.min(100, Math.round((st.received / st.total) * 100)));
@@ -336,14 +336,14 @@ function closeUpdateDialog(ov) {
 function updateInstallFail(ov, msg) {
   delete ov.dataset.busy;
   const st = ov.querySelector("#update-status-text");
-  st.textContent = "更新失败: " + msg;
+  st.textContent = t("desktop.034") + msg;
   st.classList.add("upd-err");
   // 允许关掉重试（下次点徽标重新检查）
   const actions = ov.querySelector("#update-actions");
   actions.hidden = false;
   const ok = actions.querySelector("[data-act='ok']");
   ok.hidden = true;
-  actions.querySelector("[data-act='cancel']").textContent = "关闭";
+  actions.querySelector("[data-act='cancel']").textContent = t("desktop.035");
 }
 
 async function startUpdateInstall(ov) {
@@ -353,11 +353,11 @@ async function startUpdateInstall(ov) {
   actions.hidden = true;
   bar.hidden = false;
   ov.querySelector("#update-progress-bar").style.width = "0%";
-  status.textContent = "正在连接更新服务器…";
+  status.textContent = t("desktop.036");
   try {
     await window.aulosDesktopUpdater.install();
   } catch (e) {
-    return updateInstallFail(ov, (e?.message || e) || "无法启动下载");
+    return updateInstallFail(ov, (e?.message || e) || t("desktop.037"));
   }
   // install_update 立即返回（Rust 侧后台任务在跑）; 全局 poller 驱动
   // pill 与本弹窗（UPD.dlg 仍指向 ov）——此时弹窗已可随意关闭
@@ -374,8 +374,8 @@ function initAboutSection() {
   const verEl = $("about-version");
   if (verEl) {
     verEl.textContent = window.__AULOS_VERSION__
-      ? `Aulos v${window.__AULOS_VERSION__}（桌面版）`
-      : "Aulos（浏览器运行）";
+      ? t("desktop.038", { p0: window.__AULOS_VERSION__ })
+      : t("desktop.039");
   }
   const btn = $("btn-about-check");
   if (!btn) return;
@@ -383,7 +383,7 @@ function initAboutSection() {
   btn.hidden = false;
   btn.onclick = () => {
     if (isUpdateReady()) { openUpdateDialog(); return; }
-    syncAboutStatus("正在检查…");
+    syncAboutStatus(t("desktop.040"));
     checkForUpdates(true);
   };
 }
@@ -412,7 +412,7 @@ async function pasteImageAsAttachment(url) {
       : blob.type === "image/gif" ? "gif" : "png";
     await addFiles([new File([blob], "clipboard." + ext, { type: blob.type })]);
   } catch (e) {
-    toast("粘贴失败: 图片读取异常");
+    toast(t("desktop.041"));
   }
 }
 
@@ -473,12 +473,12 @@ function showDesktopCtxMenu(ev) {
       editable.focus();
       document.execCommand(cmd);
     };
-    item("撤销", "Ctrl+Z", true, edit("undo"));
-    item("重做", "Ctrl+Y", true, edit("redo"));
+    item(t("desktop.042"), "Ctrl+Z", true, edit("undo"));
+    item(t("desktop.043"), "Ctrl+Y", true, edit("redo"));
     sep();
-    item("剪切", "Ctrl+X", hasSel, edit("cut"));
-    item("复制", "Ctrl+C", hasSel, edit("copy"));
-    item("粘贴", "Ctrl+V", true, async () => {
+    item(t("desktop.044"), "Ctrl+X", hasSel, edit("cut"));
+    item(t("desktop.045"), "Ctrl+C", hasSel, edit("copy"));
+    item(t("desktop.046"), "Ctrl+V", true, async () => {
       // 有壳（Electron/Tauri）: 经桥读系统剪贴板——渲染层 execCommand('paste')
       // 受浏览器安全模型限制不可用; 无壳浏览器: 退回 async Clipboard API。
       // 文本走 insertText（编辑命令栈——可撤销, 正常触发 input 事件）;
@@ -490,7 +490,7 @@ function showDesktopCtxMenu(ev) {
           : navigator.clipboard.readText().catch(() => "")).catch(() => "") || "";
         if (text) {
           editable.focus();
-          if (!document.execCommand("insertText", false, text)) toast("粘贴失败");
+          if (!document.execCommand("insertText", false, text)) toast(t("desktop.047"));
           return;
         }
         // 文本为空: 可能是纯图片剪贴板。有桥问壳, 浏览器走 read()
@@ -505,19 +505,19 @@ function showDesktopCtxMenu(ev) {
             return void pasteImageAsAttachment(URL.createObjectURL(blob));
           }
         }
-        toast("剪贴板是空的");
-      } catch (e) { toast("粘贴失败"); }
+        toast(t("desktop.048"));
+      } catch (e) { toast(t("desktop.049")); }
     });
-    item("删除", "Del", hasSel, edit("delete"));
+    item(t("desktop.050"), "Del", hasSel, edit("delete"));
     sep();
-    item("全选", "Ctrl+A", true, () => {
+    item(t("desktop.051"), "Ctrl+A", true, () => {
       editable.focus();
       if (editable.select) editable.select();
       else document.execCommand("selectAll");
     });
   } else if (selText) {
     // 消息文本: 只有复制一件事可做
-    item("复制", "Ctrl+C", true, () => document.execCommand("copy"));
+    item(t("desktop.052"), "Ctrl+C", true, () => document.execCommand("copy"));
   } else {
     return;   // 无可做的事情就不弹（原生菜单也已被抑制）
   }
@@ -570,7 +570,7 @@ initAboutSection();
 document.addEventListener("click", e => {
   const item = e.target.closest?.("#side-settings .nav-item[data-section='about']");
   if (!item) return;
-  if (isUpdateReady()) syncAboutStatus("更新包已就绪, 点击标题栏进度条安装");
-  else if (UPD.info?.hasUpdate) syncAboutStatus(`发现新版本 v${UPD.info.version}, 点击检查更新`);
-  else if (!UPD.info) syncAboutStatus("未检查");
+  if (isUpdateReady()) syncAboutStatus(t("desktop.053"));
+  else if (UPD.info?.hasUpdate) syncAboutStatus(t("desktop.054", { p0: UPD.info.version }));
+  else if (!UPD.info) syncAboutStatus(t("desktop.055"));
 }, true);

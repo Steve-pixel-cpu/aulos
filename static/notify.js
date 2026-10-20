@@ -73,8 +73,8 @@ function notifyTurnEnd(msg, sid) {
     && !document.hidden;
   if (visibleHere) return;
   const s = state.sessions.find(x => x.id === sid);
-  const title = (s?.name || s?.title || "会话") + " · 任务完成";
-  const body = msg.type === "error" ? ("出错了: " + (msg.message || "未知错误")) : "本轮已结束, 回来看看结果";
+  const title = (s?.name || s?.title || t("notify.001")) + t("notify.002");
+  const body = msg.type === "error" ? (t("notify.003") + (msg.message || t("notify.004"))) : t("notify.005");
   if (DESKTOP) {
     nativeNotify(title, body);
     return;

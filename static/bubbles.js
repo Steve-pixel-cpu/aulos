@@ -52,7 +52,7 @@ function addUserBubble(text, attachments, col, ts, qid) {
       const thumb = document.createElement("img");
       thumb.className = "u-img";
       thumb.alt = im.name || "";
-      thumb.title = "点击查看大图";
+      thumb.title = t("bubbles.001");
       thumb.loading = "lazy";
       thumb.src = "data:" + (im.media_type || "image/png") + ";base64," + (im.data || "");
       thumb.onclick = () => openLightbox(imgs, i);   // 传整组: 灯箱内可 ←/→ 切换
@@ -138,17 +138,17 @@ function openLightbox(list, index) {
   const toolbar = document.createElement("div");
   toolbar.className = "lb-tools";
   toolbar.append(
-    mkBtn(SVG.minus, "缩小 (−)", () => zoomTo(scale / 1.25)),
+    mkBtn(SVG.minus, t("bubbles.002"), () => zoomTo(scale / 1.25)),
     zoomLabel,
-    mkBtn(SVG.plus, "放大 (+)", () => zoomTo(scale * 1.25)),
-    mkBtn(SVG.reset, "重置 (双击图片)", reset)
+    mkBtn(SVG.plus, t("bubbles.003"), () => zoomTo(scale * 1.25)),
+    mkBtn(SVG.reset, t("bubbles.004"), reset)
   );
 
   // 多图切换钮: 单图隐藏
   const multi = imgs.length > 1;
   const nav = d => { idx = (idx + d + imgs.length) % imgs.length; show(); };
-  const prevBtn = mkBtn(SVG.prev, "上一张 (←)", () => nav(-1), "lb-nav prev");
-  const nextBtn = mkBtn(SVG.next, "下一张 (→)", () => nav(1), "lb-nav next");
+  const prevBtn = mkBtn(SVG.prev, t("bubbles.005"), () => nav(-1), "lb-nav prev");
+  const nextBtn = mkBtn(SVG.next, t("bubbles.006"), () => nav(1), "lb-nav next");
   if (!multi) { prevBtn.style.display = "none"; nextBtn.style.display = "none"; }
 
   const show = () => {
@@ -238,11 +238,12 @@ function renderQueueCards() {
   items.forEach(item => {
     const card = document.createElement("div");
     card.className = "q-card";
-    const t = document.createElement("span");
-    t.className = "q-text";
-    t.textContent = item.text || "(仅附件)";
-    t.dataset.tip = item.text || "(仅附件)";   // 悬停看全文
-    card.appendChild(t);
+    // 注意: 局部变量曾叫 t, 与全局 i18n 的 t() 冲突 → 改名 qText
+    const qText = document.createElement("span");
+    qText.className = "q-text";
+    qText.textContent = item.text || t("bubbles.007");
+    qText.dataset.tip = item.text || t("bubbles.008");   // 悬停看全文
+    card.appendChild(qText);
     // 附件 badge: 🖼2 / 📄1
     const atts = item.attachments || [];
     const nImg = atts.filter(a => a.kind === "image").length;
@@ -259,8 +260,8 @@ function renderQueueCards() {
     const promote = document.createElement("button");
     promote.type = "button";
     promote.className = "q-promote";
-    promote.innerHTML = Q_PROMOTE_SVG + "<span>立即</span>";
-    promote.dataset.tip = "打断当前回复, 待发送的全部消息合并立即发送";
+    promote.innerHTML = Q_PROMOTE_SVG + t("bubbles.009");
+    promote.dataset.tip = t("bubbles.010");
     promote.onclick = () => {
       card.classList.add("promoting");   // 已登记插队, 等当前回复收尾
       sendWs({ type: "queue_promote", qid: item.qid });
@@ -270,14 +271,14 @@ function renderQueueCards() {
     edit.type = "button";
     edit.className = "q-ico";
     edit.innerHTML = PENCIL_SMALL_SVG;
-    edit.dataset.tip = "编辑";
+    edit.dataset.tip = t("bubbles.011");
     edit.onclick = () => editQueued(item.qid);
     card.appendChild(edit);
     const del = document.createElement("button");
     del.type = "button";
     del.className = "q-ico q-del";
     del.innerHTML = TRASH_SMALL_SVG;
-    del.dataset.tip = "删除";
+    del.dataset.tip = t("bubbles.012");
     del.onclick = () => removeQueued(item.qid);
     card.appendChild(del);
     box.appendChild(card);

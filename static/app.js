@@ -17,8 +17,8 @@ if (!DESKTOP) {
     '"Microsoft YaHei",sans-serif;color:#a0a1ab;font-size:15px">' +
     '<img src="/api/icon" alt="" style="width:56px;height:56px;' +
     'border-radius:14px;object-fit:cover">' +
-    "<div>请通过 Aulos 桌面应用打开</div></div></body>";
-  throw new Error("Aulos: 网页入口已关闭, 请使用桌面应用");
+    t("app.001");
+  throw new Error(t("app.002"));
 }
 if (DESKTOP) document.documentElement.classList.add("aulos-desktop");
 /* ============================================================
@@ -226,27 +226,27 @@ async function addFiles(fileList) {
     const ext = extOf(f.name);
     if (ATTACH_IMAGE_TYPES.includes(f.type)) {
       if (draft.filter(a => a.kind === "image").length >= ATTACH_MAX_IMAGES) {
-        toast("图片最多 " + ATTACH_MAX_IMAGES + " 张");
+        toast(t("app.003") + ATTACH_MAX_IMAGES + t("app.004"));
         break;
       }
       try { draft.push(await compressImage(f)); added++; }
-      catch (e) { toast("图片读取失败: " + f.name); }
+      catch (e) { toast(t("app.005") + f.name); }
     } else if (ATTACH_TEXT_EXTS.includes(ext)) {
       if (draft.filter(a => a.kind === "file").length >= ATTACH_MAX_FILES) {
-        toast("文本附件最多 " + ATTACH_MAX_FILES + " 个");
+        toast(t("app.006") + ATTACH_MAX_FILES + t("app.007"));
         break;
       }
       try {
         const text = await readAsText(f);
         if (text.length > ATTACH_MAX_FILE_CHARS) {
-          toast("文件过大（内容超 512KB）: " + f.name);
+          toast(t("app.008") + f.name);
           continue;
         }
         draft.push({ kind: "file", name: f.name, text });
         added++;
-      } catch (e) { toast("文件读取失败: " + f.name); }
+      } catch (e) { toast(t("app.009") + f.name); }
     } else {
-      toast("不支持的文件类型: " + f.name);
+      toast(t("app.010") + f.name);
     }
   }
   if (added) {
@@ -293,7 +293,7 @@ function renderAttachPreview() {
       const img = document.createElement("img");
       img.className = "att-thumb";
       img.alt = att.name || "";
-      img.title = "点击查看大图";
+      img.title = t("app.011");
       img.src = "data:" + (att.media_type || "image/png") + ";base64," + att.data;
       img.onclick = () => openLightbox(imgAtts, imgAtts.indexOf(att));
       item.appendChild(img);
@@ -305,7 +305,7 @@ function renderAttachPreview() {
     del.type = "button";
     del.className = "att-del";
     del.innerHTML = "&#215;";
-    del.dataset.tip = "移除";
+    del.dataset.tip = t("app.012");
     del.onclick = () => removeAttachment(idx);
     item.appendChild(del);
     box.appendChild(item);
@@ -429,7 +429,7 @@ function setupCollapse(wrap, pre) {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "code-expand";
-    btn.innerHTML = CHEVRON_SVG + "<span>展开</span>";
+    btn.innerHTML = CHEVRON_SVG + t("app.013");
     const fade = document.createElement("div");
     fade.className = "code-body-fade";
     wrap.appendChild(fade);
@@ -438,7 +438,7 @@ function setupCollapse(wrap, pre) {
       open = !open;
       wrap.classList.toggle("open", open);
       btn.classList.toggle("open", open);
-      btn.querySelector("span").textContent = open ? "收起" : "展开";
+      btn.querySelector("span").textContent = open ? t("app.014") : t("app.015");
     });
     wrap.appendChild(btn);
   });
@@ -465,19 +465,19 @@ function decorateCode(root) {
     head.className = "code-head";
     head.innerHTML =
       '<span class="code-lang"></span>' +
-      '<button class="code-copy" type="button">' + COPY_SVG + '<span>复制</span></button>';
-    head.querySelector(".code-lang").textContent = lang || "代码";
+      '<button class="code-copy" type="button">' + COPY_SVG + t("app.016");
+    head.querySelector(".code-lang").textContent = lang || t("app.017");
     // 复制按钮: 复制代码原文（textContent, 非高亮后的 HTML）, 成功短暂反馈
     head.querySelector(".code-copy").addEventListener("click", async e => {
       const btn = e.currentTarget;
       const ok = await copyText(code ? code.textContent : pre.textContent);
-      toast(ok ? "已复制" : "复制失败");
+      toast(ok ? t("app.018") : t("app.019"));
       if (ok) {
         btn.classList.add("copied");
-        btn.innerHTML = CHECK_SVG + "<span>已复制</span>";
+        btn.innerHTML = CHECK_SVG + t("app.020");
         setTimeout(() => {
           btn.classList.remove("copied");
-          btn.innerHTML = COPY_SVG + "<span>复制</span>";
+          btn.innerHTML = COPY_SVG + t("app.021");
         }, 1400);
       }
     });
@@ -542,7 +542,7 @@ async function browseDir(path) {
     const list = $("dir-list");
     list.innerHTML = "";
     if (!data.dirs.length) {
-      list.innerHTML = '<div class="dir-empty">此目录下没有子目录</div>';
+      list.innerHTML = t("app.022");
       return;
     }
     for (const name of data.dirs) {
@@ -554,7 +554,7 @@ async function browseDir(path) {
       list.appendChild(it);
     }
   } catch (e) {
-    err.textContent = "无法读取: " + e.message;
+    err.textContent = t("app.023") + e.message;
     err.classList.add("show");
   }
 }
@@ -624,7 +624,7 @@ $("doc-title").onclick = () => {
 async function loadSessionHistory(id) {
   const run = runOf(id), col = colOf(id);
   run.loading = true;
-  col.innerHTML = '<div class="empty-state"><h2>加载中…</h2></div>';
+  col.innerHTML = t("app.024");
   run.toolResultIndex = {};
   try {
     const r = await fetch(`/api/sessions/${id}/messages`);
@@ -678,7 +678,7 @@ async function loadSessionHistory(id) {
   } catch (e) {
     col.innerHTML = "";
     pinnedCol = col; pinnedRun = run;
-    addNoteBubble("err", "加载历史失败: " + e.message);
+    addNoteBubble("err", t("app.025") + e.message);
     pinnedCol = null; pinnedRun = null;
   } finally {
     run.loading = false;
@@ -734,7 +734,7 @@ async function selectSession(id) {
     if (mKey) modelDd.setValue(mKey);
   }
   syncThinkingIndicator();   // 切会话必须重算: 转圈只属于"正在等待输出的那个会话"
-  setConn(run.ws && run.ws.readyState === 1 ? "on" : "", run.ws ? (run.ws.readyState === 1 ? "已连接" : "连接中…") : "未连接");
+  setConn(run.ws && run.ws.readyState === 1 ? "on" : "", run.ws ? (run.ws.readyState === 1 ? t("app.026") : t("app.027")) : t("app.028"));
   restoreCurrentInput();        // 输入框恢复成该会话未发送的内容
   skillMenuDestroy();           // 切会话收起斜杠菜单; 目录变了下次输入自动重拉
   skillCacheDir = null;         // 会话可能换项目: 强制下次输入重拉技能清单
@@ -753,26 +753,26 @@ const SUG_SVG = k => '<svg width="14" height="14" viewBox="0 0 24 24" fill="none
   eye: '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>',
 }[k]) + '</svg>';
 const SUGS_BLANK = [
-  { i: "music", t: "放首歌听", p: "放首《晴天》听听" },
-  { i: "search", t: "搜今日新闻", p: "搜一下今天的大模型新闻，简短总结" },
-  { i: "calendar", t: "周报总结", p: "总结一下我本周在这个应用里做的事，按天列出来" },
+  { i: "music", t: t("app.029"), p: t("app.030") },
+  { i: "search", t: t("app.031"), p: t("app.032") },
+  { i: "calendar", t: t("app.033"), p: t("app.034") },
 ];
 const SUGS_PROJECT = [
-  { i: "wrench", t: "报错修复", p: "帮我修复当前的报错：先定位原因，再给最小改动" },
-  { i: "layers", t: "梳理结构", p: "看看这个项目的整体结构，列出核心模块和依赖" },
-  { i: "play", t: "跑测试", p: "跑一下全部测试并总结结果" },
-  { i: "eye", t: "代码审查", p: "审查一下未提交的改动，指出潜在问题" },
+  { i: "wrench", t: t("app.035"), p: t("app.036") },
+  { i: "layers", t: t("app.037"), p: t("app.038") },
+  { i: "play", t: t("app.039"), p: t("app.040") },
+  { i: "eye", t: t("app.041"), p: t("app.042") },
 ];
 
 function showEmptyState() {
   $("pane").classList.add("empty-view");   // 欢迎态: 输入卡随欢迎内容垂直居中
   const col = msgCol();
   const h = new Date().getHours();
-  const greet = h < 6 ? "夜深了" : h < 12 ? "上午好" : h < 14 ? "中午好" : h < 18 ? "下午好" : "晚上好";
+  const greet = h < 6 ? t("app.043") : h < 12 ? t("app.044") : h < 14 ? t("app.045") : h < 18 ? t("app.046") : t("app.047");
   col.innerHTML =
     "<div class='empty-state welcome'>" +
     "<img class='watermark' src='" + iconUrl() + "' alt=''>" +
-    "<h2>" + greet + "呀，有什么想让我帮忙的吗</h2>" +
+    "<h2>" + greet + t("app.048") +
     "</div>";
   renderDraftChrome();   // 工作区条/建议 chips 挂在输入卡上下, 不随消息列重绘
 }
@@ -816,7 +816,7 @@ function renderWsChip() {
   if (state.draftDir) {
     chip.classList.add("on");
     chip.innerHTML = FOLDER_SVG + "<span class='ws-name'></span>" +
-      "<span class='ws-x' data-tip='清除, 作为独立任务'>×</span>" + WS_CHEV;
+      t("app.049") + WS_CHEV;
     chip.querySelector(".ws-name").textContent = projectDisplayName(state.draftDir);
     chip.title = state.draftDir;
     chip.querySelector(".ws-x").onclick = ev => {
@@ -827,7 +827,7 @@ function renderWsChip() {
     };
   } else {
     chip.classList.remove("on");
-    chip.innerHTML = FOLDER_SVG + "<span>选择工作区</span>" + WS_CHEV;
+    chip.innerHTML = FOLDER_SVG + t("app.050") + WS_CHEV;
     chip.title = "";
   }
   chip.onclick = ev => { ev.stopPropagation(); openWsPop(chip); };
@@ -844,9 +844,9 @@ function openWsPop(anchor) {
   const known = knownWorkspaces();
   const pop = document.createElement("div");
   pop.id = "ws-pop";
-  pop.innerHTML = "<input class='ws-search' placeholder='搜索工作区'><div class='ws-list'></div>" +
-    "<div class='ws-item ws-act' data-act='browse'>" + FOLDER_SVG + "<span>打开文件夹…</span></div>" +
-    "<div class='ws-item ws-act' data-act='none'>" + FOLDER_SVG + "<span>不在项目中工作</span></div>";
+  pop.innerHTML = t("app.051") +
+    "<div class='ws-item ws-act' data-act='browse'>" + FOLDER_SVG + t("app.052") +
+    "<div class='ws-item ws-act' data-act='none'>" + FOLDER_SVG + t("app.053");
   document.body.appendChild(pop);
   const list = pop.querySelector(".ws-list");
   const renderList = q => {
@@ -856,7 +856,7 @@ function openWsPop(anchor) {
           `<div class="ws-item${w === state.draftDir ? " on" : ""}">` +
           FOLDER_SVG + "<span>" + escapeHtml(projectDisplayName(w)) + "</span>" +
           (w === state.draftDir ? "<span class='ws-check'>✓</span>" : "") + "</div>").join("")
-      : '<div class="list-empty" style="margin:8px 10px">没有匹配的工作区</div>';
+      : t("app.054");
     const els = list.querySelectorAll(".ws-item");
     items.forEach((w, i) => {
       els[i].onclick = () => {
@@ -940,7 +940,7 @@ function startDraft(draftDir = null) {
   syncThinkingIndicator();     // 草稿态没有 run: 收掉从原会话带来的"思考中"转圈
                                  // （切走瞬间原会话正在 prefill 空窗, 否则没人再碰这个 DOM,
                                  //   后台轮次的空窗事件都带 sid 守卫, 不会点亮这里）
-  setConn("", "未连接");
+  setConn("", t("app.055"));
   skillMenuDestroy();           // 切草稿收起斜杠菜单; 预选项目变了下次输入自动重拉
   skillCacheDir = null;
   // 草稿态下拉 = 新会话将用的全局默认值。必须显式重置: 否则残留上一个
@@ -1031,7 +1031,7 @@ function connectWs(id) {
   run.ws = ws;
 
   ws.onopen = () => {
-    if (id === state.sessionId) setConn("on", "已连接");
+    if (id === state.sessionId) setConn("on", t("app.056"));
     run.reconnectAttempts = 0;
     // 首连/重连标记: busy_sync 校正只信重连——首连的快照早于在途的乐观
     // 发送（草稿首发先置忙碌再建连）, 快照 false 不能否掉本地忙碌
@@ -1049,11 +1049,11 @@ function connectWs(id) {
     if (reconnected && run.loaded && !run.loading) loadSessionHistory(id);
   };
   ws.onclose = () => {
-    if (id === state.sessionId) setConn("", "已断开");
+    if (id === state.sessionId) setConn("", t("app.057"));
     if (run.ws === ws) run.ws = null;
     scheduleReconnect(id);
   };
-  ws.onerror = () => { if (id === state.sessionId) setConn("err", "连接错误"); };
+  ws.onerror = () => { if (id === state.sessionId) setConn("err", t("app.058")); };
   ws.onmessage = ev => {
     let msg;
     try { msg = JSON.parse(ev.data); } catch { return; }
@@ -1080,7 +1080,7 @@ function scheduleReconnect(id) {
   const run = runOf(id);
   if (run.reconnectTimer) return;
   if (++run.reconnectAttempts > 40) {
-    if (id === state.sessionId) setConn("err", "重连失败, 切换会话可重试");
+    if (id === state.sessionId) setConn("err", t("app.059"));
     return;
   }
   const delay = Math.min(2500 * run.reconnectAttempts, 10000);
@@ -1096,7 +1096,7 @@ function scheduleReconnect(id) {
  * ============================================================ */
 function prettyModel(name) {
   // glm-5.3-flash → GLM 5.3 Flash（首段全大写，其余词首字母大写）
-  if (!name) return "模型";
+  if (!name) return t("app.060");
   return name.split("-").map((w, i) => {
     if (/^\d/.test(w)) return w;
     return i === 0 ? w.toUpperCase() : w.charAt(0).toUpperCase() + w.slice(1);
@@ -1215,20 +1215,20 @@ const ICON_MODE_SHIELD = '<svg width="15" height="15" viewBox="0 0 24 24" fill="
 // 基础权限模式: 三档。"计划"不是档位而是叠加开关（顶部分隔的开关行）,
 // 生效时表现为只读 + 计划工作流, 批准后回落基础档。
 const MODE_ITEMS = [
-  { value: "prompt", label: "每次询问", icon: ICON_MODE_HAND,
-    desc: "改动前先征求我的意见。" },
-  { value: "workspace-write", label: "自动编辑", icon: ICON_MODE_PENCIL,
-    desc: "自动编辑工作区内的文件。" },
-  { value: "danger-full-access", label: "完全访问", icon: ICON_MODE_SHIELD,
-    desc: "减少确认次数，放开全部权限。" },
+  { value: "prompt", label: t("app.061"), icon: ICON_MODE_HAND,
+    desc: t("app.062") },
+  { value: "workspace-write", label: t("app.063"), icon: ICON_MODE_PENCIL,
+    desc: t("app.064") },
+  { value: "danger-full-access", label: t("app.065"), icon: ICON_MODE_SHIELD,
+    desc: t("app.066") },
   // allow 不提供: 后端拒绝从设置/会话进入（连将来需要问的工具也一并放行,
   // 只允许 CLI REPL /mode allow 临时开启）
 ];
-const BASE_MODE_LABELS = { "prompt": "每次询问", "workspace-write": "自动编辑",
-  "danger-full-access": "完全访问" };
+const BASE_MODE_LABELS = { "prompt": t("app.067"), "workspace-write": t("app.068"),
+  "danger-full-access": t("app.069") };
 // 触发按钮文案: 计划开 → 「计划 · <基础档>」; 关 → 纯基础档名
 function modeLabel(base, plan) {
-  return plan ? "计划 · " + (BASE_MODE_LABELS[base] || base)
+  return plan ? t("app.070") + (BASE_MODE_LABELS[base] || base)
               : (BASE_MODE_LABELS[base] || base);
 }
 // 动态菜单视图: items 为函数时, open() 每次展开重新取——计划行的
@@ -1238,9 +1238,9 @@ function modeLabel(base, plan) {
 function modeMenuItems(value) {
   const [base, plan] = splitModeValue(value);
   return [
-    { value: mkModeValue(base, !plan), label: plan ? "计划模式（开）" : "计划模式",
+    { value: mkModeValue(base, !plan), label: plan ? t("app.071") : t("app.072"),
       icon: ICON_MODE_PLAN, on: plan,
-      desc: "先研究并给出计划，批准后回到基础模式。" },
+      desc: t("app.073") },
     { sep: true },
     ...MODE_ITEMS.map(it => ({
       ...it, value: mkModeValue(it.value, plan), on: it.value === base,
@@ -1286,10 +1286,10 @@ const modeDd = makeDropdown($("sel-mode"), {
   },
 });
 const THINK_ITEMS = [
-  { value: "low", label: "低" },
-  { value: "medium", label: "中" },
-  { value: "high", label: "高" },
-  { value: "max", label: "最高" },
+  { value: "low", label: t("app.074") },
+  { value: "medium", label: t("app.075") },
+  { value: "high", label: t("app.076") },
+  { value: "max", label: t("app.077") },
 ];
 function onModeChanged(msg, sid) {
   const run = runOf(sid);
@@ -1419,7 +1419,7 @@ function modelItems() {
     if (!ms.length) continue;
     // 按供应商分组: 组头（品牌名）+ 组内模型, 多供应商时不再平铺成一锅粥
     if (items.length) items.push({ sep: true });
-    items.push({ head: p.name || "未命名供应商" });
+    items.push({ head: p.name || t("app.078") });
     for (const m of ms) {
       items.push({
         value: p.id + "|" + m.id,
@@ -1450,7 +1450,7 @@ function buildProvItem(p) {
   item.dataset.id = p.id;
   const name = document.createElement("span");
   name.className = "prov-item-name";
-  name.textContent = p.name || "未命名供应商";
+  name.textContent = p.name || t("app.079");
   const dot = document.createElement("i");
   dot.className = "dot" + (p.enabled !== false ? " on" : "");
   item.append(name, dot);
@@ -1472,7 +1472,7 @@ function renderProvDetail() {
   if (!p) {
     const empty = document.createElement("div");
     empty.className = "prov-empty";
-    empty.textContent = "左侧选择供应商，或点击「＋ 添加供应商」";
+    empty.textContent = t("app.080");
     wrap.appendChild(empty);
     return;
   }
@@ -1492,7 +1492,7 @@ function renderProviderSettings() {
 function syncProvItem(p) {
   const item = document.querySelector(`#prov-list .prov-item[data-id="${CSS.escape(p.id)}"]`);
   if (!item) return;
-  item.querySelector(".prov-item-name").textContent = p.name || "未命名供应商";
+  item.querySelector(".prov-item-name").textContent = p.name || t("app.081");
   item.querySelector(".dot").classList.toggle("on", p.enabled !== false);
 }
 function buildProviderCard(p) {
@@ -1505,7 +1505,7 @@ function buildProviderCard(p) {
   const name = document.createElement("input");
   name.className = "prov-name";
   name.value = p.name || "";
-  name.placeholder = "供应商名称";
+  name.placeholder = t("app.082");
   name.addEventListener("input", () => { p.name = name.value; syncProvItem(p); scheduleProvSave(); });
   const en = document.createElement("label");
   en.className = "prov-switch";
@@ -1515,15 +1515,15 @@ function buildProviderCard(p) {
   enBox.addEventListener("change", () => { p.enabled = enBox.checked; syncProvItem(p); scheduleProvSave(); });
   const track = document.createElement("i");
   track.className = "track";
-  en.append(enBox, track, document.createTextNode("已启用"));
+  en.append(enBox, track, document.createTextNode(t("app.083")));
   const del = document.createElement("button");
   del.type = "button";
   del.className = "prov-del";
   del.innerHTML = TRASH_SMALL_SVG;
-  del.dataset.tip = "删除供应商";
+  del.dataset.tip = t("app.084");
   del.onclick = async () => {
-    if (!await confirmDialog(`删除供应商「${p.name}」？其模型将从下拉中移除。`,
-        { title: "删除供应商", okText: "删除", danger: true })) return;
+    if (!await confirmDialog(t("app.085", { p0: p.name }),
+        { title: t("app.086"), okText: t("app.087"), danger: true })) return;
     state.providerCfg.providers = state.providerCfg.providers.filter(x => x !== p);
     if (state.providerCfg.active && state.providerCfg.active.provider === p.id) {
       state.providerCfg.active = {};
@@ -1554,13 +1554,13 @@ function buildProviderCard(p) {
   urlField.appendChild(url);
   const protoField = document.createElement("div");
   protoField.className = "prov-field";
-  protoField.innerHTML = "<label>接口协议</label>";
+  protoField.innerHTML = t("app.088");
   const proto = document.createElement("select");
   proto.className = "set-input";
-  proto.title = "anthropic: Claude/Messages 协议端点; openai: OpenAI Chat Completions 协议端点";
+  proto.title = t("app.089");
   for (const [val, label] of [
-    ["anthropic", "Anthropic（Claude 协议）"],
-    ["openai", "OpenAI（Chat Completions）"],
+    ["anthropic", t("app.090")],
+    ["openai", t("app.091")],
   ]) {
     const opt = document.createElement("option");
     opt.value = val;
@@ -1598,8 +1598,8 @@ function buildProviderCard(p) {
   const mField = document.createElement("div");
   mField.className = "prov-models";
   mField.innerHTML =
-    '<div class="prov-models-label">模型列表</div>' +
-    '<div class="model-cols"><span>显示名</span><span>模型 ID</span><span>标签</span><span></span></div>';
+    t("app.092") +
+    t("app.093");
   const rows = document.createElement("div");
   rows.className = "model-rows";
   const buildModelRow = m => {
@@ -1608,17 +1608,17 @@ function buildProviderCard(p) {
     const nm = document.createElement("input");
     nm.className = "set-input m-name";
     nm.value = m.name || "";
-    nm.placeholder = "显示名";
+    nm.placeholder = t("app.094");
     nm.addEventListener("input", () => { m.name = nm.value; scheduleProvSave(); });
     const id = document.createElement("input");
     id.className = "set-input m-id mono";
     id.value = m.id || "";
-    id.placeholder = "模型 ID（API 名）";
+    id.placeholder = t("app.095");
     id.addEventListener("input", () => { m.id = id.value; scheduleProvSave(); });
     const tg = document.createElement("input");
     tg.className = "set-input m-tags";
     tg.value = (m.tags || []).join(",");
-    tg.placeholder = "标签（逗号分隔，如 视觉,1M）";
+    tg.placeholder = t("app.096");
     tg.addEventListener("input", () => {
       m.tags = tg.value.split(/[,，]/).map(x => x.trim()).filter(Boolean);
       scheduleProvSave();
@@ -1627,7 +1627,7 @@ function buildProviderCard(p) {
     delB.type = "button";
     delB.className = "m-del";
     delB.textContent = "✕";
-    delB.dataset.tip = "删除模型";
+    delB.dataset.tip = t("app.097");
     delB.onclick = () => {
       p.models = p.models.filter(x => x !== m);
       row.remove();
@@ -1641,7 +1641,7 @@ function buildProviderCard(p) {
   const addM = document.createElement("button");
   addM.type = "button";
   addM.className = "m-add";
-  addM.textContent = "＋ 添加模型";
+  addM.textContent = t("app.098");
   addM.onclick = () => {
     const m = { id: "", name: "", tags: [] };
     p.models.push(m);
@@ -1656,7 +1656,7 @@ function buildProviderCard(p) {
 $("btn-add-provider").onclick = () => {
   const id = "prov-" + Date.now().toString(36);
   const p = {
-    id, name: "新供应商", base_url: "", api_key: "", enabled: true,
+    id, name: t("app.099"), base_url: "", api_key: "", enabled: true,
     protocol: "anthropic",
     models: [{ id: "", name: "", tags: [] }],
   };
@@ -1722,12 +1722,12 @@ $("bg-file").addEventListener("change", () => {
   const file = $("bg-file").files[0];
   $("bg-file").value = "";   // 清空: 允许重复选择同一文件
   if (!file) return;
-  if (file.size > 20 * 1024 * 1024) { toast("图片过大（限 20MB）"); return; }
+  if (file.size > 20 * 1024 * 1024) { toast(t("app.100")); return; }
   const rd = new FileReader();
   rd.onload = async () => {
     const data = String(rd.result || "");
     if (!/^data:image\/(png|jpeg|webp);base64,/.test(data)) {
-      toast("仅支持 PNG / JPEG / WebP");
+      toast(t("app.101"));
       return;
     }
     try {
@@ -1741,8 +1741,8 @@ $("bg-file").addEventListener("change", () => {
       localStorage.setItem(BG_KEY, "1");   // 上传即启用
       syncBgLayers();
       if (accentAutoOn()) refreshAutoAccent(data);   // 壁纸自动取色
-      toast("背景已更新");
-    } catch (e) { toast("背景更新失败: " + e.message); }
+      toast(t("app.102"));
+    } catch (e) { toast(t("app.103") + e.message); }
   };
   rd.readAsDataURL(file);
 });
@@ -1758,8 +1758,8 @@ $("btn-bg-clear").onclick = async () => {
     localStorage.removeItem(BG_KEY);
     syncBgLayers();
     refreshAutoAccent(null);   // 壁纸已清: 自动取色失效, 回落手动强调色
-    toast("已清除背景图");
-  } catch (e) { toast("清除失败: " + e.message); }
+    toast(t("app.104"));
+  } catch (e) { toast(t("app.105") + e.message); }
 };
 
 /* ---------- 设置 → 外观: 应用图标上传 / 恢复默认 ---------- */
@@ -1768,12 +1768,12 @@ $("icon-file").addEventListener("change", () => {
   const file = $("icon-file").files[0];
   $("icon-file").value = "";   // 清空: 允许重复选择同一文件
   if (!file) return;
-  if (file.size > 384 * 1024) { toast("图片过大（限 384KB）"); return; }
+  if (file.size > 384 * 1024) { toast(t("app.106")); return; }
   const rd = new FileReader();
   rd.onload = async () => {
     const data = String(rd.result || "");
     if (!/^data:image\/(png|jpeg|webp);base64,/.test(data)) {
-      toast("仅支持 PNG / JPEG / WebP");
+      toast(t("app.107"));
       return;
     }
     try {
@@ -1785,8 +1785,8 @@ $("icon-file").addEventListener("change", () => {
       if (!r.ok) throw new Error((await r.json()).detail || "HTTP " + r.status);
       iconVer = (await r.json()).ver;
       applyIconEverywhere(data);   // dataURL 即时生效, 无缓存问题
-      toast("图标已更新");
-    } catch (e) { toast("图标更新失败: " + e.message); }
+      toast(t("app.108"));
+    } catch (e) { toast(t("app.109") + e.message); }
   };
   rd.readAsDataURL(file);
 });
@@ -1800,8 +1800,8 @@ $("btn-icon-reset").onclick = async () => {
     if (!r.ok) throw new Error((await r.json()).detail || "HTTP " + r.status);
     iconVer = (await r.json()).ver;
     applyIconEverywhere(iconUrl());
-    toast("已恢复默认图标");
-  } catch (e) { toast("恢复失败: " + e.message); }
+    toast(t("app.110"));
+  } catch (e) { toast(t("app.111") + e.message); }
 };
 
 /* ---------- 设置 → 行为: 每轮最大迭代次数（新会话的默认值） ---------- */
@@ -1823,7 +1823,7 @@ function currentMaxIter() {
     if (!maxIterValid(v)) { inp.classList.add("invalid"); return; }
     inp.classList.remove("invalid");
     await saveSettings({ max_iterations: v });
-    toast("已保存，对新会话生效");
+    toast(t("app.112"));
   };
   inp.addEventListener("blur", submit);
   inp.addEventListener("keydown", ev => {
@@ -1846,7 +1846,7 @@ function syncBrowserVisibilityControls() {
   const chk = $("set-browser-headed");
   chk.addEventListener("change", async () => {
     const s = await saveSettings({ browser_headless: !chk.checked });
-    if (s) toast(chk.checked ? "已开启，新打开的浏览器可见" : "已关闭，新打开的浏览器隐身");
+    if (s) toast(chk.checked ? t("app.113") : t("app.114"));
   });
   const inp = $("set-browser-slowmo");
   const submit = async () => {
@@ -1860,7 +1860,7 @@ function syncBrowserVisibilityControls() {
     if (!browserSlowMoValid(v)) { inp.classList.add("invalid"); return; }
     inp.classList.remove("invalid");
     await saveSettings({ browser_slow_mo: v });
-    toast("已保存，对新打开的浏览器生效");
+    toast(t("app.115"));
   };
   inp.addEventListener("blur", submit);
   inp.addEventListener("keydown", ev => {
@@ -1874,7 +1874,7 @@ function syncBrowserVisibilityControls() {
  * 设置（不含供应商 key），保存后服务端即时重建 utility client。
  * 供应商下拉复用 makeDropdown（与记忆分类/权限模式同款弹层）。 */
 const utProviderDd = makeDropdown($("ut-provider"), {
-  items: [{ value: "", label: "不使用（跟主模型）" }],
+  items: [{ value: "", label: t("app.116") }],
   value: "",
   onChange(v) {
     // 选"不使用"时 model 无意义（服务端保存时整键丢弃）: 清空 + 锁定,
@@ -1882,7 +1882,7 @@ const utProviderDd = makeDropdown($("ut-provider"), {
     const m = $("ut-model");
     if (!v) m.value = "";
     m.disabled = !v;
-    m.placeholder = v ? "模型名，如 glm-4.5-air" : "跟主模型";
+    m.placeholder = v ? t("app.117") : t("app.118");
     scheduleUtilitySave();
   },
 });
@@ -1893,14 +1893,14 @@ async function loadUtilityProvider() {
   } catch (e) { console.error("加载辅助模型配置失败", e); }
 }
 function syncUtilityControls() {
-  const items = [{ value: "", label: "不使用（跟主模型）" }];
+  const items = [{ value: "", label: t("app.119") }];
   for (const p of (state.providerCfg?.providers || [])) {
     items.push({ value: p.id, label: p.name || p.id });
   }
   utProviderDd.setItems(items, state.utilityCfg?.provider || "");
   $("ut-model").value = state.utilityCfg?.model || "";
   $("ut-model").disabled = !state.utilityCfg?.provider;
-  $("ut-model").placeholder = state.utilityCfg?.provider ? "模型名，如 glm-4.5-air" : "跟主模型";
+  $("ut-model").placeholder = state.utilityCfg?.provider ? t("app.120") : t("app.121");
   renderUtilityStatus();
 }
 function renderUtilityStatus() {
@@ -1908,9 +1908,9 @@ function renderUtilityStatus() {
   const el = $("ut-status");
   if (!s || !el) return;
   el.classList.remove("err");
-  if (!s.provider) el.textContent = "当前：跟主模型（主模型若拒图将无转述救场，建议配带视觉的模型）";
-  else if (s.valid) el.textContent = `当前：起名/摘要/看图转述等后台任务用 ${s.effective_model || s.model || "主对话模型"}`;
-  else { el.textContent = "已配置但不可用（供应商被禁用或缺 key），暂跟主模型"; el.classList.add("err"); }
+  if (!s.provider) el.textContent = t("app.122");
+  else if (s.valid) el.textContent = t("app.123", { p0: s.effective_model || s.model || "主对话模型" });
+  else { el.textContent = t("app.124"); el.classList.add("err"); }
 }
 let utSaveTimer = null;
 function scheduleUtilitySave() {
@@ -1935,7 +1935,7 @@ async function saveUtilityProvider() {
     renderUtilityStatus();
   } catch (e) {
     const el = $("ut-status");
-    if (el) { el.textContent = "保存失败: " + e.message; el.classList.add("err"); }
+    if (el) { el.textContent = t("app.125") + e.message; el.classList.add("err"); }
   }
 }
 {
@@ -1952,14 +1952,14 @@ async function saveUtilityProvider() {
  * 保存无需重建任何 client——worker 每次派生时现读设置, 保存即对下一次
  * 派发生效。UI 结构与辅助模型（utilityProvider）同款。 */
 const wkProviderDd = makeDropdown($("wk-provider"), {
-  items: [{ value: "", label: "不使用（跟主对话模型）" }],
+  items: [{ value: "", label: t("app.126") }],
   value: "",
   onChange(v) {
     // 同辅助模型: "不使用"时清空 + 锁定输入框
     const m = $("wk-model");
     if (!v) m.value = "";
     m.disabled = !v;
-    m.placeholder = v ? "模型名，如 glm-4.5-air" : "跟主对话模型";
+    m.placeholder = v ? t("app.127") : t("app.128");
     scheduleWorkerSave();
   },
 });
@@ -1970,14 +1970,14 @@ async function loadWorkerProvider() {
   } catch (e) { console.error("加载子代理模型配置失败", e); }
 }
 function syncWorkerControls() {
-  const items = [{ value: "", label: "不使用（跟主对话模型）" }];
+  const items = [{ value: "", label: t("app.129") }];
   for (const p of (state.providerCfg?.providers || [])) {
     items.push({ value: p.id, label: p.name || p.id });
   }
   wkProviderDd.setItems(items, state.workerCfg?.provider || "");
   $("wk-model").value = state.workerCfg?.model || "";
   $("wk-model").disabled = !state.workerCfg?.provider;
-  $("wk-model").placeholder = state.workerCfg?.provider ? "模型名，如 glm-4.5-air" : "跟主对话模型";
+  $("wk-model").placeholder = state.workerCfg?.provider ? t("app.130") : t("app.131");
   renderWorkerStatus();
 }
 function renderWorkerStatus() {
@@ -1985,9 +1985,9 @@ function renderWorkerStatus() {
   const el = $("wk-status");
   if (!s || !el) return;
   el.classList.remove("err");
-  if (!s.provider) el.textContent = "当前：子代理跟主对话模型";
-  else if (s.valid) el.textContent = `当前：子代理执行用 ${s.effective_model || s.model}`;
-  else { el.textContent = "已配置但不可用（供应商被禁用/缺 key，或模型名留空），暂跟主对话模型"; el.classList.add("err"); }
+  if (!s.provider) el.textContent = t("app.132");
+  else if (s.valid) el.textContent = t("app.133", { p0: s.effective_model || s.model });
+  else { el.textContent = t("app.134"); el.classList.add("err"); }
 }
 let wkSaveTimer = null;
 function scheduleWorkerSave() {
@@ -2012,7 +2012,7 @@ async function saveWorkerProvider() {
     renderWorkerStatus();
   } catch (e) {
     const el = $("wk-status");
-    if (el) { el.textContent = "保存失败: " + e.message; el.classList.add("err"); }
+    if (el) { el.textContent = t("app.135") + e.message; el.classList.add("err"); }
   }
 }
 {
@@ -2029,8 +2029,8 @@ $("btn-open-config").onclick = async () => {
   try {
     const r = await fetch("/api/open-config", { method: "POST" });
     if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || "HTTP " + r.status);
-    toast("已打开配置文件");
-  } catch (e) { toast("打开失败: " + e.message); }
+    toast(t("app.136"));
+  } catch (e) { toast(t("app.137") + e.message); }
 };
 /* ---------- 自动保存: 脏标记 + 800ms 防抖, 合并连续输入为一次请求 ----------
  * 编辑只改内存 state.providerCfg; 防抖窗口内反复触发只重置计时器, 停顿后才
@@ -2047,7 +2047,7 @@ function provStatus(text, isErr = false) {
 }
 function scheduleProvSave() {
   provDirty = true;
-  provStatus("未保存…");
+  provStatus(t("app.138"));
   clearTimeout(provSaveTimer);
   provSaveTimer = setTimeout(persistProviders, PROV_SAVE_DELAY);
 }
@@ -2059,11 +2059,11 @@ async function persistProviders() {
   // 无效中间态不落盘, 等用户填好后的下一次防抖自动保存。
   for (const p of (state.providerCfg.providers || [])) {
     if (p.enabled !== false && !(p.base_url || "").trim()) {
-      provStatus(`「${p.name || "未命名供应商"}」缺少 Base URL, 暂未保存`, true);
+      provStatus(t("app.139", { p0: p.name || "未命名供应商" }), true);
       return;
     }
   }
-  provStatus("保存中…");
+  provStatus(t("app.140"));
   try {
     const r = await fetch("/api/providers", {
       method: "POST",
@@ -2072,8 +2072,8 @@ async function persistProviders() {
     });
     if (!r.ok) {
       const err = await r.json().catch(() => ({}));
-      provStatus("保存失败: " + (err.detail || r.status), true);
-      toast("保存失败: " + (err.detail || r.status));
+      provStatus(t("app.141") + (err.detail || r.status), true);
+      toast(t("app.142") + (err.detail || r.status));
       return;
     }
     const saved = await r.json();
@@ -2087,7 +2087,7 @@ async function persistProviders() {
       lp.base_url = sp.base_url;
       lp.protocol = sp.protocol;
     }
-    provStatus("已保存");
+    provStatus(t("app.143"));
     syncUtilityControls();   // 供应商改名/增删后刷新 side-call 下拉选项
     syncWorkerControls();    // 子代理模型下拉同此
     // 刷新 composer 模型下拉。模型改名/删除（防抖自动保存期间是常态）会让
@@ -2124,8 +2124,8 @@ async function persistProviders() {
       }
     }
   } catch (e) {
-    provStatus("保存失败: " + e.message, true);
-    toast("保存失败: " + e.message);
+    provStatus(t("app.144") + e.message, true);
+    toast(t("app.145") + e.message);
   }
 }
 
@@ -2138,7 +2138,7 @@ async function saveSettings(patch) {
     });
     if (!r.ok) {
       const err = await r.json().catch(() => ({}));
-      toast("设置失败: " + (err.detail || r.status));
+      toast(t("app.146") + (err.detail || r.status));
       await loadSettings();   // 回显真实值
       return;
     }
@@ -2163,7 +2163,7 @@ async function saveSettings(patch) {
       if (!state.sessionId) modelDd.setValue(state.globalDefaults.modelKey);
     }
     return s;
-  } catch (e) { toast("设置失败: " + e.message); }
+  } catch (e) { toast(t("app.147") + e.message); }
 }
 
 /* ============================================================
@@ -2194,9 +2194,9 @@ async function saveOnboarding() {
   const proto = $("ob-proto").value;
   const err = $("ob-err");
   err.textContent = "";
-  if (!key) { err.textContent = "请填写 API Key"; return; }
-  if (!base) { err.textContent = "请填写接口地址 Base URL"; return; }
-  if (!model) { err.textContent = "请填写默认模型"; return; }   // 不发明默认值
+  if (!key) { err.textContent = t("app.148"); return; }
+  if (!base) { err.textContent = t("app.149"); return; }
+  if (!model) { err.textContent = t("app.150"); return; }   // 不发明默认值
   const btn = $("ob-save");
   btn.disabled = true;
   try {
@@ -2213,7 +2213,7 @@ async function saveOnboarding() {
       if (!prov.models.some(m => m.id === model)) prov.models.push({ id: model, name: model, tags: [] });
     } else {
       providers.push({
-        id: "default", name: "默认供应商",
+        id: "default", name: t("app.151"),
         base_url: base, api_key: key, enabled: true,
         protocol: proto,
         models: [{ id: model, name: model, tags: [] }],
@@ -2231,7 +2231,7 @@ async function saveOnboarding() {
     startDraft();   // 配置完成: 跳转新任务欢迎页
     $("input").focus();
   } catch (e) {
-    err.textContent = "保存失败: " + e.message;
+    err.textContent = t("app.152") + e.message;
   } finally {
     btn.disabled = false;
   }
@@ -2288,11 +2288,11 @@ function petTaskObserve(msg) {
   if (msg.type === "text_delta") {
     petReplyBuf += msg.text || "";
   } else if (msg.type === "turn_done") {
-    petBridgeSend({ type: "chat", text: msg.interrupted ? "已停" : petTaskReply() });
+    petBridgeSend({ type: "chat", text: msg.interrupted ? t("app.153") : petTaskReply() });
   } else if (msg.type === "error") {
     petReplyBuf = "";
     petBridgeSend({ type: "chat",
-                    text: ("出错了: " + String(msg.message || "")).slice(0, 200) });
+                    text: (t("app.154") + String(msg.message || "")).slice(0, 200) });
   }
 }
 
@@ -2343,14 +2343,14 @@ async function petTaskRun(text) {
       if (!r.ok) throw new Error("HTTP " + r.status);
       sid = (await r.json()).id;
     } catch (e) {
-      petBridgeSend({ type: "chat", text: "任务没派出去: " + (e.message || e) });
+      petBridgeSend({ type: "chat", text: t("app.155") + (e.message || e) });
       return;
     }
     try {
       await fetch(`/api/sessions/${sid}/rename`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: "桌宠" }),
+        body: JSON.stringify({ title: t("app.156") }),
       });
     } catch { /* 命名失败不挡任务 */ }
     localStorage.setItem("xc-pet-task-sid", sid);
@@ -2396,9 +2396,9 @@ window.addEventListener("storage", (e) => {
     const st = window.aulosMusicToggle ? window.aulosMusicToggle() : null;
     petBridgeSend({
       type: "chat",
-      text: !st ? "还没选歌, 去面板点一首吧"
+      text: !st ? t("app.157")
         : st.playing ? "♪ " + String(st.title || "").slice(0, 40)
-        : "♪ 暂停了",
+        : t("app.158"),
     });
   }
 });

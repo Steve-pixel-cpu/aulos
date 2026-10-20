@@ -171,20 +171,20 @@ function mmRebuild() {
 function mmSummary(row) {
   const text = (row._text || "").replace(/\s+/g, " ").trim();
   if (text) return text.length > 140 ? text.slice(0, 140) + "…" : text;
-  if (row.querySelector(".u-imgs")) return "[图片]";
-  if (row.querySelector(".file-chip")) return "[文件]";
-  return "[消息]";
+  if (row.querySelector(".u-imgs")) return t("msg_extras.001");
+  if (row.querySelector(".file-chip")) return t("msg_extras.002");
+  return t("msg_extras.003");
 }
 
 function mmRelTime(ts) {
   const t = ts ? new Date(ts) : null;
   if (!t || isNaN(t)) return "";
   const diff = (Date.now() - t.getTime()) / 1000;
-  if (diff < 90) return "刚刚";
-  if (diff < 3600) return Math.floor(diff / 60) + "分钟前";
-  if (diff < 86400) return Math.floor(diff / 3600) + "小时前";
-  if (diff < 172800) return "1天前";
-  if (diff < 604800) return Math.floor(diff / 86400) + "天前";
+  if (diff < 90) return t("msg_extras.004");
+  if (diff < 3600) return Math.floor(diff / 60) + t("msg_extras.005");
+  if (diff < 86400) return Math.floor(diff / 3600) + t("msg_extras.006");
+  if (diff < 172800) return t("msg_extras.007");
+  if (diff < 604800) return Math.floor(diff / 86400) + t("msg_extras.008");
   return `${t.getFullYear()}/${t.getMonth() + 1}/${t.getDate()}`;
 }
 
@@ -342,10 +342,10 @@ function skillMenuRender(query) {
   skillMenu.el.innerHTML = skillMenu.items.map((s, i) =>
     '<button type="button" class="sk-opt' + (i === skillMenu.idx ? " on" : "") + '" data-i="' + i + '">'
     + '<span class="sk-name">/' + escapeHtml(s.name) + '</span>'
-    + '<span class="sk-src">' + (s.source === "project" ? "项目级" : "用户级") + '</span>'
+    + '<span class="sk-src">' + (s.source === "project" ? t("msg_extras.009") : t("msg_extras.010")) + '</span>'
     + (s.description ? '<span class="sk-desc"></span>' : '')
     + "</button>"
-  ).join("") + '<div class="sk-hint">↑↓ 选择 · Enter/Tab 补全 · Esc 关闭</div>';
+  ).join("") + t("msg_extras.011");
   const descEl = skillMenu.el.querySelectorAll(".sk-desc");
   skillMenu.items.forEach((s, i) => {
     if (s.description && descEl[i]) descEl[i].textContent = s.description;
@@ -371,7 +371,7 @@ function skillMenuUpdate() {
         skillMenu.el.id = "skill-menu";
         $("input-card").appendChild(skillMenu.el);
       }
-      skillMenu.el.innerHTML = '<div class="sk-none">暂无技能 — 到 设置 → Skills 从 GitHub 仓库安装</div>';
+      skillMenu.el.innerHTML = t("msg_extras.012");
       skillMenu.items = [];
       skillMenu.idx = -1;
       skillMenu.empty = true;
@@ -457,7 +457,7 @@ $("input").addEventListener("paste", ev => {
  * ============================================================ */
 const selBar = document.createElement("div");
 selBar.className = "sel-bar";
-selBar.innerHTML = '<button type="button" data-act="task">添加到当前任务</button>';
+selBar.innerHTML = t("msg_extras.013");
 selBar.style.display = "none";
 document.body.appendChild(selBar);
 
@@ -508,7 +508,7 @@ selBar.addEventListener("click", ev => {
    普通浏览器/内嵌预览没有原生菜单, 用这个页面内菜单兜底 */
 const ctxMenu = document.createElement("div");
 ctxMenu.className = "ctx-menu";
-ctxMenu.innerHTML = '<button type="button" data-act="copy">复制</button>';
+ctxMenu.innerHTML = t("msg_extras.014");
 ctxMenu.style.display = "none";
 document.body.appendChild(ctxMenu);
 function hideCtxMenu() { ctxMenu.style.display = "none"; }
@@ -534,7 +534,7 @@ ctxMenu.addEventListener("click", ev => {
   const text = sel ? sel.toString() : "";
   hideCtxMenu();
   if (sel) sel.removeAllRanges();
-  copyText(text).then(ok => toast(ok ? "已复制" : "复制失败"));
+  copyText(text).then(ok => toast(ok ? t("msg_extras.015") : t("msg_extras.016")));
 });
 window.addEventListener("scroll", hideCtxMenu, true);
 document.addEventListener("click", ev => {

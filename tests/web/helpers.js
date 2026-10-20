@@ -67,11 +67,11 @@ function runScripts(window, ...files) {
   window.eval(src);
 }
 
-// 轻量: 仅 ui-dialogs (需 $, 页面只需 toast)
+// 轻量: i18n 三件 + ui-dialogs (需 $, 页面只需 toast; i18n 是所有含 t() 文件的前置)
 function loadUiDialogs() {
   const window = makeDom(`<div id="toast"></div>`);
   window.$ = id => window.document.getElementById(id);
-  runScript(window, "ui-dialogs.js");
+  runScripts(window, "i18n/zh.js", "i18n/en.js", "i18n/i18n.js", "ui-dialogs.js");
   return { window };
 }
 

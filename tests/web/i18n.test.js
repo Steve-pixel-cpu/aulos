@@ -69,3 +69,14 @@ test("applyI18n 改写 data-i18n 与 data-i18n-placeholder", () => {
     window.document.getElementById("a").getAttribute("placeholder"),
     "Language");
 });
+
+test("applyI18n 改写 data-i18n-aria-label", () => {
+  const window = makeDom(
+    '<button id="c" aria-label="语言" data-i18n-aria-label="settings.language.name"></button>');
+  runScripts(window, "i18n/zh.js", "i18n/en.js", "i18n/i18n.js");
+  window.setI18nLang("en");
+  window.applyI18n();
+  assert.equal(
+    window.document.getElementById("c").getAttribute("aria-label"),
+    "Language");
+});

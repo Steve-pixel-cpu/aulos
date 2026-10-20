@@ -19,19 +19,19 @@
 async function renderAllowlistSettings() {
   await renderRuleListSettings({
     listEl: "al-rule-list", url: "/api/settings/allowlist",
-    key: "rules", emptyText: "还没有规则。审批弹窗里的“总是允许”会自动把命令前缀加进来。",
+    key: "rules", emptyText: t("settings_extras.001"),
   });
 }
 async function renderDenylistSettings() {
   await renderRuleListSettings({
     listEl: "dl-rule-list", url: "/api/settings/denylist",
-    key: "rules", emptyText: "还没有拒绝规则。白名单放行 \"git push\" 的同时, 可以在这里加 \"git push --force\" 拦住强推。",
+    key: "rules", emptyText: t("settings_extras.002"),
   });
 }
 async function renderSensitivePathsSettings() {
   await renderRuleListSettings({
     listEl: "sp-path-list", url: "/api/settings/sensitive-paths",
-    key: "paths", emptyText: "还没有自定义敏感路径。加项目里的 secrets/、.env.production 等, 写入时任何模式都强制确认。",
+    key: "paths", emptyText: t("settings_extras.003"),
   });
 }
 
@@ -61,7 +61,7 @@ async function renderRuleListSettings({ listEl, url, key, emptyText }) {
     const del = document.createElement("button");
     del.type = "button";
     del.className = "icon-act al-del";
-    del.textContent = "删除";
+    del.textContent = t("settings_extras.004");
     del.onclick = async () => {
       del.disabled = true;
       try {
@@ -74,7 +74,7 @@ async function renderRuleListSettings({ listEl, url, key, emptyText }) {
         renderRuleListSettings({ listEl, url, key, emptyText });
       } catch (e) {
         del.disabled = false;
-        toast("删除失败: " + e.message);
+        toast(t("settings_extras.005") + e.message);
       }
     };
     row.appendChild(code);
@@ -103,7 +103,7 @@ function bindRuleListInput(inputId, btnId, url, bodyKey, listSpec, doneMsg) {
       renderRuleListSettings(listSpec);
       toast(doneMsg);
     } catch (e) {
-      toast("添加失败: " + e.message);
+      toast(t("settings_extras.006") + e.message);
     }
   };
   $(btnId).onclick = submit;
@@ -113,13 +113,13 @@ function bindRuleListInput(inputId, btnId, url, bodyKey, listSpec, doneMsg) {
 }
 bindRuleListInput("al-rule-input", "btn-al-add", "/api/settings/allowlist",
   "rule", { listEl: "al-rule-list", url: "/api/settings/allowlist", key: "rules" },
-  "白名单已更新");
+  t("settings_extras.007"));
 bindRuleListInput("dl-rule-input", "btn-dl-add", "/api/settings/denylist",
   "rule", { listEl: "dl-rule-list", url: "/api/settings/denylist", key: "rules" },
-  "拒绝清单已更新");
+  t("settings_extras.008"));
 bindRuleListInput("sp-path-input", "btn-sp-add", "/api/settings/sensitive-paths",
   "path", { listEl: "sp-path-list", url: "/api/settings/sensitive-paths", key: "paths" },
-  "敏感路径已更新");
+  t("settings_extras.009"));
 
 /* ============================================================
  * 设置页: Skills（GET /api/skills, POST /api/skills/install,
@@ -148,7 +148,7 @@ async function loadSkills() {
   if (!skills.length) {
     const empty = document.createElement("div");
     empty.className = "al-empty";
-    empty.textContent = "还没有安装技能。上方输入 GitHub 仓库即可安装社区 skills。";
+    empty.textContent = t("settings_extras.010");
     list.appendChild(empty);
     return skills;
   }
@@ -162,7 +162,7 @@ async function loadSkills() {
     name.textContent = s.name;
     const badge = document.createElement("span");
     badge.className = `skill-src skill-src-${s.source === "project" ? "project" : "user"}`;
-    badge.textContent = s.source === "project" ? "项目级" : "用户级";
+    badge.textContent = s.source === "project" ? t("settings_extras.011") : t("settings_extras.012");
     head.appendChild(name);
     head.appendChild(badge);
     if (s.description) {
@@ -180,17 +180,17 @@ async function loadSkills() {
       const del = document.createElement("button");
       del.type = "button";
       del.className = "icon-act al-del skill-del";
-      del.textContent = "卸载";
+      del.textContent = t("settings_extras.013");
       del.onclick = async () => {
         del.disabled = true;
         try {
           const r = await fetch(`/api/skills/${encodeURIComponent(s.name)}`,
                                { method: "DELETE" });
           if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || `HTTP ${r.status}`);
-          toast("已卸载 " + s.name);
+          toast(t("settings_extras.014") + s.name);
           loadSkills();        } catch (e) {
           del.disabled = false;
-          toast("卸载失败: " + e.message);
+          toast(t("settings_extras.015") + e.message);
         }
       };
       item.appendChild(del);
@@ -206,9 +206,9 @@ async function installSkillFromInput() {
   const chk = $("skill-overwrite-chk");
   const btn = $("btn-skill-install");
   const repo = (inp.value || "").trim();
-  if (!repo) { skillStatus("请填写仓库地址", true); return; }
+  if (!repo) { skillStatus(t("settings_extras.016"), true); return; }
   btn.disabled = true;
-  skillStatus("正在克隆并解析技能…");
+  skillStatus(t("settings_extras.017"));
   try {
     const r = await fetch("/api/skills/install", {
       method: "POST",
@@ -222,12 +222,12 @@ async function installSkillFromInput() {
     const data = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
     const names = (data.installed || []).map(s => s.name).join(", ");
-    skillStatus(`已安装: ${names}`);
+    skillStatus(t("settings_extras.018", { p0: names }));
     inp.value = ""; sub.value = "";
     loadSkills();
-    toast("技能已安装并生效");
+    toast(t("settings_extras.019"));
   } catch (e) {
-    skillStatus("安装失败: " + e.message, true);
+    skillStatus(t("settings_extras.020") + e.message, true);
   } finally {
     btn.disabled = false;
   }
@@ -241,7 +241,7 @@ $("skill-repo-input").addEventListener("keydown", (e) => {
  * 设置页: 记忆（GET/POST /api/memory, PATCH/DELETE /api/memory/{id}）
  * source=user 的条目不会被自动淘汰; agent 条目只在对话流里维护
  * ============================================================ */
-const MEM_CAT_LABEL = { preference: "偏好", fact: "事实", context: "背景" };
+const MEM_CAT_LABEL = { preference: t("settings_extras.021"), fact: t("settings_extras.022"), context: t("settings_extras.023") };
 
 async function loadMemories() {
   const list = $("mem-list");
@@ -259,7 +259,7 @@ async function loadMemories() {
   if (note) {
     note.style.display = evictedCount ? "" : "none";
     note.textContent = evictedCount
-      ? `另有 ${evictedCount} 条记忆因容量上限被自动淘汰（归档于 memory.json 的 evicted，可手动找回）` : "";
+      ? t("settings_extras.024", { p0: evictedCount }) : "";
   }
   list.innerHTML = "";
   if (!memories.length) {
@@ -270,10 +270,10 @@ async function loadMemories() {
     ico.textContent = "🧠";
     const main = document.createElement("div");
     main.className = "mem-empty-main";
-    main.textContent = "还没有记忆";
+    main.textContent = t("settings_extras.025");
     const sub = document.createElement("div");
     sub.className = "mem-empty-sub";
-    sub.textContent = "对话中让 Agent 记，或在上方手动添加一条";
+    sub.textContent = t("settings_extras.026");
     empty.appendChild(ico);
     empty.appendChild(main);
     empty.appendChild(sub);
@@ -295,7 +295,7 @@ async function loadMemories() {
     cat.textContent = MEM_CAT_LABEL[m.category] || m.category;
     const badge = document.createElement("span");
     badge.className = `mem-src ${m.source === "user" ? "mem-src-user" : "mem-src-agent"}`;
-    badge.textContent = m.source === "user" ? "用户" : "Agent";
+    badge.textContent = m.source === "user" ? t("settings_extras.027") : "Agent";
     meta.appendChild(cat);
     meta.appendChild(badge);
     if (m.created_at) {
@@ -310,19 +310,19 @@ async function loadMemories() {
     const del = document.createElement("button");
     del.type = "button";
     del.className = "icon-act mem-del";
-    del.textContent = "删除";
-    del.title = "删除这条记忆";
+    del.textContent = t("settings_extras.028");
+    del.title = t("settings_extras.029");
     del.onclick = async () => {
       del.disabled = true;
       try {
         const r = await fetch(`/api/memory/${encodeURIComponent(m.id)}`,
                              { method: "DELETE" });
         if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || `HTTP ${r.status}`);
-        toast("已删除该条记忆");
+        toast(t("settings_extras.030"));
         loadMemories();
       } catch (e) {
         del.disabled = false;
-        toast("删除失败: " + e.message);
+        toast(t("settings_extras.031") + e.message);
       }
     };
     item.appendChild(del);
@@ -341,7 +341,7 @@ const memCatDd = makeDropdown($("mem-category"), {
 async function addMemoryFromInput() {
   const inp = $("mem-input"), btn = $("btn-mem-add");
   const content = (inp.value || "").trim();
-  if (!content) { toast("先写点要记的内容"); return; }
+  if (!content) { toast(t("settings_extras.032")); return; }
   btn.disabled = true;
   try {
     const r = await fetch("/api/memory", {
@@ -353,9 +353,9 @@ async function addMemoryFromInput() {
     inp.value = "";
     inp.style.height = "";
     loadMemories();
-    toast("已添加记忆");
+    toast(t("settings_extras.033"));
   } catch (e) {
-    toast("添加失败: " + e.message);
+    toast(t("settings_extras.034") + e.message);
   } finally {
     btn.disabled = false;
   }

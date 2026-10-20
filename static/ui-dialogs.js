@@ -52,7 +52,7 @@ window.aulosToast = toast;   // 摸鱼电台(music.js)共用同一枚轻提示
  * "127.0.0.1:8000 显示" 的源地址头, 丑且不可定制。
  * 用法: if (await confirmDialog("删除会话「x」？", { title: "删除会话", okText: "删除", danger: true })) ...
  * ============================================================ */
-function confirmDialog(msg, { title = "确认操作", okText = "确定", danger = false } = {}) {
+function confirmDialog(msg, { title = t("ui_dialogs.001"), okText = t("ui_dialogs.002"), danger = false } = {}) {
   return new Promise(resolve => {
     const ov = document.createElement("div");
     ov.id = "confirm-overlay";
@@ -65,7 +65,7 @@ function confirmDialog(msg, { title = "确认操作", okText = "确定", danger 
         '</div>' +
         '<div id="confirm-msg">' + escapeHtml(msg) + '</div>' +
         '<div id="confirm-actions">' +
-          '<button type="button" data-act="cancel">取消</button>' +
+          t("ui_dialogs.003") +
           '<button type="button" data-act="ok"' + (danger ? ' class="danger"' : '') + '>' + escapeHtml(okText) + '</button>' +
         '</div>' +
       '</div>';
@@ -93,7 +93,7 @@ window.confirmDialog = confirmDialog;   // 摸鱼电台(music.js)复用
  * （返回 null, 调用方当成"取消"静默退出, 功能看着就是"点了没反应"）。
  * 用法: const name = await promptDialog("歌单名称", { title: "存为歌单", value: "默认值" });
  * ============================================================ */
-function promptDialog(msg, { title = "输入", value = "", placeholder = "", okText = "确定" } = {}) {
+function promptDialog(msg, { title = t("ui_dialogs.004"), value = "", placeholder = "", okText = t("ui_dialogs.005") } = {}) {
   return new Promise(resolve => {
     const ov = document.createElement("div");
     ov.id = "confirm-overlay";
@@ -104,7 +104,7 @@ function promptDialog(msg, { title = "输入", value = "", placeholder = "", okT
         '<div id="confirm-msg">' + escapeHtml(msg) + '</div>' +
         '<input id="confirm-input" type="text" spellcheck="false" autocomplete="off">' +
         '<div id="confirm-actions">' +
-          '<button type="button" data-act="cancel">取消</button>' +
+          t("ui_dialogs.006") +
           '<button type="button" data-act="ok">' + escapeHtml(okText) + '</button>' +
         '</div>' +
       '</div>';

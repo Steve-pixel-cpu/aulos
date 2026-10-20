@@ -14,7 +14,7 @@ const path = require("node:path");
 const { makeDom } = require("./helpers");
 
 const STATIC = path.join(__dirname, "..", "..", "static");
-const FILES = ["ui-dialogs.js", "notify.js", "app.js", "settings-extras.js",
+const FILES = ["i18n/zh.js", "i18n/en.js", "i18n/i18n.js", "ui-dialogs.js", "notify.js", "app.js", "settings-extras.js",
   "desktop.js", "bubbles.js", "msg-extras.js", "ws-handlers.js",
   "sidebar.js", "settings-page.js"];   // = index.html 完整 defer 序
 

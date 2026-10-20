@@ -32,9 +32,9 @@
   const CELL_W = 192, CELL_H = 208, SHEET_W = 1536;
 
   const STATUS_TEXT = {
-    idle: "摸鱼中", running: "打工中", "running-left": "打工中",
-    "running-right": "打工中", waiting: "等你批条子", failed: "出事了…",
-    jumping: "收工！", waving: "你好呀", review: "瞅一眼",
+    idle: t("pet.001"), running: t("pet.002"), "running-left": t("pet.003"),
+    "running-right": t("pet.004"), waiting: t("pet.005"), failed: t("pet.006"),
+    jumping: t("pet.007"), waving: t("pet.008"), review: t("pet.009"),
   };
 
   /* 内置台词库: 事件台词的随机池, 也是 AI 失败/未开时的回退语料。
@@ -45,19 +45,19 @@
    * 宠物 pet.json 的 persona.lines 同名分组整体覆盖(见 initFloat applyPersona)
    * ——人设注入改 pet.json 即可, 换宠物=换性格。 */
   const PET_LINES = {
-    ack: ["接单！", "来活儿了！", "包在我身上", "接单, 冲！"],
-    done: ["收工！", "收工！这班没白上", "搞定, 撒花", "活儿干完了, 溜了"],
-    approve: ["好, 批了！", "收到, 马上开干", "准了, 看我的"],
-    quip: ["这 bug 我闻到了", "稳住, 快收工了", "键盘敲得飞起啊",
-      "这波操作有点东西", "莫慌, 稳得很", "又在憋大招?"],
-    idle: ["摸鱼中, 别催", "喝口水, 歇会儿", "有活儿随时叫我", "zzz…"],
-    toolstreak: ["又来? 这都第六遍了", "同一个工具按到包浆了", "熟能生巧, 但也别太熟"],
-    errstreak: ["翻车二连… 问题不大", "又炸了, 深呼吸", "这代码跟咱有仇吧"],
-    longrun: ["这轮跑挺久啊, 硬活儿", "还在磨, 我陪你", "大工程啊这是"],
-    waitlong: ["条子呢~ 冻结中", "批一下呗, 等急了", "嘘… 在等你点头"],
-    idlelong: ["闲了半天了哦", "摸鱼摸得挺扎实", "有活儿随时叫我"],
-    latenight: ["这个点了, 头发保重", "深夜卷王就是你", "早点睡, 明天再战"],
-    friday: ["周五下午了, 收着点干", "熬过这几分钟就是周末", "周末不加班, 答应我"],
+    ack: [t("pet.010"), t("pet.011"), t("pet.012"), t("pet.013")],
+    done: [t("pet.014"), t("pet.015"), t("pet.016"), t("pet.017")],
+    approve: [t("pet.018"), t("pet.019"), t("pet.020")],
+    quip: [t("pet.021"), t("pet.022"), t("pet.023"),
+      t("pet.024"), t("pet.025"), t("pet.026")],
+    idle: [t("pet.027"), t("pet.028"), t("pet.029"), "zzz…"],
+    toolstreak: [t("pet.030"), t("pet.031"), t("pet.032")],
+    errstreak: [t("pet.033"), t("pet.034"), t("pet.035")],
+    longrun: [t("pet.036"), t("pet.037"), t("pet.038")],
+    waitlong: [t("pet.039"), t("pet.040"), t("pet.041")],
+    idlelong: [t("pet.042"), t("pet.043"), t("pet.044")],
+    latenight: [t("pet.045"), t("pet.046"), t("pet.047")],
+    friday: [t("pet.048"), t("pet.049"), t("pet.050")],
   };
 
   // 注: 不跟随系统的"减弱动效"(prefers-reduced-motion)定格——桌宠是
@@ -97,7 +97,7 @@
       // 这里兜底给出可见提示。
       img.onerror = () => {
         this.el.style.background = "none";
-        this.el.textContent = ":( 图集加载失败";
+        this.el.textContent = t("pet.051");
         this.el.style.cssText +=
           ";display:flex;align-items:center;justify-content:center;" +
           "font-size:11px;color:#f66;text-align:center;white-space:normal;";
@@ -238,7 +238,7 @@
     function fail(text) {
       clearTimeout(pet.failTimer);
       setBase("failed");
-      bubble(text || "出事了…");
+      bubble(text || t("pet.052"));
       pet.failTimer = setTimeout(() => {
         // 回落时按聚合状态重算: 别的会话还在跑就继续"打工", 别装闲
         if (pet.base === "failed") recomputeBase();
@@ -279,9 +279,9 @@
       if (!p) { pet.pendingPerm = null; return; }
       pet.pendingPerm = { session_id: sid, request_id: p.request_id };
       setBase("waiting");
-      const cta = "（点我同意）";
-      const body = (p.title ? `「${p.title}」` : "")
-        + (p.cmd ? `想运行: ${p.cmd}` : `想用 ${p.tool_name || "工具"}`);
+      const cta = t("pet.053");
+      const body = (p.title ? t("pet.054", { p0: p.title }) : "")
+        + (p.cmd ? t("pet.055", { p0: p.cmd }) : t("pet.056", { p0: p.tool_name || "工具" }));
       const max = BUBBLE_MAX - cta.length;
       bubble((body.length > max ? body.slice(0, max - 1) + "…" : body) + cta, 0);
     }
@@ -444,13 +444,13 @@
       // 1. 审批等超 1 分钟: 催条子(等批期间唯一允许的话)
       if (pendingPerms.size) {
         if (stats.waitSince && now - stats.waitSince >= 60000) {
-          await speakEvent("waitlong", "主人的审批请求等了一分多钟还没批");
+          await speakEvent("waitlong", t("pet.057"));
         }
         return;   // 等批期间别的都不说
       }
       // 2. 连续出错
       if (stats.errStreak >= 2) {
-        await speakEvent("errstreak", `连着 ${stats.errStreak} 轮都出错了`);
+        await speakEvent("errstreak", t("pet.058", { p0: stats.errStreak }));
         return;
       }
       const running = /^running/.test(pet.base);
@@ -458,16 +458,16 @@
       if (running) {
         // 3. 单轮超 15 分钟
         if (runMin >= 15) {
-          await speakEvent("longrun", `这一轮已经跑了 ${runMin} 分钟还没完`,
+          await speakEvent("longrun", t("pet.059", { p0: runMin }),
             { runMinutes: runMin });
           if (stats.said.longrun === now) return;
         }
         // 4. 深夜 / 周五下午
         if (hour >= 23 || hour < 5) {
-          await speakEvent("latenight", `现在已经是深夜 ${hour} 点还在干活`);
+          await speakEvent("latenight", t("pet.060", { p0: hour }));
           if (stats.said.latenight === now) return;
         } else if (d.getDay() === 5 && hour >= 14 && hour < 18) {
-          await speakEvent("friday", "今天是周五下午, 主人还在干活");
+          await speakEvent("friday", t("pet.061"));
           if (stats.said.friday === now) return;
         }
         // 5. 兜底: 带现场统计的随机点评(上句主动话 6 分钟后, 30% 概率)
@@ -485,7 +485,7 @@
       } else {
         // 6. 闲超 30 分钟
         if (now - stats.idleSince >= 1800000) {
-          await speakEvent("idlelong", "主人已经闲了半个多小时了");
+          await speakEvent("idlelong", t("pet.062"));
         }
       }
     }
@@ -531,7 +531,7 @@
         inputEl.value = "";
         inputEl.blur();
         sendPetCmd({ type: "task", text: text.slice(0, 2000) });
-        transientBubble("派活了, 干着呢…", 15000);   // 回复到达即替换
+        transientBubble(t("pet.063"), 15000);   // 回复到达即替换
       });
       // 键入活动锚点: IME 组合期 keydown 可能只剩不刷新的 Process 键,
       // composition*/input 必须一并计入, 否则组合中挪开鼠标会被空闲
@@ -570,12 +570,12 @@
         case "tool_use_started": {
           sessionPhase.set(sid, "run");
           // 现场统计: 只记工具名与次数; 同名连用 6 次说一句
-          const tn = String(msg.tool_name || "工具");
+          const tn = String(msg.tool_name || t("pet.064"));
           stats.tools[tn] = (stats.tools[tn] || 0) + 1;
           stats.lastToolRun = tn === stats.lastTool ? stats.lastToolRun + 1 : 1;
           stats.lastTool = tn;
           if (stats.lastToolRun >= 6) {
-            speakEvent("toolstreak", `${tn} 连着用了 ${stats.lastToolRun} 次`);
+            speakEvent("toolstreak", t("pet.065", { p0: tn, p1: stats.lastToolRun }));
           }
           // 每次工具换一个跑动方向, 桌面上看得到"在忙"
           pet.alt = (pet.alt + 1) % 3;
@@ -585,7 +585,7 @@
           const now = Date.now();
           if (now - pet.lastToolBubble > 900) {
             pet.lastToolBubble = now;
-            transientBubble((msg.tool_name || "工具") + "…");
+            transientBubble((msg.tool_name || t("pet.066")) + "…");
           }
           break;
         }
@@ -611,7 +611,7 @@
         case "await_output":
           sessionPhase.set(sid, "await");
           recomputeBase();
-          if (!pendingPerms.size && pet.base === "waiting") bubble("等你补充…", 0);
+          if (!pendingPerms.size && pet.base === "waiting") bubble(t("pet.067"), 0);
           break;
         case "turn_done": {
           sessionPhase.set(sid, "idle");
@@ -625,7 +625,7 @@
           if (othersActive(sid) || pendingPerms.size) {
             recomputeBase();   // 还有别的会话在忙: 不播收工, 继续打工
           } else if (msg.interrupted) {
-            fail("停了…");
+            fail(t("pet.068"));
           } else {
             pet.base = "idle";
             setStatus("idle");
@@ -642,9 +642,9 @@
             stats.runStart = 0;
             stats.idleSince = Date.now();
           }
-          const text = msg.message ? String(msg.message) : "出事了…";
+          const text = msg.message ? String(msg.message) : t("pet.069");
           if (othersActive(sid) || pendingPerms.size) {
-            transientBubble("出错: " + text, 3000);
+            transientBubble(t("pet.070") + text, 3000);
             recomputeBase();
           } else {
             fail(text);
@@ -652,11 +652,11 @@
           break;
         }
         case "rate_limited_retry":
-          transientBubble(`限流了, ${msg.delay_s}s 后重试…`);
+          transientBubble(t("pet.071", { p0: msg.delay_s }));
           break;
         case "turn_interrupting":
           forgetPerm(sid);   // 叫停会连着把该会话的待批请求按拒绝收走
-          transientBubble("等等, 我停——");
+          transientBubble(t("pet.072"));
           break;
       }
     }
@@ -683,7 +683,7 @@
         transientBubble(pick("approve"));
         return true;
       } catch (e) {
-        bubble("没批成…去主窗口看看");
+        bubble(t("pet.073"));
         return false;
       }
     }
@@ -923,7 +923,7 @@
         sendPetCmd({ type: "music_toggle" });
         bubble("♪ …", 2600);   // 回执到达即替换
       } else {
-        bubble("先点首歌呗", 2200);
+        bubble(t("pet.074"), 2200);
       }
     });
 
@@ -969,8 +969,8 @@
         const pets = data.pets || [];
         const chosen = pets.find(p => p.id === pref().petId) || pets[0];
         if (!chosen) {
-          statusEl.textContent = "没有宠物";
-          bubble("把宠物文件夹放进 pets 目录(设置里可查路径)", 0);
+          statusEl.textContent = t("pet.075");
+          bubble(t("pet.076"), 0);
           return;
         }
         // 人设随清单一起来: lines 覆盖内置台词包, name/style 留给 AI 请求
@@ -990,10 +990,10 @@
         mimg.src = sheetUrl;   // 同一 URL, 走 PetSprite 已建的 HTTP 缓存
         sprite.play("idle");
         overlayOnce("waving");
-        bubble("你好呀");
+        bubble(t("pet.077"));
       } catch {
-        statusEl.textContent = "加载失败";
-        bubble("桌宠加载失败, 稍后重开悬浮窗");
+        statusEl.textContent = t("pet.078");
+        bubble(t("pet.079"));
       }
     })();
   }
@@ -1061,7 +1061,7 @@
     if (summon) {
       if (!window.aulosDesktopPet) {
         summon.disabled = true;
-        summon.title = "悬浮窗仅桌面版(Tauri)支持";
+        summon.title = t("pet.080");
       } else {
         summon.addEventListener("click", petFloat);
       }
@@ -1073,7 +1073,7 @@
         try {
           const r = await fetch("/api/pets/open-dir", { method: "POST" });
           if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || "HTTP " + r.status);
-        } catch (e) { toast("打开失败: " + e.message); }
+        } catch (e) { toast(t("pet.081") + e.message); }
       });
     }
 
@@ -1108,7 +1108,7 @@
       chatter.checked = pref().aiChatter === true;
       chatter.addEventListener("change", () => {
         savePref({ ...pref(), aiChatter: chatter.checked });
-        toast(chatter.checked ? "桌宠 AI 互动已开启" : "桌宠 AI 互动已关闭");
+        toast(chatter.checked ? t("pet.082") : t("pet.083"));
       });
     }
     const modelDdEl = $("sel-pet-model");
@@ -1116,7 +1116,7 @@
       const p = pref();
       const saved = (p.aiProvider && p.aiModel) ? `${p.aiProvider}|${p.aiModel}` : "";
       const modelDd = makeDropdown(modelDdEl, {
-        items: [{ value: "", label: "跟随全局模型" }],
+        items: [{ value: "", label: t("pet.084") }],
         value: saved,
         onChange: (v) => {
           const i = v.indexOf("|");
@@ -1130,7 +1130,7 @@
       (async () => {
         try {
           const cfg = await (await fetch("/api/providers")).json();
-          const items = [{ value: "", label: "跟随全局模型" }];
+          const items = [{ value: "", label: t("pet.085") }];
           for (const prov of (cfg.providers || [])) {
             if (prov.enabled === false) continue;
             for (const m of (prov.models || [])) {
@@ -1142,7 +1142,7 @@
           }
           // 已保存的组合不在列表里(供应商被删/禁用): 保留原值并标注, 不静默丢
           if (saved && !items.some(it => it.value === saved)) {
-            items.push({ value: saved, label: `已保存: ${saved}（列表里没有）` });
+            items.push({ value: saved, label: t("pet.086", { p0: saved }) });
           }
           modelDd.setItems(items, saved);
         } catch { }
@@ -1155,7 +1155,7 @@
         rescanBtn.disabled = true;
         try {
           await renderPicker(true);
-          toast("宠物列表已刷新");
+          toast(t("pet.087"));
         } finally {
           rescanBtn.disabled = false;
         }
@@ -1176,13 +1176,13 @@
     const pets = (data && data.pets) || [];
     const dirEl = $("pet-dir");
     if (dirEl) dirEl.textContent = data && data.petsDir
-      ? `宠物目录: ${data.petsDir}` : "";
+      ? t("pet.088", { p0: data.petsDir }) : "";
 
     wrap.innerHTML = "";
     if (!pets.length) {
       const empty = document.createElement("div");
       empty.className = "pet-list-empty";
-      empty.textContent = "还没有宠物: 点「打开目录」, 把 Codex 格式宠物文件夹(pet.json + spritesheet 图)放进去即可识别";
+      empty.textContent = t("pet.089");
       wrap.appendChild(empty);
       return;
     }
@@ -1198,9 +1198,9 @@
         '<span class="pet-item-check"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12.5l5 5 10-11"/></svg></span>';
       row.querySelector(".pet-item-name").textContent = p.displayName || p.id;
       row.querySelector(".pet-item-desc").textContent =
-        p.description || `${p.rows} 行标准动作图集`;
+        p.description || t("pet.090", { p0: p.rows });
       row.querySelector(".pet-item-badge").textContent =
-        p.source === "codex" ? "Codex" : p.source === "user" ? "我的" : "内置";
+        p.source === "codex" ? "Codex" : p.source === "user" ? t("pet.091") : t("pet.092");
       const mini = row.querySelector(".pet-sprite-mini");
       mini.style.backgroundImage = `url("/api/pets/${encodeURIComponent(p.id)}/sheet${bustArg}")`;
       mini.style.backgroundSize = `${SHEET_W}px ${p.rows * CELL_H}px`;
@@ -1209,7 +1209,7 @@
         savePref({ ...pref(), petId: p.id });
         wrap.querySelectorAll(".pet-item").forEach(c => c.classList.remove("on"));
         row.classList.add("on");
-        toast("已切换桌宠, 重新召唤悬浮窗后生效");
+        toast(t("pet.093"));
       });
       wrap.appendChild(row);
     });

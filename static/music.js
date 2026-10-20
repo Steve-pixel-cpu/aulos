@@ -113,7 +113,7 @@
     const wrap = $("music-title-wrap");
     const inner = $("music-title-inner");
     const clone = $("music-title-clone");
-    title.textContent = s ? s.name : "未在播放";
+    title.textContent = s ? s.name : t("music.001");
     $("music-artist").textContent = s ? s.artist : "";
     clone.textContent = title.textContent;
     /* 标题自身超宽才滚动（marquee）: 不能用 wrap.scrollWidth —— 那会把
@@ -205,8 +205,8 @@
           return true;
         }
         pref.webkitAudioOk = false; savePref();
-        toastFn("Linux WebKit 音频管线探测失败: 请确认 gstreamer1.0-plugins-base/good/libav 已安装; "
-          + "约 1 分钟后点歌会自动重试");
+        toastFn(t("music.002")
+          + t("music.003"));
         return false;
       } finally {
         try { a.pause(); a.removeAttribute("src"); } catch { /* 已清理 */ }
@@ -241,7 +241,7 @@
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const data = await r.json();
       if (!data.url) {
-        toastFn(`「${s.name}」需要 VIP 或暂无版权, 已跳过`);
+        toastFn(t("music.004", { p0: s.name }));
         return skipFailed();
       }
       a.src = data.url;
@@ -249,7 +249,7 @@
       mstate.failedStreak = 0;
     } catch (e) {
       if (e && e.name === "AbortError") return;   // 用户快速切歌: 旧请求作废
-      toastFn("播放失败: " + (e && e.message || e));
+      toastFn(t("music.005") + (e && e.message || e));
       return skipFailed();
     }
   }
@@ -262,7 +262,7 @@
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const data = await r.json();
     if (!data.url) {
-      toastFn(`「${s.name}」没有可播音频, 已跳过`);
+      toastFn(t("music.006", { p0: s.name }));
       return skipFailed();
     }
     a.src = `/api/bili/stream?token=${encodeURIComponent(data.token)}`;
@@ -276,7 +276,7 @@
     if (mstate.failedStreak > Math.min(mstate.queue.length, 10)) {
       mstate.failedStreak = 0;
       getAudio().pause();
-      toastFn("连着多首都不可播, 已停止（换个歌单试试）");
+      toastFn(t("music.007"));
       return;
     }
     musicNext(true);
@@ -334,14 +334,14 @@
       if (isFav(s)) {
         await libFetch(`/api/music/favorites/${encodeURIComponent(s.id)}?source=${s.source || "netease"}`,
                        { method: "DELETE" });
-        toastFn(`已取消收藏「${s.name}」`);
+        toastFn(t("music.008", { p0: s.name }));
       } else {
         await libFetch("/api/music/favorites", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ songs: [s] }),
         });
-        toastFn(`已收藏「${s.name}」`);
+        toastFn(t("music.009", { p0: s.name }));
       }
       await refreshLibrary();
       refreshFavHearts();
@@ -350,7 +350,7 @@
         if (onTab && onTab.dataset.tab === "fav") renderFavTab();
       }
     } catch (e) {
-      toastFn("操作失败: " + (e.message || e));
+      toastFn(t("music.010") + (e.message || e));
     }
   }
 
@@ -374,12 +374,12 @@
     });
     savePref();
     if (!n) {
-      toastFn(`${label}都已在播放列表里`);
+      toastFn(t("music.011", { p0: label }));
       return;
     }
     toastFn(songs.length === 1
-      ? `已把${label}加入播放列表`
-      : `已把${label}的 ${n} 首加入播放列表`);
+      ? t("music.012", { p0: label })
+      : t("music.013", { p0: label, p1: n }));
     if (!$("music-panel").hidden) {
       const onTab = document.querySelector("#music-panel .mp-tabs > button.on");
       if (onTab && onTab.dataset.tab === "queue") renderQueue();
@@ -419,10 +419,10 @@
       });
       await refreshLibrary();
       toastFn(r.added
-        ? `已把${label}加入「${r.name}」（新增 ${r.added} 首）`
-        : `「${r.name}」里已经有这些歌了`);
+        ? t("music.014", { p0: label, p1: r.name, p2: r.added })
+        : t("music.015", { p0: r.name }));
     } catch (e) {
-      toastFn("添加失败: " + (e.message || e));
+      toastFn(t("music.016") + (e.message || e));
     }
   }
 
@@ -431,16 +431,16 @@
     closeAddMenu();
     const items = [];
     if (!songs.every(s => mstate.queue.some(q => q.id === s.id))) {
-      items.push({ text: "播放列表", hint: "追加到当前队列",
+      items.push({ text: t("music.017"), hint: t("music.018"),
         act: () => appendQueue(songs, label) });
     }
     (mstate.library.playlists || []).forEach(pl => {
-      items.push({ text: pl.name, hint: pl.songs.length + " 首",
+      items.push({ text: pl.name, hint: pl.songs.length + t("music.019"),
         act: () => addToPlaylist(pl, songs, label) });
     });
-    items.push({ text: "＋ 新建歌单…", hint: "", act: async () => {
-      const name = await promptDialog(`把${label}存入新歌单`, {
-        title: "新建歌单", placeholder: "歌单名称", okText: "创建",
+    items.push({ text: t("music.020"), hint: "", act: async () => {
+      const name = await promptDialog(t("music.021", { p0: label }), {
+        title: t("music.022"), placeholder: t("music.023"), okText: t("music.024"),
       });
       if (!name) return;
       try {
@@ -450,9 +450,9 @@
           body: JSON.stringify({ name, songs }),
         });
         await refreshLibrary();
-        toastFn(`已创建歌单「${pl.name}」（${pl.songs.length} 首）`);
+        toastFn(t("music.025", { p0: pl.name, p1: pl.songs.length }));
       } catch (e) {
-        toastFn("创建失败: " + (e.message || e));
+        toastFn(t("music.026") + (e.message || e));
       }
     }});
 
@@ -490,18 +490,18 @@
     row.dataset.src = s.source || "netease";
     const fav = mstate.library.favorites.some(x => srcKey(x) === srcKey(s));
     const delBtn = opts.deletable
-      ? '<button class="mp-s-del" data-tip="移出列表"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>'
+      ? t("music.027")
       : "";
     row.innerHTML =
       '<span class="mp-s-eq"><i></i><i></i><i></i></span>' +
       `<span class="mp-s-idx">${i + 1}</span>` +
       '<span class="mp-s-main"><span class="mp-s-name"></span>' +
       '<span class="mp-s-artist"></span></span>' +
-      (s.source === "bili" ? '<span class="mp-s-tag bili">B站</span>'
+      (s.source === "bili" ? t("music.028")
          : (s.fee === 1 ? '<span class="mp-s-tag">VIP</span>' : "")) +
       `<span class="mp-s-dur">${fmtTime(s.duration)}</span>` +
-      `<button class="mp-s-add" data-tip="添加到…"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>` +
-      `<button class="mp-s-fav${fav ? " on" : ""}" data-tip="收藏"><svg width="13" height="13" viewBox="0 0 24 24"><path d="M12 21s-7.5-4.9-10-9.6C.4 8 2 4.5 5.5 4.2 7.7 4 9.5 5.3 12 7.8c2.5-2.5 4.3-3.8 6.5-3.6C22 4.5 23.6 8 22 11.4 19.5 16.1 12 21 12 21z" fill="${fav ? "currentColor" : "none"}" stroke="currentColor" stroke-width="1.8"/></svg></button>` +
+      t("music.029") +
+      t("music.030", { p0: fav ? " on" : "", p1: fav ? "currentColor" : "none" }) +
       delBtn;
     row.querySelector(".mp-s-name").textContent = s.name;
     row.querySelector(".mp-s-artist").textContent = s.artist;
@@ -513,7 +513,7 @@
       ev.stopPropagation();
       const btn = ev.currentTarget;   // currentTarget 只在派发期间有效, 异步前先抓下来
       refreshLibrary().catch(() => {}).then(() =>
-        openAddMenu(btn, [s], "「" + s.name + "」"));
+        openAddMenu(btn, [s], t("music.031") + s.name + t("music.032")));
     };
     if (opts.deletable) {
       row.querySelector(".mp-s-del").onclick = (ev) => {
@@ -528,7 +528,7 @@
      （老版本在这里 replaceQueue 整表灌队列, 是「加一首变加一页」的根源）。 */
   function renderSongList(body, songs, { onPlay = null, deletable = false, onDelete = null } = {}) {
     if (!songs.length) {
-      body.innerHTML = '<div class="mp-empty">没有结果</div>';
+      body.innerHTML = t("music.033");
       return;
     }
     body.innerHTML = "";
@@ -551,7 +551,7 @@
     const kw = $("music-search-input").value.trim();
     if (!kw) return;
     const body = $("music-search-results");
-    body.innerHTML = '<div class="mp-empty">搜索中…</div>';
+    body.innerHTML = t("music.034");
     try {
       const endpoint = mstate.src === "bili"
         ? `/api/bili/search?kw=${encodeURIComponent(kw)}&limit=30`
@@ -561,13 +561,13 @@
       const data = await r.json();
       const songs = mstate.src === "bili" ? (data.videos || []) : (data.songs || []);
       if (!songs.length) {
-        body.innerHTML = `<div class="mp-empty">没搜到「${escapeText(kw)}」相关的${
-          mstate.src === "bili" ? "视频" : "歌曲"}</div>`;
+        body.innerHTML = t("music.035", { p0: escapeText(kw), p1: 
+          mstate.src === "bili" ? "视频" : "歌曲" });
         return;
       }
       renderSongList(body, songs);   // 纯浏览: 点行插播, 不动队列
     } catch (e) {
-      body.innerHTML = `<div class="mp-empty">搜索失败: ${escapeText(e.message)}</div>`;
+      body.innerHTML = t("music.036", { p0: escapeText(e.message) });
     }
   }
 
@@ -575,15 +575,15 @@
   function renderQueue() {
     const body = document.querySelector('#music-panel [data-tab-body="queue"]');
     if (!mstate.queue.length) {
-      body.innerHTML = '<div class="mp-empty">播放列表是空的, 去搜索里点 ＋ 吧</div>';
+      body.innerHTML = t("music.037");
       return;
     }
     body.innerHTML =
       '<div class="mp-queue-head"><span></span><span class="mp-queue-ops">' +
-      '<button id="music-queue-save">存为歌单</button>' +
-      '<button id="music-queue-clear">清空</button></span></div>';
+      t("music.038") +
+      t("music.039");
     body.querySelector("span").textContent
-      = `${mstate.qname || "播放列表"} · ${mstate.queue.length} 首`;
+      = t("music.040", { p0: mstate.qname || "播放列表", p1: mstate.queue.length });
     body.querySelector("#music-queue-clear").onclick = () => {
       getAudio().pause();
       mstate.queue = [];
@@ -593,8 +593,8 @@
       renderQueue();
     };
     body.querySelector("#music-queue-save").onclick = async () => {
-      const name = await promptDialog("把当前播放列表保存为歌单", {
-        title: "存为歌单", value: mstate.qname || "我的歌单", okText: "保存",
+      const name = await promptDialog(t("music.041"), {
+        title: t("music.042"), value: mstate.qname || t("music.043"), okText: t("music.044"),
       });
       if (!name) return;   // 取消或空名
       try {
@@ -604,9 +604,9 @@
           body: JSON.stringify({ name, songs: mstate.queue }),
         });
         await refreshLibrary();
-        toastFn(`已存为歌单「${pl.name}」（${pl.songs.length} 首）`);
+        toastFn(t("music.045", { p0: pl.name, p1: pl.songs.length }));
       } catch (e) {
-        toastFn("保存失败: " + (e.message || e));
+        toastFn(t("music.046") + (e.message || e));
       }
     };
     const list = document.createElement("div");
@@ -649,16 +649,16 @@
     const body = document.querySelector('#music-panel [data-tab-body="fav"]');
     const favs = mstate.library.favorites || [];
     if (!favs.length) {
-      body.innerHTML = '<div class="mp-empty">还没有收藏, 去搜索里点 ♡ 吧</div>';
+      body.innerHTML = t("music.047");
       return;
     }
     body.innerHTML =
       '<div class="mp-queue-head"><span></span><span class="mp-queue-ops">' +
-      '<button id="music-fav-playall">播放全部</button></span></div>';
-    body.querySelector("span").textContent = `收藏 · ${favs.length} 首`;
+      t("music.048");
+    body.querySelector("span").textContent = t("music.049", { p0: favs.length });
     body.querySelector("#music-fav-playall").onclick = () => {
       mstate.queue = favs.slice();
-      mstate.qname = "收藏";
+      mstate.qname = t("music.050");
       mstate.index = -1;
       savePref();
       playIndex(0);
@@ -674,13 +674,13 @@
             await refreshLibrary();
             renderFavTab();
           } catch (e) {
-            toastFn("移除失败: " + (e.message || e));
+            toastFn(t("music.051") + (e.message || e));
           }
         },
       });
       row.onclick = () => {
         mstate.queue = favs.slice();   // 整个收藏作为队列, 可上下切换
-        mstate.qname = "收藏";
+        mstate.qname = t("music.052");
         savePref();
         playIndex(i);
       };
@@ -699,35 +699,35 @@
 
     body.innerHTML =
       '<div class="mp-queue-head mp-pl-detail-head">' +
-      '<button id="music-pl-back">‹ 歌单</button><span></span>' +
+      t("music.053") +
       '<span class="mp-queue-ops">' +
-      '<button id="music-pl-append">并入播放列表</button>' +
-      '<button id="music-pl-del">删除歌单</button></span></div>';
-    body.querySelector("span").textContent = `${pl.name} · ${pl.songs.length} 首`;
+      t("music.054") +
+      t("music.055");
+    body.querySelector("span").textContent = t("music.056", { p0: pl.name, p1: pl.songs.length });
     body.querySelector("#music-pl-back").onclick = () => {
       mstate.mineView = null;
       renderMineTab();
     };
     body.querySelector("#music-pl-append").onclick = () => {
-      if (!pl.songs.length) { toastFn("歌单是空的"); return; }
-      appendQueue(pl.songs, `歌单「${pl.name}」`);
+      if (!pl.songs.length) { toastFn(t("music.057")); return; }
+      appendQueue(pl.songs, t("music.058", { p0: pl.name }));
     };
     body.querySelector("#music-pl-del").onclick = async () => {
-      if (!(await confirmDialog(`删除歌单「${pl.name}」?`, { title: "删除歌单", okText: "删除", danger: true }))) return;
+      if (!(await confirmDialog(t("music.059", { p0: pl.name }), { title: t("music.060"), okText: t("music.061"), danger: true }))) return;
       try {
         await libFetch(`/api/music/playlists/${pl.id}`, { method: "DELETE" });
         mstate.mineView = null;
         await refreshLibrary();
-        toastFn(`已删除歌单「${pl.name}」`);
+        toastFn(t("music.062", { p0: pl.name }));
         renderMineTab();
       } catch (e) {
-        toastFn("删除失败: " + (e.message || e));
+        toastFn(t("music.063") + (e.message || e));
       }
     };
     if (!pl.songs.length) {
       const empty = document.createElement("div");
       empty.className = "mp-empty";
-      empty.textContent = "歌单是空的, 去搜索里点 ＋ 后从播放列表存过来";
+      empty.textContent = t("music.064");
       body.appendChild(empty);
       return;
     }
@@ -742,13 +742,13 @@
             await refreshLibrary();
             renderMineTab();
           } catch (e) {
-            toastFn("移出失败: " + (e.message || e));
+            toastFn(t("music.065") + (e.message || e));
           }
         },
       });
       row.onclick = () => {
         mstate.queue = pl.songs.slice();   // 整个歌单作为队列
-        mstate.qname = "我的歌单: " + pl.name;
+        mstate.qname = t("music.066") + pl.name;
         savePref();
         playIndex(i);
       };
@@ -761,7 +761,7 @@
     const pls = mstate.library.playlists || [];
     body.innerHTML =
       '<div class="mp-pl-new"><input id="music-pl-name" type="text" ' +
-      'placeholder="新歌单名称，回车创建" spellcheck="false" autocomplete="off"></div>';
+      t("music.067");
     const input = body.querySelector("#music-pl-name");
     input.addEventListener("keydown", async (ev) => {
       ev.stopPropagation();
@@ -775,17 +775,17 @@
           body: JSON.stringify({ name }),
         });
         await refreshLibrary();
-        toastFn(`已创建歌单「${pl.name}」`);
+        toastFn(t("music.068", { p0: pl.name }));
         renderMineList(body);
       } catch (e) {
-        toastFn("创建失败: " + (e.message || e));
+        toastFn(t("music.069") + (e.message || e));
       }
     });
 
     if (!pls.length) {
       const empty = document.createElement("div");
       empty.className = "mp-empty";
-      empty.textContent = "还没有歌单, 上面输入名称创建";
+      empty.textContent = t("music.070");
       body.appendChild(empty);
       return;
     }
@@ -797,29 +797,29 @@
         '<span class="mp-pl-name"></span>' +
         '<span class="mp-pl-meta"></span>' +
         '<span class="mp-queue-ops">' +
-        '<button class="mp-pl-play" data-tip="播放"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></button>' +
-        '<button class="mp-pl-rename" data-tip="重命名"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></button>' +
-        '<button class="mp-pl-del" data-tip="删除歌单"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M8 6V4h8v2m1 0v14a1 1 0 01-1 1H8a1 1 0 01-1-1V6"/></svg></button>' +
+        t("music.071") +
+        t("music.072") +
+        t("music.073") +
         '</span>';
       row.querySelector(".mp-pl-name").textContent = pl.name;
-      row.querySelector(".mp-pl-meta").textContent = pl.songs.length + " 首";
+      row.querySelector(".mp-pl-meta").textContent = pl.songs.length + t("music.074");
       row.onclick = () => {           // 点名称进详情
         mstate.mineView = pl.id;
         renderMineTab();
       };
       row.querySelector(".mp-pl-play").onclick = (ev) => {
         ev.stopPropagation();
-        if (!pl.songs.length) { toastFn("歌单是空的"); return; }
+        if (!pl.songs.length) { toastFn(t("music.075")); return; }
         mstate.queue = pl.songs.slice();
-        mstate.qname = "我的歌单: " + pl.name;
+        mstate.qname = t("music.076") + pl.name;
         mstate.index = -1;
         savePref();
         playIndex(0);
       };
       row.querySelector(".mp-pl-rename").onclick = async (ev) => {
         ev.stopPropagation();
-        const name = await promptDialog("重命名歌单", {
-          title: "重命名", value: pl.name, okText: "确定",
+        const name = await promptDialog(t("music.077"), {
+          title: t("music.078"), value: pl.name, okText: t("music.079"),
         });
         if (!name) return;
         try {
@@ -831,19 +831,19 @@
           await refreshLibrary();
           renderMineList(body);
         } catch (e) {
-          toastFn("重命名失败: " + (e.message || e));
+          toastFn(t("music.080") + (e.message || e));
         }
       };
       row.querySelector(".mp-pl-del").onclick = async (ev) => {
         ev.stopPropagation();
-        if (!(await confirmDialog(`删除歌单「${pl.name}」?`, { title: "删除歌单", okText: "删除", danger: true }))) return;
+        if (!(await confirmDialog(t("music.081", { p0: pl.name }), { title: t("music.082"), okText: t("music.083"), danger: true }))) return;
         try {
           await libFetch(`/api/music/playlists/${pl.id}`, { method: "DELETE" });
           await refreshLibrary();
-          toastFn(`已删除歌单「${pl.name}」`);
+          toastFn(t("music.084", { p0: pl.name }));
           renderMineList(body);
         } catch (e) {
-          toastFn("删除失败: " + (e.message || e));
+          toastFn(t("music.085") + (e.message || e));
         }
       };
       list.appendChild(row);
@@ -941,7 +941,7 @@
       : mstate.mode === "one" ? "shuffle" : "order";
     applyModeIcon();
     savePref();
-    toastFn({ order: "顺序播放", one: "单曲循环", shuffle: "随机播放" }[mstate.mode]);
+    toastFn({ order: t("music.086"), one: t("music.087"), shuffle: t("music.088") }[mstate.mode]);
   };
   $("music-vol").value = pref.vol ?? 70;
   $("music-vol").oninput = (ev) => {
@@ -967,7 +967,7 @@
     input.value = "";
     syncMusicClear();
     $("music-search-results").innerHTML =
-      `<div class="mp-empty">${mstate.src === "bili" ? "B站视频只取音轨, 画面不进电台" : "搜歌名 / 歌手"}</div>`;
+      t("music.089", { p0: mstate.src === "bili" ? "B站视频只取音轨, 画面不进电台" : "搜歌名 / 歌手" });
     input.focus();
   };
   /* 搜索来源切换: 网易云 / B站。切来源时清空结果, 换 placeholder */
@@ -980,10 +980,10 @@
       savePref();                                     // 音源持久化(桌宠点歌也读)
       const input = $("music-search-input");
       input.placeholder = mstate.src === "bili"
-        ? "搜视频 / UP主，回车搜索"
-        : "搜歌名 / 歌手，回车搜索";
+        ? t("music.090")
+        : t("music.091");
       $("music-search-results").innerHTML =
-        `<div class="mp-empty">${mstate.src === "bili" ? "B站视频只取音轨, 画面不进电台" : "搜歌名 / 歌手"}</div>`;
+        t("music.092", { p0: mstate.src === "bili" ? "B站视频只取音轨, 画面不进电台" : "搜歌名 / 歌手" });
     };
   });
   /* ---- 进度条: 拖拽 + 点击 + 键盘 ----
@@ -1204,7 +1204,7 @@
     let at = songs.findIndex(s => srcKey(s) === wantKey);
     if (at < 0) at = 0;
     mstate.queue = songs;
-    mstate.qname = typeof cmd.qname === "string" && cmd.qname ? cmd.qname : "聊天点播";
+    mstate.qname = typeof cmd.qname === "string" && cmd.qname ? cmd.qname : t("music.093");
     mstate.failedStreak = 0;
     if (!$("music-panel").hidden) {
       const onTab = document.querySelector("#music-panel .mp-tabs > button.on");

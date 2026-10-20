@@ -27,11 +27,11 @@ function relativeTime(id) {
   if (!m) return "";
   const then = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]));
   const diff = (Date.now() - then.getTime()) / 1000;
-  if (diff < 90) return "刚刚";
-  if (diff < 3600) return Math.floor(diff / 60) + "分钟";
-  if (diff < 86400) return Math.floor(diff / 3600) + "小时";
-  if (diff < 172800) return "1天";
-  if (diff < 604800) return Math.floor(diff / 86400) + "天";
+  if (diff < 90) return t("sidebar.001");
+  if (diff < 3600) return Math.floor(diff / 60) + t("sidebar.002");
+  if (diff < 86400) return Math.floor(diff / 3600) + t("sidebar.003");
+  if (diff < 172800) return t("sidebar.004");
+  if (diff < 604800) return Math.floor(diff / 86400) + t("sidebar.005");
   return `${+m[2]}/${+m[3]}`;
 }
 function sessionBucket(id) {
@@ -44,13 +44,13 @@ function sessionBucket(id) {
   if (days < 7) return 2;       // 7 天内
   return 3;                     // 更早
 }
-const BUCKET_LABELS = ["今天", "昨天", "7 天内", "更早"];
+const BUCKET_LABELS = [t("sidebar.006"), t("sidebar.007"), t("sidebar.008"), t("sidebar.009")];
 const FOLDER_SVG = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>';
 const PLUS_SMALL_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>';
-const UNTITLED_TITLE = "未命名任务";
+const UNTITLED_TITLE = t("sidebar.010");
 
 function displayTitle(s) {
-  return (!s || s.title === "(未命名)") ? UNTITLED_TITLE : s.title;
+  return (!s || s.title === t("sidebar.011")) ? UNTITLED_TITLE : s.title;
 }
 
 async function loadSessions() {
@@ -92,9 +92,9 @@ async function setSessionArchived(id, archived) {
     const s = state.sessions.find(x => x.id === id);
     if (s) s.archived = archived;
     renderSessionList();
-    toast(archived ? "已归档" : "已恢复");
+    toast(archived ? t("sidebar.012") : t("sidebar.013"));
   } catch (e) {
-    toast(archived ? "归档失败: " : "恢复失败: " + e.message);
+    toast(archived ? t("sidebar.014") : t("sidebar.015") + e.message);
   }
 }
 
@@ -113,21 +113,21 @@ async function batchArchive(days) {
     const body = await r.json();
     await loadSessions();
     toast(body.archived
-      ? `已归档 ${body.archived} 个会话`
-        + (body.skipped_busy ? `，${body.skipped_busy} 个对话中已跳过` : "")
-      : "没有需要归档的会话");
+      ? t("sidebar.016", { p0: body.archived })
+        + (body.skipped_busy ? t("sidebar.017", { p0: body.skipped_busy }) : "")
+      : t("sidebar.018"));
   } catch (e) {
-    toast("批量归档失败: " + e.message);
+    toast(t("sidebar.019") + e.message);
   }
 }
 
 /* 全部删除归档任务: 危险操作, confirmDialog 后走批量删除接口 */
 async function deleteAllArchived() {
   const n = state.sessions.filter(s => s.archived).length;
-  if (!n) { toast("没有归档任务"); return; }
+  if (!n) { toast(t("sidebar.020")); return; }
   const ok = await confirmDialog(
-    `将永久删除 ${n} 个归档会话及其全部消息，不可恢复。`,
-    { title: "删除所有归档任务", okText: "全部删除", danger: true });
+    t("sidebar.021", { p0: n }),
+    { title: t("sidebar.022"), okText: t("sidebar.023"), danger: true });
   if (!ok) return;
   try {
     const r = await fetch("/api/sessions/batch-delete-archived", { method: "POST" });
@@ -138,11 +138,11 @@ async function deleteAllArchived() {
     const body = await r.json();
     await loadSessions();
     toast(body.deleted.length
-      ? `已删除 ${body.deleted.length} 个归档会话`
-        + (body.skipped_busy ? `，${body.skipped_busy} 个对话中已跳过` : "")
-      : "没有可删除的归档会话");
+      ? t("sidebar.024", { p0: body.deleted.length })
+        + (body.skipped_busy ? t("sidebar.025", { p0: body.skipped_busy }) : "")
+      : t("sidebar.026"));
   } catch (e) {
-    toast("删除失败: " + e.message);
+    toast(t("sidebar.027") + e.message);
   }
 }
 
@@ -183,7 +183,7 @@ async function renameSession(id, title) {
     renderSessionList();
     if (id === state.sessionId) refreshDocTitle();
   } catch (e) {
-    toast("重命名失败: " + e.message);
+    toast(t("sidebar.028") + e.message);
   }
 }
 
@@ -214,7 +214,7 @@ function makeInlineEditor(initial, onCommit, onDone) {
 
 function makeSessionItem(s) {
   const item = document.createElement("div");
-  const unnamed = s.title === "(未命名)";
+  const unnamed = s.title === t("sidebar.029");
   item.className = "session-item"
     + (s.id === state.sessionId ? " active" : "")
     + (unnamed ? " unnamed" : "");
@@ -224,12 +224,12 @@ function makeSessionItem(s) {
    * 主行保持 标题+时间 两元素, 与 mock 一致 */
   item.innerHTML = '<span class="s-ico">' + sessionStateIcon(s) + '</span>'
     + '<span class="s-unread"></span>'
-    + '<span class="s-plan">待批计划</span>'
+    + t("sidebar.030")
     + '<span class="title"></span><span class="meta"></span>'
     + '<div class="s-snippet"></div>'
     + (archivedView ? "" :
-        '<button class="s-arc" data-tip="归档">' + ARCHIVE_BOX_SVG + '</button>'
-        + '<button class="s-ren" data-tip="重命名">' + PENCIL_SMALL_SVG + '</button>');
+        t("sidebar.031") + ARCHIVE_BOX_SVG + '</button>'
+        + t("sidebar.032") + PENCIL_SMALL_SVG + '</button>');
   item.querySelector(".title").textContent = displayTitle(s);
   item.querySelector(".meta").textContent = relativeTime(s.id);
   // 全文命中摘录: 标题也命中时同样展示（"正文"前缀区分命中来源）。
@@ -243,7 +243,7 @@ function makeSessionItem(s) {
     snipEl.textContent = "";
     const tag = document.createElement("span");
     tag.className = "snip-tag";
-    tag.textContent = "正文";
+    tag.textContent = t("sidebar.033");
     snipEl.appendChild(tag);
     const text = document.createElement("span");
     const re = new RegExp(fts.query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi");
@@ -276,8 +276,8 @@ function makeSessionItem(s) {
     const wd = document.createElement("div");
     wd.className = "s-workdir";
     wd.innerHTML = FOLDER_SVG + '<span></span>'
-      + '<button class="s-unarc" data-tip="恢复">' + UNARCHIVE_SVG + '</button>'
-      + '<button class="s-del" data-tip="删除会话">' + TRASH_SMALL_SVG + '</button>';
+      + t("sidebar.034") + UNARCHIVE_SVG + '</button>'
+      + t("sidebar.035") + TRASH_SMALL_SVG + '</button>';
     wd.querySelector("span").textContent = s.workdir ? projectDisplayName(s.workdir) : "default";
     item.appendChild(wd);
   }
@@ -314,12 +314,12 @@ function makeSessionItem(s) {
 async function deleteSession(id) {
   const run = state.runs[id];
   if (run && run.busy) {
-    toast("该会话本轮对话进行中，暂不能删除");
+    toast(t("sidebar.036"));
     return;
   }
   const cur = state.sessions.find(s => s.id === id);
-  if (!await confirmDialog(`删除会话「${displayTitle(cur)}」？删除后不可恢复。`,
-      { title: "删除会话", okText: "删除", danger: true })) return;
+  if (!await confirmDialog(t("sidebar.037", { p0: displayTitle(cur) }),
+      { title: t("sidebar.038"), okText: t("sidebar.039"), danger: true })) return;
   try {
     const r = await fetch(`/api/sessions/${id}`, { method: "DELETE" });
     if (!r.ok) {
@@ -339,9 +339,9 @@ async function deleteSession(id) {
       if (next) await selectSession(next.id);
       else startDraft();
     }
-    toast("会话已删除");
+    toast(t("sidebar.040"));
   } catch (e) {
-    toast("删除失败: " + e.message);
+    toast(t("sidebar.041") + e.message);
   }
 }
 
@@ -385,7 +385,7 @@ function renderSessionList() {
   if (q && !sessions.length && ftsActive && !Object.keys(fts.hits).length && !fts.pending) {
     const e = document.createElement("div");
     e.className = "list-empty";
-    e.textContent = "标题和正文都没有匹配的会话";
+    e.textContent = t("sidebar.042");
     list.appendChild(e);
     return;
   }
@@ -401,7 +401,7 @@ function renderSessionList() {
      * （把主列表的老会话收进来）, 不能只剩一句空态文案 */
     const toolRow = document.createElement("div");
     toolRow.className = "list-label-row archived-tools";
-    toolRow.innerHTML = '<span class="list-label">归档</span>';
+    toolRow.innerHTML = t("sidebar.043");
     const mkBtn = (tip, svg) => {
       const b = document.createElement("button");
       b.type = "button";
@@ -412,7 +412,7 @@ function renderSessionList() {
     };
     /* 排序: 更新时间(mtime) / 创建时间(id 前缀), 持久化; 图标即当前档位 */
     const sortBtn = mkBtn(
-      "排序: " + (archiveSortMode() === "updated" ? "更新时间" : "创建时间"),
+      t("sidebar.044") + (archiveSortMode() === "updated" ? t("sidebar.045") : t("sidebar.046")),
       '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>');
     sortBtn.onclick = ev => {
       ev.stopPropagation();
@@ -430,11 +430,11 @@ function renderSessionList() {
         o.onclick = () => { setArchiveSort(mode); pop.close(); };
         pop.appendChild(o);
       };
-      mkOpt("更新时间", "updated");
-      mkOpt("创建时间", "created");
+      mkOpt(t("sidebar.047"), "updated");
+      mkOpt(t("sidebar.048"), "created");
     };
     /* 批量归档 */
-    const batch = mkBtn("批量归档 N 天前的会话", ARCHIVE_BOX_SVG);
+    const batch = mkBtn(t("sidebar.049"), ARCHIVE_BOX_SVG);
     batch.onclick = async ev => {
       ev.stopPropagation();
       if (batch._pop) { batch._pop.close(); batch._pop = null; return; }   // 再点 = 关
@@ -443,7 +443,7 @@ function renderSessionList() {
       if (days) batchArchive(days);
     };
     /* …菜单: 全部删除 */
-    const more = mkBtn("更多操作", MORE_SMALL_SVG);
+    const more = mkBtn(t("sidebar.050"), MORE_SMALL_SVG);
     more.onclick = ev => {
       ev.stopPropagation();
       if (more._pop) { more._pop.close(); more._pop = null; return; }   // 再点 = 关
@@ -454,13 +454,13 @@ function renderSessionList() {
       pop.close = () => { origClose(); more._pop = null; };
       const cnt = document.createElement("div");
       cnt.className = "dd-opt plain dd-head";
-      cnt.textContent = n + " 个归档任务";
+      cnt.textContent = n + t("sidebar.051");
       pop.appendChild(cnt);
       const del = document.createElement("button");
       del.type = "button";
       del.className = "dd-opt danger";
       del.innerHTML = '<span class="dd-ico">' + TRASH_SMALL_SVG + '</span><span class="dd-txt"></span>';
-      del.querySelector(".dd-txt").textContent = "删除所有归档任务";
+      del.querySelector(".dd-txt").textContent = t("sidebar.052");
       del.onclick = () => { pop.close(); deleteAllArchived(); };
       pop.appendChild(del);
     };
@@ -474,7 +474,7 @@ function renderSessionList() {
        * 工具行按钮的事件绑定随旧元素一起被抹掉（点击无反应） */
       const emptyEl = document.createElement("div");
       emptyEl.className = "list-empty";
-      emptyEl.textContent = q ? "没有匹配的归档会话" : "暂无归档会话";
+      emptyEl.textContent = q ? t("sidebar.053") : t("sidebar.054");
       list.appendChild(emptyEl);
       return;
     }
@@ -491,7 +491,7 @@ function renderSessionList() {
   }
   if (state.sideTab === "group") {
     if (!sessions.length) {
-      list.innerHTML = '<div class="list-empty">' + (q ? "没有匹配的会话" : "还没有会话") + "</div>";
+      list.innerHTML = '<div class="list-empty">' + (q ? t("sidebar.055") : t("sidebar.056")) + "</div>";
       return;
     }
     // 会话按时间倒序，分组标签自然按 今天→更早 顺序出现
@@ -507,12 +507,12 @@ function renderSessionList() {
   /* ---- 项目视图: 可折叠项目组 + 任务(未选择文件夹的会话) ---- */
   const headRow = document.createElement("div");
   headRow.className = "list-label-row";
-  headRow.innerHTML = '<span class="list-label">项目</span>';
+  headRow.innerHTML = t("sidebar.057");
   const addBtn = document.createElement("button");
   addBtn.type = "button";
   addBtn.className = "icon-btn";
   addBtn.id = "btn-add-project";
-  addBtn.dataset.tip = "添加项目";
+  addBtn.dataset.tip = t("sidebar.058");
   addBtn.innerHTML = PLUS_SMALL_SVG;
   addBtn.onclick = async ev => {
     ev.stopPropagation();
@@ -530,7 +530,7 @@ function renderSessionList() {
   if (!sessions.length && (q || !state.customProjects.length)) {
     const e = document.createElement("div");
     e.className = "list-empty";
-    e.textContent = q ? "没有匹配的会话" : "还没有项目，点上方 + 添加";
+    e.textContent = q ? t("sidebar.059") : t("sidebar.060");
     list.appendChild(e);
   }
 
@@ -553,8 +553,8 @@ function renderSessionList() {
     header.className = "project-item" + (collapsed ? " collapsed" : "");
     header.innerHTML = FOLDER_SVG + '<span class="p-name"></span>'
       + '<span class="p-count"></span>'
-      + '<button class="p-add" data-tip="在此项目新建任务">' + PLUS_SMALL_SVG + '</button>'
-      + '<button class="p-del" data-tip="移除项目">' + TRASH_SMALL_SVG + '</button>'
+      + t("sidebar.061") + PLUS_SMALL_SVG + '</button>'
+      + t("sidebar.062") + TRASH_SMALL_SVG + '</button>'
       + chev;
     header.querySelector(".p-name").textContent = projectDisplayName(wd);
     header.querySelector(".p-count").textContent = items.length ? String(items.length) : "";
@@ -583,13 +583,13 @@ function renderSessionList() {
   const taskRow = document.createElement("div");
   taskRow.className = "list-label-row" + (loose.length ? " tappable" : "")
     + (taskCollapsed ? " collapsed" : "");
-  if (loose.length) taskRow.dataset.tip = "收起/展开";
-  taskRow.innerHTML = '<span class="list-label">任务</span>'
+  if (loose.length) taskRow.dataset.tip = t("sidebar.063");
+  taskRow.innerHTML = t("sidebar.064")
     + (loose.length ? '<svg class="t-chev" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>' : "");
   const taskAdd = document.createElement("button");
   taskAdd.type = "button";
   taskAdd.className = "icon-btn";
-  taskAdd.dataset.tip = "新建任务";
+  taskAdd.dataset.tip = t("sidebar.065");
   taskAdd.innerHTML = PLUS_SMALL_SVG;
   taskAdd.onclick = ev => { ev.stopPropagation(); startDraft(); };
   taskRow.appendChild(taskAdd);
@@ -605,13 +605,13 @@ function renderSessionList() {
   if (!loose.length) {
     const e = document.createElement("div");
     e.className = "list-empty";
-    e.textContent = "还没有任务";
+    e.textContent = t("sidebar.066");
     list.appendChild(e);
   } else if (taskCollapsed) {
     // 折叠态: 一行占位概要「N 个任务」, 点击同样展开
     const ph = document.createElement("div");
     ph.className = "task-collapsed-ph";
-    ph.textContent = loose.length + " 个任务";
+    ph.textContent = loose.length + t("sidebar.067");
     ph.onclick = () => {
       state.collapsedTasks = false;
       localStorage.setItem("xc-collapsed-tasks", "0");
@@ -669,13 +669,13 @@ function pickBatchDays(trigger, onOpen) {
   return new Promise(resolve => {
     const pop = anchoredPop(trigger, "dd-pop batch-pop");
     if (onOpen) onOpen(pop);
-    pop.innerHTML = '<div class="dd-opt dd-head plain">归档多少天前的会话？</div>';
+    pop.innerHTML = t("sidebar.068");
     const done = v => { pop.close(); resolve(v); };
     for (const d of [7, 30, 90]) {
       const b = document.createElement("button");
       b.type = "button";
       b.className = "dd-opt";
-      b.textContent = d + " 天前";
+      b.textContent = d + t("sidebar.069");
       b.onclick = () => done(d);
       pop.appendChild(b);
     }
@@ -687,7 +687,7 @@ function pickBatchDays(trigger, onOpen) {
     custom.type = "button";
     custom.className = "dd-opt";
     custom.innerHTML = '<span class="dd-ico">' + PENCIL_SMALL_SVG + '</span><span class="dd-txt"></span>';
-    custom.querySelector(".dd-txt").textContent = "自定义天数…";
+    custom.querySelector(".dd-txt").textContent = t("sidebar.070");
     custom.onclick = () => {
       custom.style.display = "none";
       sep.style.display = "none";
@@ -696,7 +696,7 @@ function pickBatchDays(trigger, onOpen) {
       const inp = document.createElement("input");
       inp.type = "number";
       inp.min = "1";
-      inp.placeholder = "天数";
+      inp.placeholder = t("sidebar.071");
       inp.className = "batch-days-input";
       const submit = () => {
         const v = Math.floor(Number(inp.value));
@@ -728,7 +728,7 @@ function addProject(wd) {
     localStorage.setItem("xc-projects", JSON.stringify(state.customProjects));
   }
   renderSessionList();
-  toast("已添加项目：" + dirName(wd));
+  toast(t("sidebar.072") + dirName(wd));
 }
 
 /* 移除项目: 空项目仅从侧栏消失; 有会话的项目先解绑其下会话
@@ -737,12 +737,12 @@ async function removeProject(wd, count) {
   const name = projectDisplayName(wd);
   if (count > 0) {
     const ok = await confirmDialog(
-      `移除项目「${name}」？其下 ${count} 个会话将保留为独立任务（不删除）, 磁盘文件不受影响。`,
-      { title: "移除项目", okText: "移除", danger: true });
+      t("sidebar.073", { p0: name, p1: count }),
+      { title: t("sidebar.074"), okText: t("sidebar.075"), danger: true });
     if (!ok) return;
   } else {
-    const ok = await confirmDialog(`移除项目「${name}」？仅从侧栏移除, 不影响磁盘文件。`,
-      { title: "移除项目", okText: "移除", danger: true });
+    const ok = await confirmDialog(t("sidebar.076", { p0: name }),
+      { title: t("sidebar.077"), okText: t("sidebar.078"), danger: true });
     if (!ok) return;
   }
   // 有会话的项目: 逐个解绑; 失败的（如恰在对话中）跳过并提示, 项目保留
@@ -769,7 +769,7 @@ async function removeProject(wd, count) {
     }
   }
   if (failed) {
-    toast(`${failed} 个会话解绑失败（可能对话进行中）, 项目保留`);
+    toast(t("sidebar.079", { p0: failed }));
     return;
   }
   state.customProjects = state.customProjects.filter(w => w !== wd);
@@ -777,7 +777,7 @@ async function removeProject(wd, count) {
   state.collapsedProjects.delete(wd);
   localStorage.setItem("xc-collapsed", JSON.stringify([...state.collapsedProjects]));
   renderSessionList();
-  toast("已移除项目：" + name);
+  toast(t("sidebar.080") + name);
 }
 
 /* 桌面端选文件夹统一入口（侧栏「添加项目」与工作区「打开文件夹…」共用）。
@@ -788,14 +788,14 @@ async function pickNativeFolder() {
     return await window.aulosPickFolder();
   } catch (e) {
     console.error("[aulos] 打开文件夹失败:", e);
-    toast("打开文件夹失败：" + (e && e.message ? e.message : e), 4000);
+    toast(t("sidebar.081") + (e && e.message ? e.message : e), 4000);
     return null;
   }
 }
 
 /* 项目分组的组标题: 与顶栏 ws-tag 一致取目录名(末段), 空路径兜底 */
 function projectDisplayName(wd) {
-  return dirName(wd) || "未设置项目";
+  return dirName(wd) || t("sidebar.082");
 }
 
 function markActiveSession() {
