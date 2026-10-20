@@ -510,9 +510,14 @@ function dirName(p) { return p ? p.split(/[\\/]/).filter(Boolean).pop() : null; 
 
 function refreshWorkdirTag() {
   // 顶栏标签: 草稿 → 预选项目; 会话 → 其运行态里的工作目录。
-  // 任务类会话（无工作目录）不显示标签——服务进程的目录名与会话无关
+  // 任务类会话（无工作目录）不显示标签——服务进程的目录名与会话无关。
+  // currentWorkdir 仅首次切入时从 /messages 填充; loadSessions 会同源
+  // 回填, 但两条链路时序上仍可能一新一旧（loadSessions 非每次都触发）,
+  // 以侧栏列表值兜底, 保证胶囊与项目分组永远一致。
   const wd = state.draft ? state.draftDir
-    : (curRun() ? curRun().currentWorkdir : null);
+    : (curRun() ? (curRun().currentWorkdir
+        ?? state.sessions.find(s => s.id === state.sessionId)?.workdir ?? null)
+      : null);
   const name = dirName(wd);
   $("ws-tag").style.display = name ? "" : "none";
   if (name) $("ws-tag-text").textContent = name;
