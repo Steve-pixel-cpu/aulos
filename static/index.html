@@ -22,7 +22,7 @@
 <div id="bg-scrim"></div>
 
 <!-- 禅模式左缘热区: 侧栏隐藏时显示, 悬停临时唤出侧栏（逻辑见 app.js applyZen） -->
-<button id="zen-hotzone" aria-label="唤出侧栏" tabindex="-1"></button>
+<button id="zen-hotzone" aria-label="唤出侧栏" data-i18n-aria-label="index.attr001" tabindex="-1"></button>
 
 <!-- ============ 自绘标题栏（仅桌面壳显示, 高度/主题跟随应用） ============ -->
 <div id="titlebar">
@@ -33,13 +33,13 @@
   <button class="tb-update-dl" id="tb-update-dl" hidden></button>
   <div class="tb-spring"></div>
   <div class="tb-controls">
-    <button class="tb-btn" id="tb-min" title="最小化">
+    <button class="tb-btn" id="tb-min" title="最小化" data-i18n-title="index.attr002">
       <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.1"><path d="M0.5 5.2h9"/></svg>
     </button>
-    <button class="tb-btn" id="tb-max" title="最大化">
+    <button class="tb-btn" id="tb-max" title="最大化" data-i18n-title="index.attr003">
       <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.1"><rect x="0.7" y="0.7" width="8.6" height="8.6" rx="1"/></svg>
     </button>
-    <button class="tb-btn tb-close" id="tb-close" title="关闭">
+    <button class="tb-btn tb-close" id="tb-close" title="关闭" data-i18n-title="index.attr004">
       <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.1"><path d="M0.7 0.7l8.6 8.6M9.3 0.7l-8.6 8.6"/></svg>
     </button>
   </div>
@@ -51,28 +51,28 @@
   <div id="side-chat">
   <button class="menu-item" id="btn-new">
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 8.5v7M8.5 12h7"/></svg>
-    新建任务<kbd>Ctrl+N</kbd>
+    <span data-i18n="index.t001">新建任务</span><kbd>Ctrl+N</kbd>
   </button>
   <button class="menu-item" id="btn-search">
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.2-3.2"/></svg>
-    搜索<kbd>Ctrl+K</kbd>
+    <span data-i18n="index.t002">搜索</span><kbd>Ctrl+K</kbd>
   </button>
   <button class="menu-item js-open-settings" id="btn-open-settings">
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 00.34 1.87l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.7 1.7 0 00-1.87-.34 1.7 1.7 0 00-1.03 1.56V21a2 2 0 11-4 0v-.09a1.7 1.7 0 00-1.11-1.56 1.7 1.7 0 00-1.87.34l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.7 1.7 0 00.34-1.87 1.7 1.7 0 00-1.56-1.03H3a2 2 0 110-4h.09a1.7 1.7 0 001.56-1.11 1.7 1.7 0 00-.34-1.87l-.06-.06a2 2 0 112.83-2.83l.06.06a1.7 1.7 0 001.87.34h.08a1.7 1.7 0 001.03-1.56V3a2 2 0 114 0v.09a1.7 1.7 0 001.03 1.56 1.7 1.7 0 001.87-.34l.06-.06a2 2 0 112.83 2.83l-.06.06a1.7 1.7 0 00-.34 1.87v.08a1.7 1.7 0 001.56 1.03H21a2 2 0 110 4h-.09a1.7 1.7 0 00-1.51 1.03z"/></svg>
-    设置
+    <span data-i18n="index.t003">设置</span>
   </button>
 
   <div id="side-tabs-row">
     <div class="seg">
-      <button id="tab-group">分组</button>
-      <button id="tab-project" class="on">项目</button>
+      <button id="tab-group"><span data-i18n="index.t004">分组</span></button>
+      <button id="tab-project" class="on"><span data-i18n="index.t005">项目</span></button>
     </div>
     <div class="seg-acts">
-      <button id="tab-archive" class="seg-act" data-tip="归档" aria-label="归档"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a2 2 0 002 2h10a2 2 0 002-2V8M10 12h4"/></svg></button>
+      <button id="tab-archive" class="seg-act" data-tip="归档" aria-label="归档" data-i18n-aria-label="index.attr005"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a2 2 0 002 2h10a2 2 0 002-2V8M10 12h4"/></svg></button>
     </div>
   </div>
 
-  <div id="search-box"><span id="search-ico" aria-hidden="true"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M16.5 16.5L21 21"/></svg></span><input id="search-input" type="text" placeholder="搜索标题 / 项目 / 正文…"><button id="search-clear" type="button" data-tip="清空搜索" aria-label="清空搜索"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+  <div id="search-box"><span id="search-ico" aria-hidden="true"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M16.5 16.5L21 21"/></svg></span><input id="search-input" type="text" placeholder="搜索标题 / 项目 / 正文…" data-i18n-placeholder="index.attr006"><button id="search-clear" type="button" data-tip="清空搜索" aria-label="清空搜索" data-i18n-aria-label="index.attr007"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
 
   <div id="side-scroll">
     <div id="session-list"></div>
@@ -80,11 +80,11 @@
 
   <!-- 摸鱼电台: 侧栏底部迷你播放条（底栏音符图标开/关, 歌单面板从其上方弹出） -->
   <div id="music-dock" hidden>
-    <div class="md-progress" id="music-seek" role="slider" aria-label="播放进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" tabindex="0"><span id="music-progress-fill"></span><span class="md-progress-thumb" id="music-progress-thumb"></span><span class="md-progress-tip" id="music-progress-tip"></span></div>
+    <div class="md-progress" id="music-seek" role="slider" aria-label="播放进度" data-i18n-aria-label="index.attr008" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" tabindex="0"><span id="music-progress-fill"></span><span class="md-progress-thumb" id="music-progress-thumb"></span><span class="md-progress-tip" id="music-progress-tip"></span></div>
     <div class="md-row">
       <div id="music-cover"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></div>
       <div class="md-meta">
-        <span class="md-title-wrap" id="music-title-wrap"><span class="md-title-inner" id="music-title-inner"><span id="music-title">未在播放</span><span class="md-title-clone" id="music-title-clone" aria-hidden="true"></span></span></span>
+        <span class="md-title-wrap" id="music-title-wrap"><span class="md-title-inner" id="music-title-inner"><span id="music-title"><span data-i18n="index.t006">未在播放</span></span><span class="md-title-clone" id="music-title-clone" aria-hidden="true"></span></span></span>
         <span id="music-artist"></span>
       </div>
       <button class="mb-btn" id="music-hide" data-tip="收起播放条">
@@ -125,28 +125,28 @@
   <div id="side-settings">
     <button class="menu-item" id="btn-settings-back">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-      返回会话
+      <span data-i18n="index.t007">返回会话</span>
     </button>
-    <div class="list-label">设置</div>
+    <div class="list-label"><span data-i18n="index.t008">设置</span></div>
     <button class="menu-item nav-item on" data-section="appearance">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a9 9 0 100 18c1.1 0 2-.9 2-2 0-.5-.2-1-.5-1.3-.3-.4-.5-.8-.5-1.2 0-1.1.9-2 2-2h2.4A4.9 4.9 0 0021 11c-.5-4.5-4.3-8-9-8z"/><circle cx="7.5" cy="11" r="1.2"/><circle cx="10.5" cy="7.5" r="1.2"/><circle cx="15" cy="7.5" r="1.2"/></svg>
-      外观
+      <span data-i18n="index.t009">外观</span>
     </button>
     <button class="menu-item nav-item" data-section="notify">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 10-12 0c0 7-3 8-3 8h18s-3-1-3-8"/><path d="M13.7 20a2 2 0 01-3.4 0"/></svg>
-      通知
+      <span data-i18n="index.t010">通知</span>
     </button>
     <button class="menu-item nav-item" data-section="pets">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6.2 8.4 4.4 3.8l4.9 2.9M17.8 8.4l1.8-4.6-4.9 2.9"/><circle cx="12" cy="13.2" r="6.4"/><circle cx="9.7" cy="12.8" r=".5" fill="currentColor"/><circle cx="14.3" cy="12.8" r=".5" fill="currentColor"/><path d="M10.8 15.4c.7.6 1.7.6 2.4 0"/></svg>
-      桌宠
+      <span data-i18n="index.t011">桌宠</span>
     </button>
     <button class="menu-item nav-item" data-section="models">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 4v16M4 9h16M4 15h16M15 4v16"/></svg>
-      模型
+      <span data-i18n="index.t012">模型</span>
     </button>
     <button class="menu-item nav-item" data-section="behavior">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>
-      行为
+      <span data-i18n="index.t013">行为</span>
     </button>
     <button class="menu-item nav-item" data-section="mcp">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="6" rx="2"/><rect x="2" y="15" width="20" height="6" rx="2"/><path d="M6 9v3a1 1 0 001 1h10a1 1 0 001-1V9M6 18h.01M18 18h.01"/></svg>
@@ -158,15 +158,15 @@
     </button>
     <button class="menu-item nav-item" data-section="memory">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5a4 4 0 00-4 4c-1.7 0-3 1.6-3 3.5S6.3 16 8 16h8c1.7 0 3-1.6 3-3.5S17.7 9 16 9a4 4 0 00-4-4z"/><path d="M9 19h.01M12 20h.01M15 19h.01"/></svg>
-      记忆
+      <span data-i18n="index.t014">记忆</span>
     </button>
     <button class="menu-item nav-item" data-section="config">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h6"/></svg>
-      配置
+      <span data-i18n="index.t015">配置</span>
     </button>
     <button class="menu-item nav-item" data-section="about">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7.5v.5"/></svg>
-      关于
+      <span data-i18n="index.t016">关于</span>
     </button>
   </div>
 
@@ -174,7 +174,7 @@
     <span class="avatar">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="8.5" r="3.5"/><path d="M5 20c1.2-3.4 4-5 7-5s5.8 1.6 7 5"/></svg>
     </span>
-    <span id="conn-state"><span class="dot"></span><span id="conn-text">连接中…</span></span>
+    <span id="conn-state"><span class="dot"></span><span id="conn-text"><span data-i18n="index.t017">连接中…</span></span></span>
     <button class="icon-btn" id="btn-music" data-tip="摸鱼电台">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
     </button>
@@ -192,7 +192,7 @@
 <!-- ============ 右侧主区 ============ -->
 <div id="pane">
   <header id="doc-header">
-    <span id="doc-title">未命名任务</span>
+    <span id="doc-title"><span data-i18n="index.t018">未命名任务</span></span>
     <span class="ws-tag" id="ws-tag">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>
       <span id="ws-tag-text">workplace</span>
@@ -219,7 +219,7 @@
       <div id="ws-dock"></div>
       <div id="queue-cards"></div>
       <div id="attach-preview"></div>
-      <textarea id="input" rows="1" placeholder="描述你的任务，附文件也行…"></textarea>
+      <textarea id="input" rows="1" placeholder="描述你的任务，附文件也行…" data-i18n-placeholder="index.attr009"></textarea>
       <div class="comp-row">
         <button type="button" id="btn-attach" data-tip="添加图片或文本文件">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
@@ -230,7 +230,7 @@
         <span class="pill mode" data-tip="权限模式">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M12 3l7 2.8v5.4c0 4.4-2.9 7.8-7 9.8-4.1-2-7-5.4-7-9.8V5.8L12 3z"/></svg>
           <button type="button" class="dd" id="sel-mode">
-            <span class="dd-label">每次询问</span>
+            <span class="dd-label"><span data-i18n="index.t019">每次询问</span></span>
             <span class="dd-chev"><svg width="9" height="6" viewBox="0 0 9 6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1 1l3.5 3.5L8 1"/></svg></span>
           </button>
         </span>
@@ -244,7 +244,7 @@
         <span class="pill effort" data-tip="思考等级">
           <span class="ring"></span>
           <button type="button" class="dd" id="sel-thinking">
-            <span class="dd-label">中</span>
+            <span class="dd-label"><span data-i18n="index.t020">中</span></span>
             <span class="dd-chev"><svg width="9" height="6" viewBox="0 0 9 6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1 1l3.5 3.5L8 1"/></svg></span>
           </button>
         </span>
@@ -263,9 +263,9 @@
     <div id="plan-resize" data-tip="拖动调整宽度，双击复位"></div>
     <header id="plan-head">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6l1 3h3v15H5V6h3l1-3z"/><path d="M9 12h6M9 16h4"/></svg>
-      <span id="plan-title">实施计划</span>
+      <span id="plan-title"><span data-i18n="index.t021">实施计划</span></span>
       <button type="button" id="plan-copy" data-tip="复制 Markdown 源文" data-tip-pos="below">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg><span>复制</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg><span><span data-i18n="index.t022">复制</span></span>
       </button>
       <button type="button" id="plan-close" data-tip="收起面板" data-tip-pos="below">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg>
@@ -296,153 +296,153 @@
     <div id="onboarding-page">
       <div class="ob-card">
         <img class="ob-logo" src="/api/icon" alt="">
-        <h2>欢迎使用 Aulos</h2>
-        <p class="ob-desc">首次使用需要先配置一个模型供应商, 填写后立即可用; 之后可随时在「设置 → 模型」里调整或追加。</p>
+        <h2><span data-i18n="index.t023">欢迎使用 Aulos</span></h2>
+        <p class="ob-desc"><span data-i18n="index.t024">首次使用需要先配置一个模型供应商, 填写后立即可用; 之后可随时在「设置 → 模型」里调整或追加。</span></p>
         <div class="ob-field">
           <label>API Key</label>
           <input id="ob-key" type="password" placeholder="sk-..." spellcheck="false" autocomplete="off">
         </div>
         <div class="ob-field">
-          <label>接口协议</label>
+          <label><span data-i18n="index.t025">接口协议</span></label>
           <select id="ob-proto">
-            <option value="anthropic" selected>Anthropic（Claude 协议）</option>
-            <option value="openai">OpenAI（Chat Completions）</option>
+            <option value="anthropic" selected><span data-i18n="index.t026">Anthropic（Claude 协议）</span></option>
+            <option value="openai"><span data-i18n="index.t027">OpenAI（Chat Completions）</span></option>
           </select>
         </div>
         <div class="ob-field">
-          <label>接口地址 Base URL</label>
+          <label><span data-i18n="index.t028">接口地址 Base URL</span></label>
           <input id="ob-base" value="https://open.bigmodel.cn/api/anthropic" spellcheck="false">
         </div>
         <div class="ob-field">
-          <label>默认模型</label>
-          <input id="ob-model" placeholder="如 glm-5.3-flash" spellcheck="false">
+          <label><span data-i18n="index.t029">默认模型</span></label>
+          <input id="ob-model" placeholder="如 glm-5.3-flash" data-i18n-placeholder="index.attr010" spellcheck="false">
         </div>
         <div class="ob-err" id="ob-err"></div>
-        <button id="ob-save">保存并开始</button>
+        <button id="ob-save"><span data-i18n="index.t030">保存并开始</span></button>
       </div>
     </div>
 
     <!-- ============ 设置页（独立视图, 便于后续扩展） ============ -->
     <div id="settings-page">
       <header class="sp-header">
-        <span class="sp-title">设置</span>
+        <span class="sp-title"><span data-i18n="index.t031">设置</span></span>
       </header>
       <div class="sp-body">
         <div class="sp-inner">
           <div class="sp-section-body" data-section="appearance">
-          <div class="sp-section">外观</div>
+          <div class="sp-section"><span data-i18n="index.t032">外观</span></div>
           <div class="set-row">
             <div class="set-info">
-              <div class="set-name">主题外观</div>
-              <div class="set-desc">深色、浅色或跟随系统</div>
+              <div class="set-name"><span data-i18n="index.t033">主题外观</span></div>
+              <div class="set-desc"><span data-i18n="index.t034">深色、浅色或跟随系统</span></div>
             </div>
             <button type="button" class="dd set-dd" id="sel-theme">
-              <span class="dd-label">跟随系统</span>
+              <span class="dd-label"><span data-i18n="index.t035">跟随系统</span></span>
               <span class="dd-chev"><svg width="9" height="6" viewBox="0 0 9 6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1 1l3.5 3.5L8 1"/></svg></span>
             </button>
           </div>
           <div class="set-row">
             <div class="set-info">
-              <div class="set-name">语言</div>
-              <div class="set-desc">界面与 AI 回复使用的语言</div>
+              <div class="set-name"><span data-i18n="index.t036">语言</span></div>
+              <div class="set-desc"><span data-i18n="index.t037">界面与 AI 回复使用的语言</span></div>
             </div>
             <button type="button" class="dd set-dd" id="sel-lang">
-              <span class="dd-label">中文</span>
+              <span class="dd-label"><span data-i18n="index.t038">中文</span></span>
               <span class="dd-chev"><svg width="9" height="6" viewBox="0 0 9 6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1 1l3.5 3.5L8 1"/></svg></span>
             </button>
           </div>
       <div class="set-row">
         <div class="set-info">
-          <div class="set-name">界面风格</div>
-          <div class="set-desc">默认 / Fluent · 系统云母（Win11 22H2+ 透出系统云母材质；不支持的环境自动回退默认观感）</div>
+          <div class="set-name"><span data-i18n="index.t039">界面风格</span></div>
+          <div class="set-desc"><span data-i18n="index.t040">默认 / Fluent · 系统云母（Win11 22H2+ 透出系统云母材质；不支持的环境自动回退默认观感）</span></div>
         </div>
         <button type="button" class="dd set-dd" id="sel-style">
-          <span class="dd-label">默认</span>
+          <span class="dd-label"><span data-i18n="index.t041">默认</span></span>
           <span class="dd-chev"><svg width="9" height="6" viewBox="0 0 9 6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1 1l3.5 3.5L8 1"/></svg></span>
         </button>
       </div>
       <div class="set-row">
         <div class="set-info">
-          <div class="set-name">代码高亮</div>
-          <div class="set-desc">代码块的配色方案，默认跟随深浅主题</div>
+          <div class="set-name"><span data-i18n="index.t042">代码高亮</span></div>
+          <div class="set-desc"><span data-i18n="index.t043">代码块的配色方案，默认跟随深浅主题</span></div>
         </div>
         <button type="button" class="dd set-dd" id="sel-hl">
-          <span class="dd-label">跟随主题</span>
+          <span class="dd-label"><span data-i18n="index.t044">跟随主题</span></span>
           <span class="dd-chev"><svg width="9" height="6" viewBox="0 0 9 6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1 1l3.5 3.5L8 1"/></svg></span>
         </button>
       </div>
       <div class="set-row">
         <div class="set-info">
-          <div class="set-name">聊天密度</div>
-          <div class="set-desc">聊天区消息间距与留白：紧凑 / 舒适（默认）/ 宽松</div>
+          <div class="set-name"><span data-i18n="index.t045">聊天密度</span></div>
+          <div class="set-desc"><span data-i18n="index.t046">聊天区消息间距与留白：紧凑 / 舒适（默认）/ 宽松</span></div>
         </div>
         <button type="button" class="dd set-dd" id="sel-density">
-          <span class="dd-label">舒适</span>
+          <span class="dd-label"><span data-i18n="index.t047">舒适</span></span>
           <span class="dd-chev"><svg width="9" height="6" viewBox="0 0 9 6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1 1l3.5 3.5L8 1"/></svg></span>
         </button>
       </div>
       <div class="set-row">
         <div class="set-info">
-          <div class="set-name">气泡风格</div>
-          <div class="set-desc">文档流（默认，AI 回复无框平铺）/ 气泡卡片（AI 回复包进卡片，配壁纸时可读性更好）</div>
+          <div class="set-name"><span data-i18n="index.t048">气泡风格</span></div>
+          <div class="set-desc"><span data-i18n="index.t049">文档流（默认，AI 回复无框平铺）/ 气泡卡片（AI 回复包进卡片，配壁纸时可读性更好）</span></div>
         </div>
         <button type="button" class="dd set-dd" id="sel-msgstyle">
-          <span class="dd-label">文档流</span>
+          <span class="dd-label"><span data-i18n="index.t050">文档流</span></span>
           <span class="dd-chev"><svg width="9" height="6" viewBox="0 0 9 6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1 1l3.5 3.5L8 1"/></svg></span>
         </button>
       </div>
       <div class="set-row">
         <div class="set-info">
-          <div class="set-name">禅模式</div>
-          <div class="set-desc">隐藏侧栏专注对话，快捷键 Ctrl+Alt+Z；侧栏隐藏时把鼠标移到屏幕左缘可临时唤出</div>
+          <div class="set-name"><span data-i18n="index.t051">禅模式</span></div>
+          <div class="set-desc"><span data-i18n="index.t052">隐藏侧栏专注对话，快捷键 Ctrl+Alt+Z；侧栏隐藏时把鼠标移到屏幕左缘可临时唤出</span></div>
         </div>
         <button type="button" class="dd set-dd" id="sel-zen">
-          <span class="dd-label">关</span>
+          <span class="dd-label"><span data-i18n="index.t053">关</span></span>
           <span class="dd-chev"><svg width="9" height="6" viewBox="0 0 9 6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1 1l3.5 3.5L8 1"/></svg></span>
         </button>
       </div>
       <div class="set-row">
         <div class="set-info">
-          <div class="set-name">强调色取自壁纸</div>
-          <div class="set-desc">开启后从壁纸自动提取主色作强调色，忽略下方手动选色（需先上传壁纸）</div>
+          <div class="set-name"><span data-i18n="index.t054">强调色取自壁纸</span></div>
+          <div class="set-desc"><span data-i18n="index.t055">开启后从壁纸自动提取主色作强调色，忽略下方手动选色（需先上传壁纸）</span></div>
         </div>
         <label class="prov-switch"><input type="checkbox" id="accent-auto-chk"><span class="track"></span></label>
       </div>
       <div class="set-row">
         <div class="set-info">
-          <div class="set-name">背景图片</div>
-          <div class="set-desc">自定义壁纸（PNG/JPEG/WebP，限 20MB）</div>
+          <div class="set-name"><span data-i18n="index.t056">背景图片</span></div>
+          <div class="set-desc"><span data-i18n="index.t057">自定义壁纸（PNG/JPEG/WebP，限 20MB）</span></div>
         </div>
-        <button type="button" class="icon-act" id="btn-bg-upload">上传图片</button>
-        <button type="button" class="icon-act" id="btn-bg-clear">清除</button>
+        <button type="button" class="icon-act" id="btn-bg-upload"><span data-i18n="index.t058">上传图片</span></button>
+        <button type="button" class="icon-act" id="btn-bg-clear"><span data-i18n="index.t059">清除</span></button>
         <input type="file" id="bg-file" accept="image/png,image/jpeg,image/webp" hidden>
       </div>
       <div class="set-row">
         <div class="set-info">
-          <div class="set-name">壁纸亮度</div>
-          <div class="set-desc">压暗层强度：50 为默认观感，调高更亮、调低更暗（仅开启壁纸后生效）</div>
+          <div class="set-name"><span data-i18n="index.t060">壁纸亮度</span></div>
+          <div class="set-desc"><span data-i18n="index.t061">压暗层强度：50 为默认观感，调高更亮、调低更暗（仅开启壁纸后生效）</span></div>
         </div>
-        <input type="range" id="bg-bright" min="0" max="100" step="1" value="50" aria-label="壁纸亮度">
+        <input type="range" id="bg-bright" min="0" max="100" step="1" value="50" aria-label="壁纸亮度" data-i18n-aria-label="index.attr011">
         <span class="bg-bright-val" id="bg-bright-val">50</span>
       </div>
       <div class="set-row">
         <div class="set-info">
-          <div class="set-name">界面字号</div>
-          <div class="set-desc">整体界面文字大小，像素值 10–24，默认 14，清空恢复默认</div>
+          <div class="set-name"><span data-i18n="index.t062">界面字号</span></div>
+          <div class="set-desc"><span data-i18n="index.t063">整体界面文字大小，像素值 10–24，默认 14，清空恢复默认</span></div>
         </div>
         <input id="fs-ui-input" class="hex-input num-input" spellcheck="false" inputmode="decimal" placeholder="14" maxlength="5">
       </div>
       <div class="set-row">
         <div class="set-info">
-          <div class="set-name">聊天内容字号</div>
-          <div class="set-desc">聊天消息（含代码块）的文字大小，像素值 10–24，默认 14，清空恢复默认，独立于界面字号</div>
+          <div class="set-name"><span data-i18n="index.t064">聊天内容字号</span></div>
+          <div class="set-desc"><span data-i18n="index.t065">聊天消息（含代码块）的文字大小，像素值 10–24，默认 14，清空恢复默认，独立于界面字号</span></div>
         </div>
         <input id="fs-code-input" class="hex-input num-input" spellcheck="false" inputmode="decimal" placeholder="14" maxlength="5">
       </div>
       <div class="set-row">
         <div class="set-info">
-          <div class="set-name">强调颜色</div>
-          <div class="set-desc">填写 16 进制色值（如 #8b80f9），输入即时生效</div>
+          <div class="set-name"><span data-i18n="index.t066">强调颜色</span></div>
+          <div class="set-desc"><span data-i18n="index.t067">填写 16 进制色值（如 #8b80f9），输入即时生效</span></div>
         </div>
         <input type="color" id="accent-color-picker">
         <button type="button" class="accent-swatch" id="accent-swatch" data-tip="点击选色"></button>
@@ -450,62 +450,62 @@
       </div>
       <div class="set-row">
         <div class="set-info">
-          <div class="set-name">应用图标</div>
-          <div class="set-desc">替换侧栏与消息头像的标志；PNG/JPEG/WebP，建议 256×256（限 384KB）</div>
+          <div class="set-name"><span data-i18n="index.t068">应用图标</span></div>
+          <div class="set-desc"><span data-i18n="index.t069">替换侧栏与消息头像的标志；PNG/JPEG/WebP，建议 256×256（限 384KB）</span></div>
         </div>
         <img id="icon-preview" src="/api/icon" alt="">
-        <button type="button" class="icon-act" id="btn-icon-upload">上传图片</button>
-        <button type="button" class="icon-act" id="btn-icon-reset">恢复默认</button>
+        <button type="button" class="icon-act" id="btn-icon-upload"><span data-i18n="index.t070">上传图片</span></button>
+        <button type="button" class="icon-act" id="btn-icon-reset"><span data-i18n="index.t071">恢复默认</span></button>
         <input type="file" id="icon-file" accept="image/png,image/jpeg,image/webp" hidden>
       </div>
       </div>
       <div class="sp-section-body" data-section="notify" style="display:none">
-        <div class="sp-section">通知</div>
-        <div class="sp-section-desc">一轮任务结束时提醒你；提示音由浏览器现场合成，桌面通知在窗口最小化或切到别的会话时才会弹出</div>
+        <div class="sp-section"><span data-i18n="index.t072">通知</span></div>
+        <div class="sp-section-desc"><span data-i18n="index.t073">一轮任务结束时提醒你；提示音由浏览器现场合成，桌面通知在窗口最小化或切到别的会话时才会弹出</span></div>
         <div class="set-row">
           <div class="set-info">
-            <div class="set-name">完成提示音</div>
-            <div class="set-desc">任务结束时播放一声短促的双音提示（手动停止不响）</div>
+            <div class="set-name"><span data-i18n="index.t074">完成提示音</span></div>
+            <div class="set-desc"><span data-i18n="index.t075">任务结束时播放一声短促的双音提示（手动停止不响）</span></div>
           </div>
           <button type="button" class="dd set-dd" id="sel-notify-sound">
-            <span class="dd-label">开启</span>
+            <span class="dd-label"><span data-i18n="index.t076">开启</span></span>
             <span class="dd-chev"><svg width="9" height="6" viewBox="0 0 9 6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1 1l3.5 3.5L8 1"/></svg></span>
           </button>
         </div>
         <div class="set-row">
           <div class="set-info">
-            <div class="set-name">桌面通知</div>
-            <div class="set-desc">任务结束时弹系统通知，点击可跳回对应会话；首次开启需允许浏览器通知权限</div>
+            <div class="set-name"><span data-i18n="index.t077">桌面通知</span></div>
+            <div class="set-desc"><span data-i18n="index.t078">任务结束时弹系统通知，点击可跳回对应会话；首次开启需允许浏览器通知权限</span></div>
           </div>
           <button type="button" class="dd set-dd" id="sel-notify-desktop">
-            <span class="dd-label">开启</span>
+            <span class="dd-label"><span data-i18n="index.t079">开启</span></span>
             <span class="dd-chev"><svg width="9" height="6" viewBox="0 0 9 6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1 1l3.5 3.5L8 1"/></svg></span>
           </button>
-          <button type="button" class="icon-act" id="btn-notify-test">测试</button>
+          <button type="button" class="icon-act" id="btn-notify-test"><span data-i18n="index.t080">测试</span></button>
         </div>
       </div>
       <div class="sp-section-body" data-section="pets" style="display:none">
-        <div class="sp-section">桌宠</div>
-        <div class="sp-section-desc">桌面悬浮小窗，实时反映任务状态；兼容 Codex 宠物格式（pet.json + spritesheet 图集），把宠物文件夹放进下方目录即可识别，无需重启</div>
+        <div class="sp-section"><span data-i18n="index.t081">桌宠</span></div>
+        <div class="sp-section-desc"><span data-i18n="index.t082">桌面悬浮小窗，实时反映任务状态；兼容 Codex 宠物格式（pet.json + spritesheet 图集），把宠物文件夹放进下方目录即可识别，无需重启</span></div>
         <div class="set-row">
           <div class="set-info">
-            <div class="set-name">桌宠开关</div>
-            <div class="set-desc">召唤或收起桌宠；按住宠物即可拖动，点击打招呼</div>
+            <div class="set-name"><span data-i18n="index.t083">桌宠开关</span></div>
+            <div class="set-desc"><span data-i18n="index.t084">召唤或收起桌宠；按住宠物即可拖动，点击打招呼</span></div>
           </div>
-          <button type="button" class="icon-act" id="btn-pet-summon">召唤桌宠</button>
+          <button type="button" class="icon-act" id="btn-pet-summon"><span data-i18n="index.t085">召唤桌宠</span></button>
         </div>
         <div class="set-row">
           <div class="set-info">
-            <div class="set-name">宠物大小</div>
-            <div class="set-desc">调整桌宠悬浮窗的整体缩放，50%–200%；召唤中的宠物立即生效，重开后保持</div>
+            <div class="set-name"><span data-i18n="index.t086">宠物大小</span></div>
+            <div class="set-desc"><span data-i18n="index.t087">调整桌宠悬浮窗的整体缩放，50%–200%；召唤中的宠物立即生效，重开后保持</span></div>
           </div>
-          <input type="range" id="pet-size" min="50" max="200" step="5" value="100" aria-label="宠物大小">
+          <input type="range" id="pet-size" min="50" max="200" step="5" value="100" aria-label="宠物大小" data-i18n-aria-label="index.attr012">
           <span class="bg-bright-val" id="pet-size-val">100%</span>
         </div>
         <div class="set-row">
           <div class="set-info">
-            <div class="set-name">AI 互动</div>
-            <div class="set-desc">打工时由模型周期冒一句趣味点评（用下方桌宠模型，省 token）；悬浮输入框派任务/点歌走完整会话（桌宠模型+工具），不受此开关影响</div>
+            <div class="set-name"><span data-i18n="index.t088">AI 互动</span></div>
+            <div class="set-desc"><span data-i18n="index.t089">打工时由模型周期冒一句趣味点评（用下方桌宠模型，省 token）；悬浮输入框派任务/点歌走完整会话（桌宠模型+工具），不受此开关影响</span></div>
           </div>
           <label class="prov-switch">
             <input type="checkbox" id="pet-ai-chatter">
@@ -514,173 +514,173 @@
         </div>
         <div class="set-row">
           <div class="set-info">
-            <div class="set-name">桌宠模型</div>
-            <div class="set-desc">驱动桌宠周期点评与悬浮输入框任务的模型，可选便宜的小模型；留空跟随全局模型</div>
+            <div class="set-name"><span data-i18n="index.t090">桌宠模型</span></div>
+            <div class="set-desc"><span data-i18n="index.t091">驱动桌宠周期点评与悬浮输入框任务的模型，可选便宜的小模型；留空跟随全局模型</span></div>
           </div>
           <button type="button" class="dd set-dd" id="sel-pet-model">
-            <span class="dd-label">跟随全局模型</span>
+            <span class="dd-label"><span data-i18n="index.t092">跟随全局模型</span></span>
             <span class="dd-chev"><svg width="9" height="6" viewBox="0 0 9 6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1 1l3.5 3.5L8 1"/></svg></span>
           </button>
         </div>
         <div class="set-row pet-set-col">
           <div class="set-info">
-            <div class="set-name">宠物列表</div>
-            <div class="set-desc" id="pet-dir">扫描安装目录与 ~/.codex/pets 中的宠物</div>
+            <div class="set-name"><span data-i18n="index.t093">宠物列表</span></div>
+            <div class="set-desc" id="pet-dir"><span data-i18n="index.t094">扫描安装目录与 ~/.codex/pets 中的宠物</span></div>
           </div>
-          <button type="button" class="icon-act" id="btn-pet-rescan" title="重新扫描宠物目录">刷新</button>
-          <button type="button" class="icon-act" id="btn-pet-dir">打开目录</button>
+          <button type="button" class="icon-act" id="btn-pet-rescan" title="重新扫描宠物目录" data-i18n-title="index.attr013"><span data-i18n="index.t095">刷新</span></button>
+          <button type="button" class="icon-act" id="btn-pet-dir"><span data-i18n="index.t096">打开目录</span></button>
           <div class="pet-picker" id="pet-picker"></div>
         </div>
       </div>
       <div class="sp-section-body" data-section="models" style="display:none">
-        <div class="sp-section">模型</div>
-        <div class="sp-section-desc">管理 API 供应商与模型列表；改动停顿后自动保存，立即可在会话中切换</div>
+        <div class="sp-section"><span data-i18n="index.t097">模型</span></div>
+        <div class="sp-section-desc"><span data-i18n="index.t098">管理 API 供应商与模型列表；改动停顿后自动保存，立即可在会话中切换</span></div>
         <div class="prov-layout">
           <aside class="prov-side">
             <div id="prov-list"></div>
-            <button type="button" id="btn-add-provider" class="prov-side-add">＋ 添加供应商</button>
+            <button type="button" id="btn-add-provider" class="prov-side-add"><span data-i18n="index.t099">＋ 添加供应商</span></button>
           </aside>
           <div class="prov-main" id="prov-detail"></div>
         </div>
         <div class="prov-actions">
           <span id="prov-save-status" class="prov-save-status" aria-live="polite"></span>
         </div>
-        <div class="al-sub">辅助模型（自动起名、摘要、看图等后台任务）</div>
-        <div class="sp-section-desc">会话自动起名、长对话自动压缩成摘要、跨会话记忆整理、图片转述——这些后台任务默认也在用你的主力对话模型。这里可以指定一个更便宜的模型专门干这些活——省钱，且不影响对话本身；不配置就跟主模型。注意选带视觉能力的模型：主模型不吃图片时（部分纯文本部署会直接拒图），会把图交给辅助模型转述成文字再继续；配了纯文本模型这条救场通道就不可用。改动停顿后自动保存，立即生效</div>
+        <div class="al-sub"><span data-i18n="index.t100">辅助模型（自动起名、摘要、看图等后台任务）</span></div>
+        <div class="sp-section-desc"><span data-i18n="index.t101">会话自动起名、长对话自动压缩成摘要、跨会话记忆整理、图片转述——这些后台任务默认也在用你的主力对话模型。这里可以指定一个更便宜的模型专门干这些活——省钱，且不影响对话本身；不配置就跟主模型。注意选带视觉能力的模型：主模型不吃图片时（部分纯文本部署会直接拒图），会把图交给辅助模型转述成文字再继续；配了纯文本模型这条救场通道就不可用。改动停顿后自动保存，立即生效</span></div>
         <div class="al-add-row">
           <!-- mem-cat-dd: 与记忆分区分类下拉同款边框样式（app.css 设置页分区） -->
-          <button type="button" class="dd set-dd mem-cat-dd" id="ut-provider" aria-label="辅助模型供应商">
-            <span class="dd-label">不使用（跟主模型）</span>
+          <button type="button" class="dd set-dd mem-cat-dd" id="ut-provider" aria-label="辅助模型供应商" data-i18n-aria-label="index.attr014">
+            <span class="dd-label"><span data-i18n="index.t102">不使用（跟主模型）</span></span>
             <span class="dd-chev"><svg width="9" height="6" viewBox="0 0 9 6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1 1l3.5 3.5L8 1"/></svg></span>
           </button>
-          <input id="ut-model" class="hex-input txt-input" spellcheck="false" placeholder="跟主模型" maxlength="100" style="flex: none; width: 300px;">
+          <input id="ut-model" class="hex-input txt-input" spellcheck="false" placeholder="跟主模型" data-i18n-placeholder="index.attr015" maxlength="100" style="flex: none; width: 300px;">
         </div>
         <span id="ut-status" class="prov-save-status" aria-live="polite"></span>
-        <div class="al-sub">子代理模型（执行层分层）</div>
-        <div class="sp-section-desc">派出去的子代理默认跟主对话用同一个模型。这里可以指定一个更便宜的模型专职执行——主对话继续用强模型做诊断与规划，子代理用便宜模型干活，省执行成本且不牺牲决策质量；不配置就跟主对话模型。改动停顿后自动保存，对下一次派发生效</div>
+        <div class="al-sub"><span data-i18n="index.t103">子代理模型（执行层分层）</span></div>
+        <div class="sp-section-desc"><span data-i18n="index.t104">派出去的子代理默认跟主对话用同一个模型。这里可以指定一个更便宜的模型专职执行——主对话继续用强模型做诊断与规划，子代理用便宜模型干活，省执行成本且不牺牲决策质量；不配置就跟主对话模型。改动停顿后自动保存，对下一次派发生效</span></div>
         <div class="al-add-row">
-          <button type="button" class="dd set-dd mem-cat-dd" id="wk-provider" aria-label="子代理模型供应商">
-            <span class="dd-label">不使用（跟主对话模型）</span>
+          <button type="button" class="dd set-dd mem-cat-dd" id="wk-provider" aria-label="子代理模型供应商" data-i18n-aria-label="index.attr016">
+            <span class="dd-label"><span data-i18n="index.t105">不使用（跟主对话模型）</span></span>
             <span class="dd-chev"><svg width="9" height="6" viewBox="0 0 9 6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1 1l3.5 3.5L8 1"/></svg></span>
           </button>
-          <input id="wk-model" class="hex-input txt-input" spellcheck="false" placeholder="跟主对话模型" maxlength="100" style="flex: none; width: 300px;">
+          <input id="wk-model" class="hex-input txt-input" spellcheck="false" placeholder="跟主对话模型" data-i18n-placeholder="index.attr017" maxlength="100" style="flex: none; width: 300px;">
         </div>
         <span id="wk-status" class="prov-save-status" aria-live="polite"></span>
       </div>
       <div class="sp-section-body" data-section="behavior" style="display:none">
-        <div class="sp-section">行为</div>
-        <div class="sp-section-desc">控制单轮任务循环的运行参数与命令权限</div>
+        <div class="sp-section"><span data-i18n="index.t106">行为</span></div>
+        <div class="sp-section-desc"><span data-i18n="index.t107">控制单轮任务循环的运行参数与命令权限</span></div>
         <div class="set-row">
           <div class="set-info">
-            <div class="set-name">每轮最大迭代次数</div>
-            <div class="set-desc">单轮任务里模型连续调用工具的次数上限，达到后提前收束本轮；1–10000，默认 128，对新会话生效</div>
+            <div class="set-name"><span data-i18n="index.t108">每轮最大迭代次数</span></div>
+            <div class="set-desc"><span data-i18n="index.t109">单轮任务里模型连续调用工具的次数上限，达到后提前收束本轮；1–10000，默认 128，对新会话生效</span></div>
           </div>
           <input id="set-max-iter" class="hex-input num-input" spellcheck="false" inputmode="numeric" placeholder="128" maxlength="5">
         </div>
-        <div class="al-sub">浏览器可见性</div>
-        <div class="sp-section-desc">AI 用内置浏览器实测网页时是否显示真实浏览器窗口，以及每个动作之间的延迟（毫秒）。开可见、加延迟适合演示与录屏——能看清 AI 在点哪里；日常用保持关闭 + 0 毫秒最快。改完对新打开的浏览器生效（说"关掉浏览器"再试即可）</div>
+        <div class="al-sub"><span data-i18n="index.t110">浏览器可见性</span></div>
+        <div class="sp-section-desc"><span data-i18n="index.t111">AI 用内置浏览器实测网页时是否显示真实浏览器窗口，以及每个动作之间的延迟（毫秒）。开可见、加延迟适合演示与录屏——能看清 AI 在点哪里；日常用保持关闭 + 0 毫秒最快。改完对新打开的浏览器生效（说"关掉浏览器"再试即可）</span></div>
         <div class="set-row">
           <div class="set-info">
-            <div class="set-name">显示浏览器窗口</div>
-            <div class="set-desc">关闭 = 后台隐身运行（默认）；开启 = 弹出真实 Chromium 窗口</div>
+            <div class="set-name"><span data-i18n="index.t112">显示浏览器窗口</span></div>
+            <div class="set-desc"><span data-i18n="index.t113">关闭 = 后台隐身运行（默认）；开启 = 弹出真实 Chromium 窗口</span></div>
           </div>
           <label class="prov-switch"><input type="checkbox" id="set-browser-headed"><span class="track"></span></label>
         </div>
         <div class="set-row">
           <div class="set-info">
-            <div class="set-name">动作间隔延迟（毫秒）</div>
-            <div class="set-desc">每次点击/输入之间的停顿，0–10000；演示建议 200–500</div>
+            <div class="set-name"><span data-i18n="index.t114">动作间隔延迟（毫秒）</span></div>
+            <div class="set-desc"><span data-i18n="index.t115">每次点击/输入之间的停顿，0–10000；演示建议 200–500</span></div>
           </div>
           <input id="set-browser-slowmo" class="hex-input num-input" spellcheck="false" inputmode="numeric" placeholder="0" maxlength="5">
         </div>
-        <div class="al-sub">命令白名单</div>
-        <div class="sp-section-desc">匹配规则的 shell 命令不再弹权限确认，直接执行。规则按词序前缀匹配（如 "git push" 命中 "git push origin main"）；组合命令里每一段"命中规则或属于只读探查"即可放行，带命令替换或写文件重定向的段永远不命中。保存后立即对所有会话生效</div>
+        <div class="al-sub"><span data-i18n="index.t116">命令白名单</span></div>
+        <div class="sp-section-desc"><span data-i18n="index.t117">匹配规则的 shell 命令不再弹权限确认，直接执行。规则按词序前缀匹配（如 "git push" 命中 "git push origin main"）；组合命令里每一段"命中规则或属于只读探查"即可放行，带命令替换或写文件重定向的段永远不命中。保存后立即对所有会话生效</span></div>
         <div class="al-add-row">
-          <input id="al-rule-input" class="hex-input txt-input" spellcheck="false" placeholder="例如: uv run pytest" maxlength="200">
-          <button type="button" id="btn-al-add" class="icon-act">添加规则</button>
+          <input id="al-rule-input" class="hex-input txt-input" spellcheck="false" placeholder="例如: uv run pytest" data-i18n-placeholder="index.attr018" maxlength="200">
+          <button type="button" id="btn-al-add" class="icon-act"><span data-i18n="index.t118">添加规则</span></button>
         </div>
         <div id="al-rule-list" class="al-rule-list"></div>
-        <div class="al-sub">命令拒绝清单</div>
-        <div class="sp-section-desc">任一命令段命中这里的前缀即直接拒绝，优先于白名单与所有放行路径——用来表达例外：白名单放行 "git push" 的同时在这里加 "git push --force" 拦住强推。保存后立即对所有会话生效</div>
+        <div class="al-sub"><span data-i18n="index.t119">命令拒绝清单</span></div>
+        <div class="sp-section-desc"><span data-i18n="index.t120">任一命令段命中这里的前缀即直接拒绝，优先于白名单与所有放行路径——用来表达例外：白名单放行 "git push" 的同时在这里加 "git push --force" 拦住强推。保存后立即对所有会话生效</span></div>
         <div class="al-add-row">
-          <input id="dl-rule-input" class="hex-input txt-input" spellcheck="false" placeholder="例如: git push --force" maxlength="200">
-          <button type="button" id="btn-dl-add" class="icon-act">添加规则</button>
+          <input id="dl-rule-input" class="hex-input txt-input" spellcheck="false" placeholder="例如: git push --force" data-i18n-placeholder="index.attr019" maxlength="200">
+          <button type="button" id="btn-dl-add" class="icon-act"><span data-i18n="index.t121">添加规则</span></button>
         </div>
         <div id="dl-rule-list" class="al-rule-list"></div>
-        <div class="al-sub">敏感路径</div>
-        <div class="sp-section-desc">写入这些路径（或被 rm/mv 等命令点名）时任何权限模式都会强制弹确认，白名单也不能豁免。内置已覆盖 .git、~/.ssh、shell 配置与本应用配置；这里可以加项目里的 secrets/、.env.production 等。相对路径按会话工作目录解析。保存后立即对所有会话生效</div>
+        <div class="al-sub"><span data-i18n="index.t122">敏感路径</span></div>
+        <div class="sp-section-desc"><span data-i18n="index.t123">写入这些路径（或被 rm/mv 等命令点名）时任何权限模式都会强制弹确认，白名单也不能豁免。内置已覆盖 .git、~/.ssh、shell 配置与本应用配置；这里可以加项目里的 secrets/、.env.production 等。相对路径按会话工作目录解析。保存后立即对所有会话生效</span></div>
         <div class="al-add-row">
-          <input id="sp-path-input" class="hex-input txt-input" spellcheck="false" placeholder="例如: secrets 或 .env.production" maxlength="400">
-          <button type="button" id="btn-sp-add" class="icon-act">添加路径</button>
+          <input id="sp-path-input" class="hex-input txt-input" spellcheck="false" placeholder="例如: secrets 或 .env.production" data-i18n-placeholder="index.attr020" maxlength="400">
+          <button type="button" id="btn-sp-add" class="icon-act"><span data-i18n="index.t124">添加路径</span></button>
         </div>
         <div id="sp-path-list" class="al-rule-list"></div>
       </div>
       <div class="sp-section-body" data-section="mcp" style="display:none">
-        <div class="sp-section">MCP 服务器</div>
-        <div class="sp-section-desc">配置 MCP（Model Context Protocol）服务器，外部工具以 mcp__服务器__工具 的形式接入对话；改动停顿后自动保存并热生效，无需重启</div>
+        <div class="sp-section"><span data-i18n="index.t125">MCP 服务器</span></div>
+        <div class="sp-section-desc"><span data-i18n="index.t126">配置 MCP（Model Context Protocol）服务器，外部工具以 mcp__服务器__工具 的形式接入对话；改动停顿后自动保存并热生效，无需重启</span></div>
         <div class="prov-layout">
           <aside class="prov-side">
             <div id="mcp-list"></div>
-            <button type="button" id="btn-add-mcp" class="prov-side-add">＋ 添加服务器</button>
+            <button type="button" id="btn-add-mcp" class="prov-side-add"><span data-i18n="index.t127">＋ 添加服务器</span></button>
           </aside>
           <div class="prov-main" id="mcp-detail"></div>
         </div>
         <div class="prov-actions">
           <span id="mcp-save-status" class="prov-save-status" aria-live="polite"></span>
-          <button type="button" class="icon-act" id="btn-mcp-reload">重连全部</button>
+          <button type="button" class="icon-act" id="btn-mcp-reload"><span data-i18n="index.t128">重连全部</span></button>
         </div>
       </div>
       <div class="sp-section-body" data-section="skills" style="display:none">
         <div class="sp-section">Skills</div>
-        <div class="sp-section-desc">技能包是一份 SKILL.md（可捆绑脚本/模板），任务匹配时模型自动读取并遵循。项目级技能放在 &lt;项目&gt;/.claude/skills/&lt;名称&gt;/，随仓库走；这里安装的是用户级技能（~/.aulos/skills/），装完即时生效，无需重启</div>
+        <div class="sp-section-desc"><span data-i18n="index.t129">技能包是一份 SKILL.md（可捆绑脚本/模板），任务匹配时模型自动读取并遵循。项目级技能放在 &lt;项目&gt;/.claude/skills/&lt;名称&gt;/，随仓库走；这里安装的是用户级技能（~/.aulos/skills/），装完即时生效，无需重启</span></div>
         <div class="skill-install-row">
-          <input id="skill-repo-input" class="hex-input txt-input" spellcheck="false" placeholder="GitHub 仓库，如 anthropics/skills 或完整 URL" maxlength="300">
-          <input id="skill-subpath-input" class="hex-input skill-subpath txt-input" spellcheck="false" placeholder="子目录（可选）" maxlength="200">
-          <label class="skill-overwrite"><input type="checkbox" id="skill-overwrite-chk">覆盖同名</label>
-          <button type="button" id="btn-skill-install" class="icon-act">安装</button>
+          <input id="skill-repo-input" class="hex-input txt-input" spellcheck="false" placeholder="GitHub 仓库，如 anthropics/skills 或完整 URL" data-i18n-placeholder="index.attr021" maxlength="300">
+          <input id="skill-subpath-input" class="hex-input skill-subpath txt-input" spellcheck="false" placeholder="子目录（可选）" data-i18n-placeholder="index.attr022" maxlength="200">
+          <label class="skill-overwrite"><input type="checkbox" id="skill-overwrite-chk"><span data-i18n="index.t130">覆盖同名</span></label>
+          <button type="button" id="btn-skill-install" class="icon-act"><span data-i18n="index.t131">安装</span></button>
         </div>
         <div id="skill-install-status" class="prov-save-status" aria-live="polite"></div>
         <div id="skill-list"></div>
       </div>
       <div class="sp-section-body" data-section="memory" style="display:none">
-        <div class="sp-section">记忆</div>
-        <div class="sp-section-desc">Agent 在对话中自动沉淀的用户画像与长期事实，跨会话注入系统提示——它因此更懂你。这里添加的条目标记为"用户"来源，不会被自动淘汰；其余条目由 Agent 维护（写入时可在对话流里看到）</div>
+        <div class="sp-section"><span data-i18n="index.t132">记忆</span></div>
+        <div class="sp-section-desc"><span data-i18n="index.t133">Agent 在对话中自动沉淀的用户画像与长期事实，跨会话注入系统提示——它因此更懂你。这里添加的条目标记为"用户"来源，不会被自动淘汰；其余条目由 Agent 维护（写入时可在对话流里看到）</span></div>
         <div class="al-add-row">
-          <textarea id="mem-input" class="hex-input txt-input mem-input" rows="1" spellcheck="false" placeholder="添加一条记忆，例如: 偏好简洁的回复风格（Enter 发送，Shift+Enter 换行）" maxlength="500"></textarea>
+          <textarea id="mem-input" class="hex-input txt-input mem-input" rows="1" spellcheck="false" placeholder="添加一条记忆，例如: 偏好简洁的回复风格（Enter 发送，Shift+Enter 换行）" data-i18n-placeholder="index.attr023" maxlength="500"></textarea>
           <button type="button" class="dd set-dd mem-cat-dd" id="mem-category">
-            <span class="dd-label">事实</span>
+            <span class="dd-label"><span data-i18n="index.t134">事实</span></span>
             <span class="dd-chev"><svg width="9" height="6" viewBox="0 0 9 6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1 1l3.5 3.5L8 1"/></svg></span>
           </button>
-          <button type="button" id="btn-mem-add" class="icon-act">添加</button>
+          <button type="button" id="btn-mem-add" class="icon-act"><span data-i18n="index.t135">添加</span></button>
         </div>
         <div id="mem-list" class="al-rule-list"></div>
         <div id="mem-evict-note" class="sp-section-desc" style="display:none"></div>
       </div>
       <div class="sp-section-body" data-section="config" style="display:none">
-        <div class="sp-section">配置文件</div>
-        <div class="sp-section-desc">所有用户级设置都存在这一个文件里（含模型供应商）；手动修改后需重启服务生效</div>
+        <div class="sp-section"><span data-i18n="index.t136">配置文件</span></div>
+        <div class="sp-section-desc"><span data-i18n="index.t137">所有用户级设置都存在这一个文件里（含模型供应商）；手动修改后需重启服务生效</span></div>
         <div class="set-row">
           <div class="set-info">
             <div class="set-name">settings.json</div>
-            <div class="set-desc">路径 ~/.aulos/settings.json</div>
+            <div class="set-desc"><span data-i18n="index.t138">路径 ~/.aulos/settings.json</span></div>
           </div>
-          <button type="button" class="icon-act" id="btn-open-config">打开文件</button>
+          <button type="button" class="icon-act" id="btn-open-config"><span data-i18n="index.t139">打开文件</span></button>
         </div>
       </div>
       <div class="sp-section-body" data-section="about" style="display:none">
-        <div class="sp-section">关于</div>
-        <div class="sp-section-desc">Aulos 桌面版支持应用内自动更新：检查到新版本后可后台下载（不耽误使用），下载完成后确认安装并自动重启</div>
+        <div class="sp-section"><span data-i18n="index.t140">关于</span></div>
+        <div class="sp-section-desc"><span data-i18n="index.t141">Aulos 桌面版支持应用内自动更新：检查到新版本后可后台下载（不耽误使用），下载完成后确认安装并自动重启</span></div>
         <div class="set-row">
           <div class="set-info">
-            <div class="set-name">当前版本</div>
+            <div class="set-name"><span data-i18n="index.t142">当前版本</span></div>
             <div class="set-desc" id="about-version">…</div>
           </div>
-          <button type="button" class="icon-act" id="btn-about-check" hidden>检查更新</button>
+          <button type="button" class="icon-act" id="btn-about-check" hidden><span data-i18n="index.t143">检查更新</span></button>
         </div>
         <div class="set-row">
           <div class="set-info">
-            <div class="set-name">更新状态</div>
-            <div class="set-desc" id="about-update-status">未检查</div>
+            <div class="set-name"><span data-i18n="index.t144">更新状态</span></div>
+            <div class="set-desc" id="about-update-status"><span data-i18n="index.t145">未检查</span></div>
           </div>
         </div>
       </div>
@@ -694,10 +694,10 @@
 
 <div id="music-panel" hidden>
   <div class="mp-tabs">
-    <button data-tab="fav" class="on">收藏</button>
-    <button data-tab="mine">我的歌单</button>
-    <button data-tab="search">搜索</button>
-    <button data-tab="queue">播放列表</button>
+    <button data-tab="fav" class="on"><span data-i18n="index.t146">收藏</span></button>
+    <button data-tab="mine"><span data-i18n="index.t147">我的歌单</span></button>
+    <button data-tab="search"><span data-i18n="index.t148">搜索</span></button>
+    <button data-tab="queue"><span data-i18n="index.t149">播放列表</span></button>
     <button id="music-close" data-tip="收起">
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
     </button>
@@ -708,13 +708,13 @@
     <div class="mp-search-row">
       <div class="mp-src-btns" id="music-src-btns">
         <span class="mp-src-slider" id="music-src-slider"></span>
-        <button data-src="netease" class="on"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>网易云</button>
-        <button data-src="bili"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="15" rx="2"/><path d="M17 2l-5 5-5-5"/></svg>B站</button>
+        <button data-src="netease" class="on"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg><span data-i18n="index.t150">网易云</span></button>
+        <button data-src="bili"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="15" rx="2"/><path d="M17 2l-5 5-5-5"/></svg><span data-i18n="index.t151">B站</span></button>
       </div>
       <div class="mp-input-wrap">
         <span class="mp-search-ico" aria-hidden="true"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M16.5 16.5L21 21"/></svg></span>
-        <input id="music-search-input" type="text" placeholder="搜歌名 / 歌手，回车搜索" spellcheck="false" autocomplete="off">
-        <button id="music-search-clear" type="button" aria-label="清空搜索"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+        <input id="music-search-input" type="text" placeholder="搜歌名 / 歌手，回车搜索" data-i18n-placeholder="index.attr024" spellcheck="false" autocomplete="off">
+        <button id="music-search-clear" type="button" aria-label="清空搜索" data-i18n-aria-label="index.attr025"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
       </div>
     </div>
     <div class="mp-search-results" id="music-search-results"></div>
@@ -734,12 +734,12 @@
 
 <!-- 工作目录选择器（草稿态） -->
 <div id="dir-pop">
-  <div class="dir-title">选择工作目录</div>
+  <div class="dir-title"><span data-i18n="index.t152">选择工作目录</span></div>
   <div class="dir-path-row">
     <button class="icon-btn" id="dir-up" data-tip="上一级">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5.5 11.5L12 5l6.5 6.5"/></svg>
     </button>
-    <input id="dir-path-input" spellcheck="false" placeholder="输入目录路径，回车跳转">
+    <input id="dir-path-input" spellcheck="false" placeholder="输入目录路径，回车跳转" data-i18n-placeholder="index.attr026">
     <button class="icon-btn" id="dir-go" data-tip="转到">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
     </button>
@@ -747,7 +747,7 @@
   <div id="dir-list"></div>
   <div class="dir-err" id="dir-err"></div>
   <div class="dir-actions">
-    <button id="dir-pick">使用此目录</button>
+    <button id="dir-pick"><span data-i18n="index.t153">使用此目录</span></button>
   </div>
 </div>
 
@@ -770,7 +770,7 @@
 <script src="/static/settings-extras.js?v=20261010a" defer></script>
 <script src="/static/bubbles.js?v=20261010a" defer></script>
 <script src="/static/msg-extras.js?v=20261010a" defer></script>
-<script src="/static/ws-handlers.js?v=20261019b" defer></script>
+<script src="/static/ws-handlers.js?v=20261020a" defer></script>
 <script src="/static/sidebar.js?v=20261010a" defer></script>
 <script src="/static/settings-page.js?v=20261010a" defer></script>
 <script src="/static/desktop.js?v=20261011a" defer></script>

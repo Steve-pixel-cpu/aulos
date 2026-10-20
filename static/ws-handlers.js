@@ -47,7 +47,7 @@ function handleServerMessage(msg, sid) {
   // （见 server 的 user 分支）, turn_interrupting/turn_started 到达即收口 UI——
   // 计划卡与右侧面板按钮定格"已过期", 正文淡化。前后台会话都要收口。
   if (run && (msg.type === "turn_interrupting" || msg.type === "turn_started")) {
-    expirePlanCard(run, sid, "已过期 · 继续对话后重新规划");
+    expirePlanCard(run, sid, t("ws_handlers.001"));
   }
   // WS 建连时的服务端 busy 快照校正（前台/后台都要）: 本地 busy 的唯一清除
   // 途径是 turn_done/error, 服务进程死亡丢掉收尾事件后本地永远忙碌——
@@ -203,27 +203,27 @@ const ICON_TODO = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" s
 // 与下方"等待子代理"等普通工具行的图标位对齐
 const ICON_BOT = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="8" width="14" height="11" rx="2.5"/><path d="M12 8V5.5"/><circle cx="12" cy="4" r="1.2"/><path d="M9.2 13v1.6M14.8 13v1.6"/></svg>';
 const TOOL_META = {
-  bash:       { label: "终端",     icon: ICON_TERM },
-  powershell: { label: "终端",     icon: ICON_TERM },
-  read_file:  { label: "读取文件", icon: ICON_FILE },
-  write_file: { label: "写入文件", icon: ICON_EDIT },
-  present_plan: { label: "实施计划", icon: ICON_MODE_PLAN },
-  todo: { label: "任务清单", icon: ICON_TODO },
-  grep: { label: "搜索内容", icon: ICON_SEARCH },
-  glob: { label: "查找文件", icon: ICON_GLOB },
-  agent_tool:  { label: "子智能体",   icon: ICON_BOT },
-  agent_status:{ label: "子代理状态", icon: ICON_BOT },
-  agent_wait:  { label: "等待子代理", icon: ICON_BOT },
-  agent_reap:  { label: "收割子代理", icon: ICON_BOT },
-  agent_list:  { label: "子代理列表", icon: ICON_BOT },
+  bash:       { label: t("ws_handlers.002"),     icon: ICON_TERM },
+  powershell: { label: t("ws_handlers.003"),     icon: ICON_TERM },
+  read_file:  { label: t("ws_handlers.004"), icon: ICON_FILE },
+  write_file: { label: t("ws_handlers.005"), icon: ICON_EDIT },
+  present_plan: { label: t("ws_handlers.006"), icon: ICON_MODE_PLAN },
+  todo: { label: t("ws_handlers.007"), icon: ICON_TODO },
+  grep: { label: t("ws_handlers.008"), icon: ICON_SEARCH },
+  glob: { label: t("ws_handlers.009"), icon: ICON_GLOB },
+  agent_tool:  { label: t("ws_handlers.010"),   icon: ICON_BOT },
+  agent_status:{ label: t("ws_handlers.011"), icon: ICON_BOT },
+  agent_wait:  { label: t("ws_handlers.012"), icon: ICON_BOT },
+  agent_reap:  { label: t("ws_handlers.013"), icon: ICON_BOT },
+  agent_list:  { label: t("ws_handlers.014"), icon: ICON_BOT },
 };
 
 function fmtDuration(ms) {
   const s = ms / 1000;
-  if (s < 1) return "不到 1 秒";
-  if (s < 60) return Math.round(s) + " 秒";
+  if (s < 1) return t("ws_handlers.015");
+  if (s < 60) return Math.round(s) + t("ws_handlers.016");
   const m = Math.floor(s / 60), r = Math.round(s % 60);
-  return r ? `${m} 分 ${r} 秒` : `${m} 分钟`;
+  return r ? t("ws_handlers.017", { p0: m, p1: r }) : t("ws_handlers.018", { p0: m });
 }
 
 function onThinkingStart(msg, sid) {
@@ -239,7 +239,7 @@ function onThinkingStart(msg, sid) {
   const div = document.createElement("div");
   div.className = "think-row thinking";
   div.innerHTML = '<span class="t-ico">' + ICON_MIND + '</span>' +
-    '<span class="shine">思考中…</span>';
+    t("ws_handlers.019");
   colOf(sid).appendChild(div);
   if (active) syncThinkingIndicator();   // 思考行之后才归位转圈: 顺序反了转圈会压在思考行上面
   run.curThinking = { el: div, t0: Date.now() };
@@ -311,11 +311,11 @@ function onThinkingEnd(msg, sid) {
     ? Date.now() - cur.t0 : msg.duration_ms;
   const rlMs = run.rlDelayMs || 0;
   run.rlDelayMs = 0;
-  const suffix = rlMs > 0 ? '（含限流重试 ' + fmtDuration(rlMs) + '）' : '';
+  const suffix = rlMs > 0 ? t("ws_handlers.020") + fmtDuration(rlMs) + t("ws_handlers.021") : '';
   dropThinkingLive(cur);   // 实时滚动行随思考结束一起撤下
   cur.el.classList.remove("thinking");
   cur.el.innerHTML = '<span class="t-ico">' + ICON_MIND + '</span>' +
-    '<span>思考 · 持续了 ' + fmtDuration(ms) + suffix + '</span>';
+    t("ws_handlers.022") + fmtDuration(ms) + suffix + '</span>';
   run.curThinking = null;
   run.lastThinkRow = cur.el;
   absorbThinkRowIntoToolGroup(cur.el);
@@ -348,7 +348,7 @@ function beginOptimisticThinking(run, sid, col) {
   const div = document.createElement("div");
   div.className = "think-row thinking";
   div.innerHTML = '<span class="t-ico">' + ICON_MIND + '</span>' +
-    '<span class="shine">思考中…</span>';
+    t("ws_handlers.023");
   col.appendChild(div);
   run.curThinking = { el: div, t0: Date.now(), optimistic: true };
   run.lastThinkRow = div;   // 打断「已停止」与轮次收口兜底都走 lastThinkRow, 复用既有逻辑
@@ -393,7 +393,7 @@ function updateToolGroupHeader(group) {
   group.classList.toggle("running", run > 0);
   if (run > 0) {
     const done = rows.length - run;
-    sum.textContent = rows.length === 1 ? "运行中…" : "运行中 " + done + "/" + rows.length + "…";
+    sum.textContent = rows.length === 1 ? t("ws_handlers.024") : t("ws_handlers.025") + done + "/" + rows.length + "…";
     sum.className = "tg-sum run";
   } else {
     /* 摘要 = 着色粗体计数文本(成功绿/需注意橙), 无符号无容器。
@@ -424,7 +424,7 @@ function groupForNewToolRow(col) {
     const head = document.createElement("button");
     head.type = "button";
     head.className = "tg-head";
-    head.innerHTML = '<span class="tg-caret">▾</span><span class="tg-title">工具调用</span>' +
+    head.innerHTML = t("ws_handlers.026") +
                      '<span class="tg-sum"></span>';
     head.onclick = () => {
       g.classList.toggle("collapsed");
@@ -467,9 +467,9 @@ function describeInput(raw, name) {  // 卡片标题一行摘要: JSON 先取 co
     if (data && typeof data === "object") {
       if (data.action === "write" && Array.isArray(data.items)) {
         const done = data.items.filter(it => it.status === "completed").length;
-        return data.items.length + " 项 (已完成 " + done + ")";
+        return data.items.length + t("ws_handlers.027") + done + ")";
       }
-      if (data.action === "read") return "读取当前清单";
+      if (data.action === "read") return t("ws_handlers.028");
       if (name === "grep") {
         let s = "/" + String(data.pattern || "") + "/";
         if (data.glob) s += "  ·  " + data.glob;
@@ -532,7 +532,7 @@ function renderDiffPanel(row, diffText, meta) {
   head.className = "td-head";
   head.innerHTML =
     '<span class="td-caret">▸</span>' +
-    '<span class="td-sum">' + (meta && meta.created ? "新建文件" : "变更") + '</span>' +
+    '<span class="td-sum">' + (meta && meta.created ? t("ws_handlers.029") : t("ws_handlers.030")) + '</span>' +
     '<span class="td-add">+' + add + '</span><span class="td-del">-' + del + '</span>';
   const body = document.createElement("div");
   body.className = "td-body";
@@ -563,8 +563,8 @@ function setToolState(row, kind) {
   row.dataset.state = kind;
   const st = row.querySelector(".tstate");
   st.className = "tstate " + kind;
-  st.textContent = { run: "运行中", ok: "已完成", err: "出错",
-                     denied: "已拒绝", stopped: "已中断" }[kind] || kind;
+  st.textContent = { run: t("ws_handlers.031"), ok: t("ws_handlers.032"), err: t("ws_handlers.033"),
+                     denied: t("ws_handlers.034"), stopped: t("ws_handlers.035") }[kind] || kind;
   // 耗时小字: 结果闭合那一刻起算。过短（<100ms，历史回放/同 tick 闭合）不显示,
   // 避免整列 "0.0s" 噪音; 悬空收口的行没有 _t0 也不显示
   const dur = row.querySelector(".t-dur");
@@ -585,13 +585,22 @@ function setToolState(row, kind) {
       runEl.remove();
       const none = document.createElement("div");
       none.className = "tt-none";
-      none.textContent = "（无输出）";
+      none.textContent = t("ws_handlers.036");
       term.appendChild(none);
     }
   }
 }
 
 function completeToolCard(row, { is_error, denied, result_meta, output }) {
+  // agent_tool 收口升级: spawn 回执里带 agent_id 即把工具卡升级成
+  // 子智能体卡（点击开侧栏、吞掉回执原文）。此前升级只发生在实时
+  // subagent_started 事件路径——历史回放（刷新/切回旧会话）与 started
+  // 丢失的时序永远不升级, 回执原文整段露成代码块（2026-10-20 回归
+  // 现场）。is_error 不升级: 错误回执保留原文供排障。
+  if (row.dataset.tool === "agent_tool" && !row._saAgentId && !is_error && !denied) {
+    const m = /agent_id:\s*([A-Za-z0-9_-]+)/.exec(String(output || ""));
+    if (m) upgradeToSubagentCard(row, m[1]);
+  }
   if (denied) {
     setToolState(row, "denied");
   } else if (is_error) {
@@ -669,7 +678,7 @@ function renderOutputPanel(row, outputText) {
       term.appendChild(outEl);
     }
     outEl.className = out.hasOut ? "tt-out" : "tt-none";
-    outEl.textContent = out.hasOut ? out.text : "（无输出）";
+    outEl.textContent = out.hasOut ? out.text : t("ws_handlers.037");
   }
   wireTermToggle(row);
 }
@@ -682,7 +691,7 @@ function prepOutput(outputText) {
   let cut = false;
   if (text.length > OUTPUT_PANEL_MAX) {
     text = text.slice(0, OUTPUT_PANEL_MAX) +
-      "\n\n[... 已截断, 共 " + text.length + " 字符; 完整输出见上下文]";
+      t("ws_handlers.038") + text.length + t("ws_handlers.039");
     cut = true;
   }
   if (!cut && OUT_TRUNCATED_RE.test(raw)) cut = true;
@@ -699,13 +708,13 @@ function appendTermMeta(row, out) {
   if (out.cut) {
     const c = document.createElement("span");
     c.className = "t-cut";
-    c.textContent = "已截断";
+    c.textContent = t("ws_handlers.040");
     meta.appendChild(c);
   }
   if (out.lineCount > 15) {
     const l = document.createElement("span");
     l.className = "t-loc";
-    l.textContent = out.lineCount + " 行";
+    l.textContent = out.lineCount + t("ws_handlers.041");
     meta.appendChild(l);
   }
   if (meta.childNodes.length) row.appendChild(meta);
@@ -755,7 +764,7 @@ function primeTerminalBlock(row) {
   term.appendChild(buildTermCmdEl(cmd));
   const runEl = document.createElement("div");
   runEl.className = "tt-run";
-  runEl.textContent = "运行中…";
+  runEl.textContent = t("ws_handlers.042");
   term.appendChild(runEl);
   row.insertAdjacentElement("afterend", term);
   wireTermToggle(row);
@@ -810,7 +819,7 @@ function onToolUseStarted(msg, sid) {
   flushAssistantBubble(run);
   dropOptimisticThinking(run);
   const card = addToolCard({ id: msg.id, name: msg.name, input: "" }, colOf(sid));
-  card.querySelector(".tdesc").textContent = "接收参数中…";
+  card.querySelector(".tdesc").textContent = t("ws_handlers.043");
   if (msg.id) run.liveToolCards[msg.id] = card;
   run.activeToolCard = card;
 }
@@ -851,7 +860,7 @@ function onToolResult(msg, sid) {
   // 不重播旧歌, 刷新页面不会凭空响起来。
   if (msg.result_meta && msg.result_meta.music && !msg.is_error) {
     const ok = window.aulosMusicPlay && window.aulosMusicPlay(msg.result_meta.music);
-    if (!ok) toast("电台没接住点播指令, 点侧栏 ♫ 手动播吧");
+    if (!ok) toast(t("ws_handlers.044"));
   }
   if (msg.plan_rejected) {
     // 计划被拒: 计划卡已渲染拒绝态, 不补失败工具卡。但 tool_use_started
@@ -905,7 +914,7 @@ function onToolResult(msg, sid) {
  * 切会话显隐只作用于顶层 .msg-col, 嵌套列不受影响。
  * ============================================================ */
 const SUB_TYPE_LABEL = {
-  explore: "探索", plan: "规划", general: "通用", verification: "验证",
+  explore: t("ws_handlers.045"), plan: t("ws_handlers.046"), general: t("ws_handlers.047"), verification: t("ws_handlers.048"),
 };
 
 function saColOf(card) {
@@ -1048,7 +1057,9 @@ function syncSaPanelForActiveSession() {
 }
 
 /* agent_tool 工具卡 → 子智能体卡片升级: 建 head/body/stream 结构,
- * 登记 agent_id 路由。历史回放等无后续事件的场景保持原工具卡样子。 */
+ * 登记 agent_id 路由。入口有二: 实时 subagent_started 事件（onSubagentStarted,
+ * 时序最早）; completeToolCard 的 spawn 回执收口（历史回放 / started 丢失的
+ * 兜底, 2026-10-20 前回放场景永不升级、回执原文整段外显）。 */
 function setSaDesc(card, zh, descText) {
   // 描述两段式: 类型词强调色可点（开侧栏）, 描述正文弱色跟随
   const desc = card.querySelector(".tdesc");
@@ -1096,7 +1107,11 @@ function upgradeToSubagentCard(card, agentId) {
     if (_saOpenAgent === agentId) { closeSaPanel(); return; }
     openSaPanel(agentId);
   };
-  registerSubagentCard(runOf(state.sessionId), agentId, card);
+  // 登记进正确的 run: 实时事件用当前会话; 历史回放（分片渲染期间
+  // pinnedRun 置位）必须登记进被回放会话的 run——后台会话回放时
+  // state.sessionId 是别的会话, 路由表写错桶的话 subagent_event/done
+  // 按 agent_id 找不到卡, 侧栏选项卡也数不到它。
+  registerSubagentCard(pinnedRun || runOf(state.sessionId), agentId, card);
 }
 
 function registerSubagentCard(run, agentId, card) {
@@ -1224,7 +1239,7 @@ function addSaTaskBubble(text, col) {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "sa-task-expand";
-    btn.innerHTML = CHEVRON_SVG + "<span>展开</span>";
+    btn.innerHTML = CHEVRON_SVG + t("ws_handlers.049");
     let open = false;
     btn.addEventListener("click", ev => {
       ev.stopPropagation();
@@ -1232,7 +1247,7 @@ function addSaTaskBubble(text, col) {
       msgEl.classList.toggle("sa-task-open", open);
       btn.classList.toggle("open", open);
       uText.style.maxHeight = open ? "none" : SA_TASK_FOLD_MAX + "px";
-      btn.querySelector("span").textContent = open ? "收起" : "展开";
+      btn.querySelector("span").textContent = open ? t("ws_handlers.050") : t("ws_handlers.051");
     });
     bubble.appendChild(fade);
     bubble.appendChild(btn);
@@ -1257,11 +1272,11 @@ function onSubagentDone(msg, sid) {
   // 子代理卡用语沿用"已完成/失败"(通用工具是"出错"): 只覆写显示文本,
   // dataset.state/组头计数已由 setToolState 正确翻转
   const stEl = card.querySelector(".tstate");
-  if (stEl) stEl.textContent = ok ? "已完成" : "失败";
+  if (stEl) stEl.textContent = ok ? t("ws_handlers.052") : t("ws_handlers.053");
   if (typeof msg.duration_s === "number") {
     const dur = card.querySelector(".t-dur");
     if (dur) dur.textContent = msg.duration_s >= 1
-      ? Math.round(msg.duration_s) + " 秒" : "不到 1 秒";
+      ? Math.round(msg.duration_s) + t("ws_handlers.054") : t("ws_handlers.055");
   }
   const desc = card.querySelector(".tdesc");
   if (desc && !ok && msg.error) {
@@ -1385,7 +1400,7 @@ function buildAlwaysAllowBtn(requestId, sid, input) {
   btn.className = "pr-btn always";
   btn.innerHTML = ICON_PRM_OK;
   const txt = document.createElement("span");
-  txt.textContent = rule ? `总是允许"${rule} …"` : "总是允许";
+  txt.textContent = rule ? t("ws_handlers.056", { p0: rule }) : t("ws_handlers.057");
   btn.appendChild(txt);
   btn.onclick = async function () {
     if (!permRequestPending(requestId, sid)) return;
@@ -1402,11 +1417,11 @@ function buildAlwaysAllowBtn(requestId, sid, input) {
       }
       const data = await r.json();
       respondPermission(requestId, true, sid);
-      toast(`已加白名单并允许: ${(data.rules || []).slice(-1)[0] || rule}`);
+      toast(t("ws_handlers.058", { p0: (data.rules || []).slice(-1)[0] || rule }));
       if (typeof renderAllowlistSettings === "function") renderAllowlistSettings();
     } catch (e) {
       btn.disabled = false;
-      toast("加白名单失败: " + e.message);
+      toast(t("ws_handlers.059") + e.message);
     }
   };
   return btn;
@@ -1421,7 +1436,7 @@ function buildSessionAllowBtn(requestId, sid, input) {
   btn.className = "pr-btn session";
   btn.innerHTML = ICON_PRM_OK;
   const txt = document.createElement("span");
-  txt.textContent = rule ? `本会话允许"${rule} …"` : "本会话允许";
+  txt.textContent = rule ? t("ws_handlers.060", { p0: rule }) : t("ws_handlers.061");
   btn.appendChild(txt);
   btn.onclick = async function () {
     if (!permRequestPending(requestId, sid)) return;
@@ -1437,10 +1452,10 @@ function buildSessionAllowBtn(requestId, sid, input) {
         throw new Error(err.detail || r.status);
       }
       respondPermission(requestId, true, sid);
-      toast(`本会话内不再询问: ${rule || "该命令"}`);
+      toast(t("ws_handlers.062", { p0: rule || "该命令" }));
     } catch (e) {
       btn.disabled = false;
-      toast("会话规则写入失败: " + e.message);
+      toast(t("ws_handlers.063") + e.message);
     }
   };
   return btn;
@@ -1471,7 +1486,7 @@ function buildRememberDirBtn(requestId, sid, input) {
   btn.className = "pr-btn always";
   btn.innerHTML = ICON_PRM_OK;
   const txt = document.createElement("span");
-  txt.textContent = dir ? `允许并记住 ${dir}` : "允许并记住该目录";
+  txt.textContent = dir ? t("ws_handlers.064", { p0: dir }) : t("ws_handlers.065");
   btn.appendChild(txt);
   btn.onclick = async function () {
     if (!permRequestPending(requestId, sid)) return;
@@ -1488,10 +1503,10 @@ function buildRememberDirBtn(requestId, sid, input) {
         throw new Error(err.detail || r.status);
       }
       respondPermission(requestId, true, sid);
-      toast(`已记住目录, 之后写该目录不再询问: ${dir}`);
+      toast(t("ws_handlers.066", { p0: dir }));
     } catch (e) {
       btn.disabled = false;
-      toast("记住目录失败: " + e.message);
+      toast(t("ws_handlers.067") + e.message);
     }
   };
   return btn;
@@ -1529,11 +1544,11 @@ function onPermissionRequest(msg, sid) {
   title.textContent = meta.label;
   const hint = document.createElement("span");
   hint.className = "pr-hint";
-  hint.innerHTML = '<i class="pr-dot"></i>等待确认';
+  hint.innerHTML = t("ws_handlers.068");
   head.appendChild(ico); head.appendChild(title); head.appendChild(hint);
   row.appendChild(head);
 
-  const body = describeInput(msg.input, msg.name) || "(无参数)";
+  const body = describeInput(msg.input, msg.name) || t("ws_handlers.069");
   const cmd = document.createElement("div");
   cmd.className = "pr-cmd";
   cmd.textContent = body;
@@ -1547,7 +1562,7 @@ function onPermissionRequest(msg, sid) {
     row.appendChild(why);
   }
 
-  row.appendChild(buildPermChoices(msg.request_id, sid2, "允许", "拒绝"));
+  row.appendChild(buildPermChoices(msg.request_id, sid2, t("ws_handlers.070"), t("ws_handlers.071")));
   // shell 命令审批卡追加记忆按钮: "总是允许"入全局白名单（落盘）,
   // "本会话允许"只写会话级规则（会话结束失效）——同类命令不再逐条问
   if (msg.tool_name === "bash" || msg.tool_name === "powershell") {
@@ -1606,9 +1621,9 @@ function showPlanInPanel(reqId, sid, planText) {
   actions.innerHTML = "";
   actions.dataset.reqId = reqId;
   actions.dataset.reqSession = sid;   // 面板归属: 批复/收口只认这个会话
-  actions.appendChild(buildPermChoices(reqId, sid, "批准并实施", "拒绝"));
+  actions.appendChild(buildPermChoices(reqId, sid, t("ws_handlers.072"), t("ws_handlers.073")));
   const s = state.sessions.find(x => x.id === sid);
-  $("plan-title").textContent = "实施计划" + (s ? " · " + displayTitle(s) : "");
+  $("plan-title").textContent = t("ws_handlers.074") + (s ? " · " + displayTitle(s) : "");
   pane.classList.add("plan-open");
 }
 
@@ -1641,11 +1656,11 @@ function renderPlanCard(msg, sid2, run) {
   const head = document.createElement("div");
   head.className = "plan-head";
   head.innerHTML = '<span class="pr-ico">' + ICON_MODE_PLAN + '</span>' +
-    '<span class="plan-title">实施计划</span>' +
-    '<span class="pr-hint"><i class="pr-dot"></i>等待确认' +
-    (active ? "（已在右侧面板打开）" : "") + '</span>';
+    t("ws_handlers.075") +
+    t("ws_handlers.076") +
+    (active ? t("ws_handlers.077") : "") + '</span>';
   card.appendChild(head);
-  card.appendChild(buildPermChoices(msg.request_id, sid2, "批准并实施", "拒绝"));
+  card.appendChild(buildPermChoices(msg.request_id, sid2, t("ws_handlers.078"), t("ws_handlers.079")));
   colOf(sid2).appendChild(card);
   if (active) scrollToBottom();
 }
@@ -1659,8 +1674,8 @@ $("plan-copy").onclick = async () => {
   if (!_planSource) return;
   await copyText(_planSource);
   const btn = $("plan-copy");
-  btn.innerHTML = CHECK_SVG + "<span>已复制</span>";
-  setTimeout(() => { btn.innerHTML = COPY_SVG + "<span>复制</span>"; }, 1400);
+  btn.innerHTML = CHECK_SVG + t("ws_handlers.080");
+  setTimeout(() => { btn.innerHTML = COPY_SVG + t("ws_handlers.081"); }, 1400);
 };
 
 /* 计划过期收口: 用户不批计划而是继续发消息追加需求, 或轮次已收口时,
@@ -1707,8 +1722,8 @@ function markPermResolved(sid, requestId, approved) {
     card.querySelectorAll(".pr-btn").forEach(b => b.remove());
     card.appendChild(makePrMark(
       approved
-        ? (card.classList.contains("plan-card") ? "已批准 · 开始实施" : "已允许")
-        : "已拒绝",
+        ? (card.classList.contains("plan-card") ? t("ws_handlers.082") : t("ws_handlers.083"))
+        : t("ws_handlers.084"),
       approved));
   };
   colOf(sid).querySelectorAll(
@@ -1720,7 +1735,7 @@ function markPermResolved(sid, requestId, approved) {
   if (pa.dataset.reqId === requestId && pa.dataset.reqSession === sid
       && !pa.querySelector(".pr-mark")) {
     pa.innerHTML = "";
-    pa.appendChild(makePrMark(approved ? "已批准 · 开始实施" : "已拒绝", approved));
+    pa.appendChild(makePrMark(approved ? t("ws_handlers.085") : t("ws_handlers.086"), approved));
   }
   renderSessionList();   // 批复即重绘: 侧栏"待批计划"徽标立刻熄灭（本地批复与广播共用此口）
 }
@@ -1749,7 +1764,7 @@ function settlePendingPermsOnTurnEnd(run, sid) {
       if (choices) choices.remove();
       // 同 markPermResolved: 记忆类按钮一并摘除, 防定格后仍可点出副作用
       card.querySelectorAll(".pr-btn").forEach(b => b.remove());
-      card.appendChild(makePrMark("已拒绝", false));
+      card.appendChild(makePrMark(t("ws_handlers.087"), false));
     }
     // 右侧计划面板若正显示这份计划（且属于本会话）: 按钮区一并定格, 不留死按钮
     if (run.pendingPerms[rid]?.tool_name === "present_plan"
@@ -1757,7 +1772,7 @@ function settlePendingPermsOnTurnEnd(run, sid) {
         && $("plan-actions").dataset.reqSession === sid) {
       const pa = $("plan-actions");
       pa.innerHTML = "";
-      pa.appendChild(makePrMark("已中断", false));
+      pa.appendChild(makePrMark(t("ws_handlers.088"), false));
       $("plan-body").classList.add("stale");
     }
   }
@@ -1802,7 +1817,7 @@ function endTurnUiReset() {
 }
 
 function onTurnQueued(msg) {
-  addNoteBubble("warn", `并发已满（上限 ${msg.max_concurrent} 轮），等前面的轮次结束后自动开始`);
+  addNoteBubble("warn", t("ws_handlers.089", { p0: msg.max_concurrent }));
 }
 
 function onAwaitOutput(msg, sid) {
@@ -1895,11 +1910,11 @@ function addUsageNote(usage) {
   const cin = fmtTokens(usage.cache_creation_input_tokens);
   const cred = fmtTokens(usage.cache_read_input_tokens);
   const inp = fmtTokens(usage.input_tokens);
-  if (inp) parts.push("输入 " + inp);
-  if (out) parts.push("输出 " + out);
-  if (cin) parts.push("缓存写 " + cin);
-  if (cred) parts.push("缓存读 " + cred);
-  addNoteBubble("usage", "本轮 token · " + parts.join(" · "));
+  if (inp) parts.push(t("ws_handlers.090") + inp);
+  if (out) parts.push(t("ws_handlers.091") + out);
+  if (cin) parts.push(t("ws_handlers.092") + cin);
+  if (cred) parts.push(t("ws_handlers.093") + cred);
+  addNoteBubble("usage", t("ws_handlers.094") + parts.join(" · "));
 }
 
 /* 「已停止」终态标签: 挂在本轮思考行的胶囊里; 本轮没思考过（工具/正文
@@ -1915,12 +1930,12 @@ function markStoppedTag(run, sid) {
   if (row && row.isConnected) {
     el = document.createElement("span");
     el.className = "t-stopped";
-    el.textContent = "已停止";
+    el.textContent = t("ws_handlers.095");
     row.appendChild(el);
   } else {
     el = document.createElement("div");
     el.className = "note stopped";
-    el.textContent = "已停止";
+    el.textContent = t("ws_handlers.096");
     colOf(sid).appendChild(el);
   }
   run.stoppedTagEl = el;
@@ -1953,7 +1968,7 @@ function onTurnDone(msg) {
     addUsageNote(msg.usage);
     if (!msg.interrupted && msg.budget_exhausted) addBudgetNote(msg.usage);
     else if (!msg.interrupted && msg.iterations_exhausted) {
-      addNoteBubble("warn", `已达单轮最大迭代次数（${msg.iterations} 次调用），已提前收束本轮`);
+      addNoteBubble("warn", t("ws_handlers.097", { p0: msg.iterations }));
     }
   }
   // 刷新侧栏标题/消息数，标题可能被自动命名更新
@@ -1967,13 +1982,13 @@ function addBudgetNote(usage) {
   const div = document.createElement("div");
   div.className = "note warn";
   const out = usage && usage.output_tokens ? fmtTokens(usage.output_tokens) : "";
-  div.textContent = "⚠ 本轮输出 token 预算已用尽"
-    + (out ? `（累计输出 ${out}，可调大 turnTokenBudget）` : "") + "，已提前收束本轮";
+  div.textContent = t("ws_handlers.098")
+    + (out ? t("ws_handlers.099", { p0: out }) : "") + t("ws_handlers.100");
   const btn = document.createElement("button");
   btn.type = "button";
   btn.className = "note-act";
-  btn.textContent = "继续";
-  btn.onclick = () => { btn.disabled = true; sendFixedText("继续"); };
+  btn.textContent = t("ws_handlers.101");
+  btn.onclick = () => { btn.disabled = true; sendFixedText(t("ws_handlers.102")); };
   div.appendChild(btn);
   msgCol().appendChild(div);
   scrollToBottom();
@@ -1984,7 +1999,7 @@ function addBudgetNote(usage) {
 function sendFixedText(text) {
   const run = curRun();
   if (!run || !run.ws || run.ws.readyState !== 1) {
-    toast("连接未就绪，请手动发送「继续」");
+    toast(t("ws_handlers.103"));
     return;
   }
   addUserBubble(text, []);
@@ -2014,7 +2029,7 @@ function onError(msg) {
   endTurnUiReset();
   const run = curRun();
   if (run) run.stopping = false;   // 错误也是权威收口: 停止窗口旗一并清零
-  addNoteBubble("err", msg.message || "未知错误");
+  addNoteBubble("err", msg.message || t("ws_handlers.104"));
 }
 
 function addNoteBubble(kind, text) {
@@ -2035,8 +2050,8 @@ function isCompactNotice(text) { return text.startsWith(COMPACT_MARK); }
 function addCompactNotice(col, live) {
   const div = document.createElement("div");
   div.className = "note compact-note";
-  div.textContent = (live ? "本轮已自动压缩上下文" : "此处之前的上下文已压缩")
-    + "（摘要仅供模型使用，完整对话记录不受影响）";
+  div.textContent = (live ? t("ws_handlers.105") : t("ws_handlers.106"))
+    + t("ws_handlers.107");
   (col || msgCol()).appendChild(div);
   scrollToBottom();
 }
@@ -2062,7 +2077,7 @@ function onRateLimitedRetry(msg, sid) {
     run.rlNote = el;
   }
   el.textContent =
-    `⚠ 触发限流，${Math.round(msg.delay_s)} 秒后进行第 ${msg.attempt}/${msg.max_retries} 次重试…`;
+    t("ws_handlers.108", { p0: Math.round(msg.delay_s), p1: msg.attempt, p2: msg.max_retries });
   if (sid === state.sessionId) scrollToBottom();
 }
 
@@ -2102,7 +2117,7 @@ function onTurnInterrupting(msg, sid) {
     colOf(sid).appendChild(el);
     run.rlNote = el;
   }
-  el.textContent = "正在中断当前轮，模型输出/命令收束后即停止…";
+  el.textContent = t("ws_handlers.109");
   if (sid === state.sessionId) scrollToBottom();
 }
 
@@ -2122,12 +2137,12 @@ function updateSendBtn() {
   const btn = $("btn-send");
   const stop = !hasText && !hasAttach && busy;
   btn.dataset.mode = stop ? "stop" : "send";
-  btn.dataset.tip = stop ? "中断对话" : "发送";
+  btn.dataset.tip = stop ? t("ws_handlers.110") : t("ws_handlers.111");
 }
 function setBusyUi(busy) {
   // 草稿态没有"前序"可修改: 占位符提示描述任务; 忙碌态对齐 Claude.ai: 提示可以直接继续排队
-  $("input").placeholder = state.draft ? "描述你的任务，附文件也行…"
-    : busy ? "继续输入以排队后续修改" : "提出后续修改要求";
+  $("input").placeholder = state.draft ? t("ws_handlers.112")
+    : busy ? t("ws_handlers.113") : t("ws_handlers.114");
   updateSendBtn();
 }
 
@@ -2147,7 +2162,7 @@ function syncThinkingIndicator() {
   if (!el) {   // 节点不在静态 HTML 里, 惰性创建后挪到当前会话消息列末尾
     el = document.createElement("div");
     el.id = "thinking";
-    el.innerHTML = '<span class="spin"></span><span class="t">工作中…</span>';
+    el.innerHTML = t("ws_handlers.115");
   }
   const run = curRun();
   const show = !!(run && run.busy);
@@ -2203,7 +2218,7 @@ async function sendCurrent() {
       state.draftDir = firstWorkdir || null;
       state.draftMode = draftMode;
       state.draftPlan = draftPlan;
-      toast("创建会话失败: " + e.message);
+      toast(t("ws_handlers.116") + e.message);
       return;
     }
   }
@@ -2241,7 +2256,7 @@ async function sendCurrent() {
     autoGrow(input);
     saveCurrentInput();          // 已发送: 清空本会话的输入草稿
     updateSendBtn();             // 输入已清空: 圆钮切回"停止"形态, 随时可中断
-    expirePlanCard(pr, sid, "已过期 · 继续对话后重新规划");
+    expirePlanCard(pr, sid, t("ws_handlers.117"));
     sendWs({ type: "user", text, attachments, qid }, sid);
     return;
   }
