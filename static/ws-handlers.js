@@ -1143,9 +1143,11 @@ function onSubagentStarted(msg, sid) {
   // started 已带全量描述, 工具卡描述不再等 tool_use 事件来补
   setSaDesc(card, SUB_TYPE_LABEL[msg.subagent_type] || msg.subagent_type || "",
             msg.description || "");
-  // 被吸收的占位卡等不到自己的 tool_result: 立即置完成收口, 否则
-  // 它挂 run 态拖住工具组头部计数
-  setToolState(card, "ok");
+  // 生命周期状态归 subagent_done 翻转: started 只置"运行中"(从占位卡
+  // 吸收来的卡此前已被 setToolState(run), 兜底新建的也走 run)。
+  // 旧代码在这里就置"ok"——子代理刚开始就被标"已完成", 而 worker
+  // 还在跑、agent_wait 还在等(2026-10-20 现场: 两张卡全绿但仍在执行)。
+  setToolState(card, "run");
   // 面板开着: 新代理立即出现在选项卡里
   if (sid === state.sessionId && _saOpenAgent) saRenderTabs(runOf(sid));
 }
@@ -1242,15 +1244,19 @@ function onSubagentDone(msg, sid) {
   card.classList.add(ok ? "sa-done-ok" : "sa-done-err");
   const spin = card.querySelector(".sa-spin");
   if (spin) spin.remove();
-  const st = card.querySelector(".tstate");
-  if (st) {
-    st.className = "tstate " + (ok ? "ok" : "err");
-    st.textContent = ok ? "已完成" : "失败";
-    if (typeof msg.duration_s === "number") {
-      const dur = card.querySelector(".t-dur");
-      if (dur) dur.textContent = msg.duration_s >= 1
-        ? Math.round(msg.duration_s) + " 秒" : "不到 1 秒";
-    }
+  // 状态走 setToolState: dataset.state + .tstate 文本 + 工具组头部计数
+  // 一起翻转(旧代码手改 .tstate, dataset.state 留在 "run", 组头永远
+  // 数着一张运行中的行)。耗时由 done 事件的 duration_s 提供(口径:
+  // spawn 点火起算), 覆盖 _t0 避免与真实执行时长打架。
+  setToolState(card, ok ? "ok" : "err");
+  // 子代理卡用语沿用"已完成/失败"(通用工具是"出错"): 只覆写显示文本,
+  // dataset.state/组头计数已由 setToolState 正确翻转
+  const stEl = card.querySelector(".tstate");
+  if (stEl) stEl.textContent = ok ? "已完成" : "失败";
+  if (typeof msg.duration_s === "number") {
+    const dur = card.querySelector(".t-dur");
+    if (dur) dur.textContent = msg.duration_s >= 1
+      ? Math.round(msg.duration_s) + " 秒" : "不到 1 秒";
   }
   const desc = card.querySelector(".tdesc");
   if (desc && !ok && msg.error) {
