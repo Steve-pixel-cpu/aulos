@@ -1868,7 +1868,14 @@ function syncBrowserVisibilityControls() {
 const utProviderDd = makeDropdown($("ut-provider"), {
   items: [{ value: "", label: "不使用（跟主模型）" }],
   value: "",
-  onChange() { scheduleUtilitySave(); },
+  onChange(v) {
+    // 选"不使用"时 model 无意义（服务端保存时整键丢弃）: 清空 + 锁定,
+    // 避免界面上残留"看着配了实际不生效"的模型名
+    const m = $("ut-model");
+    if (!v) m.value = "";
+    m.disabled = !v;
+    scheduleUtilitySave();
+  },
 });
 async function loadUtilityProvider() {
   try {
@@ -1883,6 +1890,7 @@ function syncUtilityControls() {
   }
   utProviderDd.setItems(items, state.utilityCfg?.provider || "");
   $("ut-model").value = state.utilityCfg?.model || "";
+  $("ut-model").disabled = !state.utilityCfg?.provider;
   renderUtilityStatus();
 }
 function renderUtilityStatus() {
@@ -1936,7 +1944,13 @@ async function saveUtilityProvider() {
 const wkProviderDd = makeDropdown($("wk-provider"), {
   items: [{ value: "", label: "不使用（跟主对话模型）" }],
   value: "",
-  onChange() { scheduleWorkerSave(); },
+  onChange(v) {
+    // 同辅助模型: "不使用"时清空 + 锁定输入框
+    const m = $("wk-model");
+    if (!v) m.value = "";
+    m.disabled = !v;
+    scheduleWorkerSave();
+  },
 });
 async function loadWorkerProvider() {
   try {
@@ -1951,6 +1965,7 @@ function syncWorkerControls() {
   }
   wkProviderDd.setItems(items, state.workerCfg?.provider || "");
   $("wk-model").value = state.workerCfg?.model || "";
+  $("wk-model").disabled = !state.workerCfg?.provider;
   renderWorkerStatus();
 }
 function renderWorkerStatus() {
