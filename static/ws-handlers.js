@@ -621,6 +621,17 @@ function setToolState(row, kind) {
 }
 
 function completeToolCard(row, { is_error, denied, result_meta, output }) {
+  // present_plan 历史计划卡: 只更新状态徽标（拒绝=已拒, 其余=已批）,
+  // 不追加输出面板/不降级——全文重看靠卡片点击（renderHistoryPlanCard）。
+  if (row.dataset.tool === "present_plan") {
+    row.classList.add(denied || is_error ? "denied" : "allowed");
+    const head = row.querySelector(".plan-head");
+    if (head && !head.querySelector(".pl-st")) {
+      head.insertAdjacentHTML("beforeend",
+        planStatusBadge(denied || is_error ? "rejected" : "approved"));
+    }
+    return;
+  }
   // agent_tool 收口升级: spawn 回执里带 agent_id 即把工具卡升级成
   // 子智能体卡（点击开侧栏、吞掉回执原文）。此前升级只发生在实时
   // subagent_started 事件路径——历史回放（刷新/切回旧会话）与 started
@@ -1795,11 +1806,148 @@ function renderPlanCard(msg, sid2, run) {
     (active ? t("ws_handlers.077") : "") + '</span>';
   card.appendChild(head);
   card.appendChild(buildPermChoices(msg.request_id, sid2, t("ws_handlers.078"), t("ws_handlers.079")));
+  attachPlanCardReopen(card, planTextOf(msg.input));
   colOf(sid2).appendChild(card);
   if (active) scrollToBottom();
 }
 
 $("plan-close").onclick = () => $("pane").classList.remove("plan-open");
+
+/* ---------- 历史计划: 像子代理会话一样可再次点开 ----------
+ * 计划弹卡时服务端已持久化（~/.aulos/plans/ + /api/plans 系列）。
+ * 这里提供两个入口: ① 面板头部"历史"按钮 → 跨会话列表 → 点条目看全文;
+ * ② 历史回放/已定格的聊天流计划卡可点击 → 面板重开渲染全文。
+ * 历史计划只读: 面板按钮区隐藏, 不挂审批按钮。 */
+
+function openPlanInPanel(planText, titleSuffix) {
+  const pane = $("pane");
+  const body = $("plan-body");
+  _planSource = planText;
+  body.innerHTML = renderMd(planText);
+  decorateCode(body);
+  decorateTables(body);
+  body.classList.remove("stale");
+  $("plan-actions").innerHTML = "";   // 只读查看: 不挂审批按钮
+  delete $("plan-actions").dataset.reqId;
+  delete $("plan-actions").dataset.reqSession;
+  $("plan-title").textContent = t("ws_handlers.074") + (titleSuffix ? " · " + titleSuffix : "");
+  pane.classList.add("plan-open");
+}
+
+function planStatusBadge(status) {
+  const map = {
+    pending:  ['pl-st-pending',  t("ws_handlers.072")],
+    approved: ['pl-st-approved', t("ws_handlers.085")],
+    rejected: ['pl-st-rejected', t("ws_handlers.086")],
+  };
+  const [cls, label] = map[status] || map.pending;
+  return '<span class="pl-st ' + cls + '">' + label + '</span>';
+}
+
+function fmtPlanTs(ts) {
+  try {
+    const d = new Date(Number(ts));
+    const p = n => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  } catch (e) { return ""; }
+}
+
+let _planHistPrev = "";   // 最近一次从历史打开的全文（返回键恢复用）
+
+async function showPlanHistory() {
+  const body = $("plan-body");
+  let items = [];
+  try {
+    const r = await fetch("/api/plans");
+    if (r.ok) items = await r.json() || [];
+  } catch (e) { /* 接口不可用: 显示空列表, 不炸 */ }
+  _planHistPrev = _planSource;   // 返回时恢复上一份内容
+  body.innerHTML = "";
+  const head = document.createElement("div");
+  head.className = "pl-hist-head";
+  const back = document.createElement("button");
+  back.type = "button";
+  back.className = "pl-hist-back";
+  back.textContent = "← " + t("ws_handlers.074");
+  back.onclick = () => {
+    const prev = _planHistPrev || "";
+    openPlanInPanel(prev, "");
+    if (!prev) $("pane").classList.remove("plan-open");
+  };  head.appendChild(back);
+  body.appendChild(head);
+  const list = document.createElement("div");
+  list.className = "pl-hist-list";
+  if (!items.length) {
+    const none = document.createElement("div");
+    none.className = "pl-hist-empty";
+    none.textContent = "—";
+    list.appendChild(none);
+  }
+  for (const it of items) {
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "pl-hist-item";
+    row.innerHTML = '<div class="pl-hist-meta">' +
+      '<span class="pl-hist-ts">' + fmtPlanTs(it.ts) + '</span>' +
+      planStatusBadge(it.status) +
+      (it.session_id ? '<span class="pl-hist-sid">' + String(it.session_id).slice(0, 8) + '</span>' : '') +
+      '</div><div class="pl-hist-prev"></div>';
+    row.querySelector(".pl-hist-prev").textContent = (it.preview || "").slice(0, 120) || "…";
+    row.onclick = async () => {
+      try {
+        const r = await fetch("/api/plans/" + encodeURIComponent(it.plan_id));
+        if (!r.ok) throw new Error("http " + r.status);
+        const rec = await r.json();
+        _planHistPrev = rec.plan_markdown || "";
+        openPlanInPanel(_planHistPrev, fmtPlanTs(it.ts));
+      } catch (e) { /* 详情拉取失败: 静默, 列表仍在 */ }
+    };
+    list.appendChild(row);
+  }
+  body.appendChild(list);
+  $("plan-actions").innerHTML = "";
+  delete $("plan-actions").dataset.reqId;
+  delete $("plan-actions").dataset.reqSession;
+  $("plan-title").textContent = t("ws_handlers.074") + " · " + t("index.t021b");
+  $("pane").classList.add("plan-open");
+}
+
+$("plan-hist").onclick = () => showPlanHistory();
+
+
+/* 聊天流计划卡: 点击卡片头重开面板看全文。
+ * 只对已决议（allowed/denied）的卡生效——待批卡的面板本来开着且挂着
+ * 审批按钮, 点进只读态会把按钮藏起来造成困惑（终审 Minor #3）。 */
+function attachPlanCardReopen(card, planText) {
+  const head = card.querySelector(".plan-head");
+  if (!head) return;
+  head.addEventListener("click", ev => {
+    if (ev.target.closest("button")) return;   // 按钮照常
+    if (!card.classList.contains("allowed") && !card.classList.contains("denied")
+        && !card.classList.contains("plan-hist")) return;   // 待批卡不进只读态
+    card.classList.add("plan-viewable");
+    openPlanInPanel(planText, "");
+  });
+}
+
+/* 历史回放: present_plan 的 tool_use 块 → 可点击计划卡（不用通用工具卡,
+ * 那种卡只有 input 截断描述、点不开全文）。仍登记 toolResultIndex 以便
+ * 与 tool 角色的结果块配对, completeToolCard 只更新状态徽标。 */
+function renderHistoryPlanCard(block, run) {
+  const card = document.createElement("div");
+  card.className = "plan-card plan-hist";
+  card.dataset.tool = "present_plan";
+  const head = document.createElement("div");
+  head.className = "plan-head";
+  head.innerHTML = '<span class="pr-ico">' + ICON_MODE_PLAN + '</span>' +
+    t("ws_handlers.075") + t("ws_handlers.076") +
+    '<span class="pl-hist-hint">' + t("ws_handlers.074") + '</span>';
+  card.appendChild(head);
+  const planText = planTextOf(
+    typeof block.input === "string" ? block.input : JSON.stringify(block.input || {}));
+  head.addEventListener("click", () => openPlanInPanel(planText, ""));
+  return card;
+}
 
 /* 计划全文复制: 复制 markdown 源文（renderPlanCard 存于 _planSource）,
  * 粘贴到文档/issue 语法结构完好; 按钮短暂显示"已复制"后回弹 */

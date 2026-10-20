@@ -1056,6 +1056,14 @@ function renderHistoryMessage(m) {
         buf.push(renderMd(b.text));
       } else if (b.type === "tool_use") {
         flush();
+        // present_plan 特判: 渲染为可点击计划卡（点开面板看全文）,
+        // 而非只有截断描述的通用工具卡——像子代理会话一样可回看
+        if (b.name === "present_plan") {
+          const card = renderHistoryPlanCard(b, run);
+          colOf(state.sessionId).appendChild(card);
+          run.toolResultIndex[b.id] = card;
+          continue;
+        }
         const card = addToolCard({ id: b.id, name: b.name, input: b.input });
         run.toolResultIndex[b.id] = card;   // 等 tool 角色的结果块配对
       }

@@ -2578,6 +2578,53 @@ body.col-resizing, body.col-resizing * { cursor: col-resize !important; }
   display: flex; align-items: center;
 }
 #plan-close:hover { color: var(--text-1); background: var(--hover, rgba(127,127,127,.14)); }
+/* 历史计划按钮: 与复制钮同族 */
+#plan-hist {
+  display: flex; align-items: center; gap: 5px;
+  border: 1px solid var(--border); background: none; cursor: pointer;
+  color: var(--text-3); padding: 3px 9px; border-radius: 6px;
+  font-size: 12px; font-weight: 500;
+  font-family: inherit;
+  transition: color .12s, border-color .12s, background .12s;
+}
+#plan-hist:hover { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+/* 历史计划列表 */
+.pl-hist-back {
+  border: none; background: none; cursor: pointer; font-family: inherit;
+  color: var(--accent); font-size: 13px; font-weight: 600; padding: 2px 0;
+  margin-bottom: 10px;
+}
+.pl-hist-back:hover { text-decoration: underline; }
+.pl-hist-list { display: flex; flex-direction: column; gap: 8px; }
+.pl-hist-empty { color: var(--text-3); font-size: 13px; text-align: center; padding: 20px 0; }
+.pl-hist-item {
+  text-align: left; cursor: pointer; font-family: inherit;
+  border: 1px solid var(--border); border-radius: 8px;
+  background: none; padding: 9px 12px;
+  transition: border-color .12s, background .12s;
+}
+.pl-hist-item:hover { border-color: var(--accent); background: var(--accent-soft); }
+.pl-hist-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.pl-hist-ts { font-size: 12px; color: var(--text-3); }
+.pl-hist-sid { font-size: 11px; color: var(--text-3); opacity: .7; }
+.pl-hist-prev {
+  font-size: 13px; color: var(--text-2);
+  overflow: hidden; text-overflow: ellipsis; display: -webkit-box;
+  -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+}
+/* 计划状态徽标（列表条目与历史回放计划卡共用） */
+.pl-st {
+  font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 999px;
+  border: 1px solid var(--border); color: var(--text-3); white-space: nowrap;
+}
+.pl-st-approved { color: var(--ok, #3f9b6e); border-color: color-mix(in srgb, var(--ok, #3f9b6e) 45%, var(--border)); }
+.pl-st-rejected { color: var(--err, #c2554f); border-color: color-mix(in srgb, var(--err, #c2554f) 45%, var(--border)); }
+.pl-st-pending  { color: var(--warn, #b8860b); border-color: color-mix(in srgb, var(--warn, #b8860b) 45%, var(--border)); }
+/* 可点击重看的计划卡: 头行手型 + hint 提示 */
+.plan-card.plan-viewable .plan-head { cursor: pointer; }
+.plan-card.plan-viewable .plan-head:hover .pr-title { color: var(--accent); }
+.plan-card .pl-hist-hint { font-size: 11px; color: var(--text-3); font-weight: 400; margin-left: 6px; }
+
 #plan-body {
   flex: 1; overflow-y: auto; min-height: 0;
   padding: 16px 18px; font-size: 14.5px; line-height: 1.75;

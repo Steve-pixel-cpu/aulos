@@ -10,6 +10,8 @@ import json
 import threading
 import time
 
+import pytest
+
 from aulos.permissions import PermissionDecision, PermissionMode, PermissionRequest
 from aulos.server import WebPermissionPrompter
 
@@ -102,3 +104,101 @@ def test_stale_response_ignored_single_resolution():
     resolved = [e for e in events if e.get("type") == "permission_resolved"]
     assert len(resolved) == 1
     assert resolved[0]["request_id"] == "perm-1"
+
+
+# ---------------------------------------------------------------------------
+# present_plan 持久化: 弹卡即存 ~/.aulos/plans/, 决议落地回写状态
+# ---------------------------------------------------------------------------
+
+def _plan_request() -> PermissionRequest:
+    return PermissionRequest(
+        tool_name="present_plan",
+        input=json.dumps({"plan": "# 测试计划\n- 第一步"}),
+        current_mode=PermissionMode.READ_ONLY,
+        required_mode=PermissionMode.WORKSPACE_WRITE)
+
+
+@pytest.fixture()
+def _plan_store(tmp_path, monkeypatch):
+    monkeypatch.setattr("aulos.plans.PLANS_DIR", tmp_path / "plans")
+    return tmp_path / "plans"
+
+
+def test_present_plan_saved_on_request_and_approved_on_allow(_plan_store):
+    import aulos.plans as plans_mod
+    events: list = []
+    prompter = WebPermissionPrompter(emit=events.append, session_id="sess-1")
+    out: dict = {}
+
+    def worker():
+        out["result"] = prompter.decide(_plan_request())
+
+    t = threading.Thread(target=worker, daemon=True)
+    t.start()
+    req = _wait_event(events, "permission_request")
+    assert plans_mod.list_plans() and plans_mod.list_plans()[0]["status"] == "pending"
+    prompter.resolve(req["request_id"], True)
+    t.join(timeout=5)
+    assert out["result"].decision == PermissionDecision.ALLOW
+    items = plans_mod.list_plans()
+    assert len(items) == 1
+    assert items[0]["status"] == "approved"
+    assert items[0]["session_id"] == "sess-1"
+    full = plans_mod.load_plan(items[0]["plan_id"])
+    assert "# 测试计划" in full["plan_markdown"]
+
+
+def test_present_plan_marked_rejected_on_deny(_plan_store):
+    import aulos.plans as plans_mod
+    events: list = []
+    prompter = WebPermissionPrompter(emit=events.append, session_id="sess-1")
+    out: dict = {}
+
+    def worker():
+        out["result"] = prompter.decide(_plan_request())
+
+    t = threading.Thread(target=worker, daemon=True)
+    t.start()
+    req = _wait_event(events, "permission_request")
+    prompter.resolve(req["request_id"], False)
+    t.join(timeout=5)
+    assert out["result"].decision == PermissionDecision.DENY
+    items = plans_mod.list_plans()
+    assert len(items) == 1
+    assert items[0]["status"] == "rejected"
+
+
+def test_present_plan_cancel_marked_rejected(_plan_store):
+    """继续聊天隐性否决 / stop / 断连: cancel 解除等待 = 计划被拒。"""
+    import aulos.plans as plans_mod
+    events: list = []
+    prompter = WebPermissionPrompter(emit=events.append, session_id="sess-1")
+    out: dict = {}
+
+    def worker():
+        out["result"] = prompter.decide(_plan_request())
+
+    t = threading.Thread(target=worker, daemon=True)
+    t.start()
+    _wait_event(events, "permission_request")
+    prompter.cancel()
+    t.join(timeout=5)
+    assert out["result"].decision == PermissionDecision.DENY
+    assert plans_mod.list_plans()[0]["status"] == "rejected"
+
+
+def test_plain_permission_not_persisted(_plan_store):
+    import aulos.plans as plans_mod
+    events: list = []
+    prompter = WebPermissionPrompter(emit=events.append, session_id="sess-1")
+    out: dict = {}
+
+    def worker():
+        out["result"] = prompter.decide(_bash_request())
+
+    t = threading.Thread(target=worker, daemon=True)
+    t.start()
+    req = _wait_event(events, "permission_request")
+    prompter.resolve(req["request_id"], True)
+    t.join(timeout=5)
+    assert plans_mod.list_plans() == []

@@ -816,6 +816,7 @@ window.I18N_STRINGS_EN = {
   "index.t019": "Ask every time",
   "index.t020": "Medium",
   "index.t021": "Implementation plan",
+  "index.t021b": "History",
   "index.t022": "Copy",
   "index.t023": "Welcome to Aulos",
   "index.t024": "First-time use requires configuring a model provider — it works as soon as you fill it in; adjust or add more anytime in \"Settings → Models\".",

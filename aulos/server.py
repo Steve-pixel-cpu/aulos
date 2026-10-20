@@ -141,6 +141,7 @@ from aulos.skills import (SkillError, delete_user_skill, discover_skills,
                     render_skills_section, skill_info, sync_skill_tools)
 from aulos.multi_agent import set_api_config_provider
 from aulos.agent_tools import get_orchestrator, set_subagent_event_bridge
+from aulos import plans as plans_mod
 import aulos.radio.music as _music
 import aulos.radio.bilibili as _bili
 
@@ -531,13 +532,16 @@ class WebPermissionPrompter:
     """
 
     def __init__(self, emit: Callable,
-                 on_plan_approved: Optional[Callable[[], None]] = None):
+                 on_plan_approved: Optional[Callable[[], None]] = None,
+                 session_id: str = ""):
         self._emit = emit
         self._on_plan_approved = on_plan_approved
+        self._session_id = session_id or ""
         self._responses: "queue.Queue[tuple[str, bool]]" = queue.Queue()
         self._seq = 0
         self._cancelled = False
         self._pending_plan_id: Optional[str] = None   # 挂起中的 present_plan 请求 id
+        self._plan_record_id: Optional[str] = None    # 本请求对应的 plans 记录 id
 
     def decide(self, request: PermissionRequest) -> PermissionResult:
         if self._cancelled:
@@ -546,8 +550,31 @@ class WebPermissionPrompter:
         request_id = f"perm-{self._seq}"
         if request.tool_name == "present_plan":
             self._pending_plan_id = request_id
+            # 弹卡即存盘: 计划全文持久化到 ~/.aulos/plans/, 决议落地后
+            # 回写状态（下方覆盖批准/拒绝/隐性否决/cancel 全部出口）。
+            # 存储抖动绝不影响权限链: save/set 内部均吞异常。
+            try:
+                plan_input = request.input
+                if isinstance(plan_input, str):
+                    plan_input = json.loads(plan_input)
+                self._plan_record_id = plans_mod.save_plan(
+                    self._session_id,
+                    str((plan_input or {}).get("plan") or ""))
+            except Exception:
+                self._plan_record_id = None
+        else:
+            self._plan_record_id = None
         try:
-            return self._decide_inner(request, request_id)
+            result = self._decide_inner(request, request_id)
+            # 决议落地: 按结果回写计划状态（仅 present_plan 请求有记录）
+            if (request.tool_name == "present_plan"
+                    and self._plan_record_id is not None):
+                approved = (result is not None
+                            and result.decision == PermissionDecision.ALLOW)
+                plans_mod.set_plan_status(
+                    self._plan_record_id,
+                    "approved" if approved else "rejected")
+            return result
         finally:
             if request.tool_name == "present_plan":
                 self._pending_plan_id = None
@@ -1123,7 +1150,8 @@ def _start_turn(web_session: WebSession, text: str, emit: Callable,
             "plan_active": False,
         })
 
-    prompter = WebPermissionPrompter(emitter, on_plan_approved=_upgrade_after_plan)
+    prompter = WebPermissionPrompter(emitter, on_plan_approved=_upgrade_after_plan,
+                                     session_id=web_session.session_id)
     web_session.prompter = prompter
 
     if not _turn_slots.acquire(blocking=False):
@@ -1895,6 +1923,33 @@ async def api_list_agents():
         return {"agents": data}
     except Exception as e:
         return {"agents": []}
+
+
+@app.get("/api/plans")
+async def api_list_plans():
+    """实施计划摘要: 供历史计划列表/回放回填可点开的计划卡。
+
+    计划由 WebPermissionPrompter 在弹卡时持久化（~/.aulos/plans/）,
+    决议落地回写状态。返回摘要字段（全文走详情接口, 点开才拉）。
+    失败时返回空列表, 不阻塞前端。"""
+    import anyio
+    try:
+        return await anyio.to_thread.run_sync(plans_mod.list_plans)
+    except Exception:
+        return []
+
+
+@app.get("/api/plans/{plan_id}")
+async def api_get_plan(plan_id: str):
+    """计划全文详情: {plan_id, session_id, ts, status, plan_markdown}。"""
+    import anyio
+    try:
+        record = await anyio.to_thread.run_sync(plans_mod.load_plan, plan_id)
+    except Exception:
+        record = None
+    if record is None:
+        raise HTTPException(status_code=404, detail="plan not found")
+    return record
 
 
 # ============================================================================
