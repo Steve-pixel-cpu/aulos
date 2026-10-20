@@ -130,6 +130,7 @@ from aulos.permissions import (
     PermissionResult,
 )
 from aulos.prompt import ProjectContext, SystemPromptBuilder
+from aulos.i18n import language_directive
 from aulos.storage import SessionStore
 from aulos.tools import ToolRegistry, git_bash_unavailable_reason, TOOL_CANCEL_CHECK
 from aulos.runtime import result_meta
@@ -357,6 +358,11 @@ def _session_system_prompt(workdir: Optional[str]) -> list:
         discover_skills(Path(workdir) if workdir else Path.cwd(), USER_DIR))
     if skills_section:
         base.append(skills_section)
+    # 回复语言指令（i18n spec §5.2）: en 在末尾追加英文回复要求,
+    # zh 不追加 —— 只追加不改动正文, 主提示词行为零漂移。
+    directive = language_directive()
+    if directive:
+        base.append(directive)
     return base
 
 MAX_CONCURRENT_TURNS = 4  # 全局并发上限: 同时跑的轮次超过这个数就排队
