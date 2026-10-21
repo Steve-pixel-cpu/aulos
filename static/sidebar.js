@@ -601,25 +601,30 @@ function renderSessionList() {
     list.appendChild(e);
   }
 
-  // 项目目录 = 会话的 workdir ∪ 手动添加的项目（置顶会话已上提, 不入组）
-  const groups = new Map();
-  for (const s of sessions) {
-    if (!s.workdir || s.pinned) continue;
+  // 项目目录 = 会话的 workdir ∪ 手动添加的项目。置顶会话已上提到「已置顶」
+  // 区块, 不进组内列表——但项目组本身保留: 唯一会话被置顶时项目显示
+  // 「暂无任务」而不是整行消失（取消置顶后会话即回到组内）。
+  const groups = new Map();   // wd → 组内可见(非置顶)会话
+  const groupLatest = new Map();   // wd → 组内最新会话 id(含置顶, 供组间排序)
+  for (const s of sessions) {   // sessions 按新→旧, 首见即该组最新
+    if (!s.workdir) continue;
     if (!groups.has(s.workdir)) groups.set(s.workdir, []);
-    groups.get(s.workdir).push(s);
+    if (!groupLatest.has(s.workdir)) groupLatest.set(s.workdir, s.id);
+    if (!s.pinned) groups.get(s.workdir).push(s);
   }
   for (const wd of state.customProjects) {
     if (!groups.has(wd)) groups.set(wd, []);
   }
   const named = [...groups.entries()];
   /* 组间排序: 手动拖过的项目按 projectOrder 排最前, 其余按最新会话倒序兜底
-   * （Array.sort 稳定, 两段各自口径互不干扰） */
+   * （Array.sort 稳定, 两段各自口径互不干扰）。最新口径含置顶会话——
+   * 唯一会话被置顶的项目不会因组内清空而掉到列表底部 */
   const rankOf = wd => {
     const i = state.projectOrder.indexOf(wd);
     return i < 0 ? Number.MAX_SAFE_INTEGER : i;
   };
   named.sort((a, b) => rankOf(a[0]) - rankOf(b[0])
-    || (b[1][0]?.id ?? "").localeCompare(a[1][0]?.id ?? ""));  // 组间按最新会话
+    || (groupLatest.get(b[0]) ?? "").localeCompare(groupLatest.get(a[0]) ?? ""));
   renderedProjectOrder = named.map(([wd]) => wd);   // 拖拽换位时的当前组序快照
   const chev = '<svg class="p-chev" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
   for (const [wd, items] of named) {
