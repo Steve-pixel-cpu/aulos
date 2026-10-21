@@ -2455,6 +2455,55 @@
   flex: none; width: 10px; height: 10px; border-radius: 50%;
   background: var(--text-3); opacity: .45;
 }
+/* 状态点着色: 运行中转圈（与思考行 #thinking .spin 同款语言:
+ * 轨道 border-strong + 顶部 accent 亮段）/ 完成 绿 / 失败 红 */
+.sa-tab.running .sa-dot {
+  background: transparent; opacity: 1;
+  border: 2px solid var(--border-strong); border-top-color: var(--accent);
+  animation: spin .8s linear infinite;
+}
+.sa-tab.done-ok .sa-dot { background: var(--ok); opacity: 1; }
+.sa-tab.done-err .sa-dot { background: var(--err); opacity: 1; }
+#sa-close {
+  flex: none; display: inline-flex; align-items: center;
+  border: none; background: none; cursor: pointer;
+  color: var(--text-3); padding: 6px; border-radius: 6px;
+  margin-bottom: 6px;
+}
+#sa-close:hover { color: var(--text-1); background: var(--hover); }
+/* 面板体: 内部对话流滚动区; 列搬进来后去掉主列的定宽居中 */
+#sa-body { flex: 1; overflow-y: auto; min-height: 0; }
+#sa-body .sa-stream.hosted {
+  width: auto; margin: 0; padding: 14px 16px 18px;
+}
+/* 面板内"回到底部"悬浮钮: 脱离贴底时出现(流式跟随已让位) */
+#sa-scroll-btn {
+  position: absolute; right: 14px; bottom: 18px; z-index: 5;
+  width: 34px; height: 34px; border-radius: 50%;
+  border: 1px solid var(--border-strong); background: var(--surface);
+  color: var(--text-2); box-shadow: var(--shadow-md);
+  display: none; align-items: center; justify-content: center;
+  transition: all .15s;
+}
+#sa-scroll-btn.show { display: inline-flex; }
+#sa-scroll-btn:hover { color: var(--text); border-color: var(--accent-border); }
+
+#plan-panel {
+  display: none;
+  min-width: 0;
+}
+#pane.plan-open > #plan-panel {
+  grid-column: 2;
+  grid-row: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  min-width: 0;
+  border-left: 1px solid var(--border-strong);
+  background: var(--bg);
+  animation: msg-in .22s ease;
+}
+
 /* ---- 拖拽调宽手柄: 贴边的透明竖条, hover/拖动中显强调色细线 ---- */
 #side-resize, #plan-resize {
   position: absolute; top: 0; bottom: 0; width: 7px;
