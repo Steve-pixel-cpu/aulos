@@ -1543,6 +1543,13 @@ fn create_main_window(app: &AppHandle) -> Result<(), String> {
         .inner_size(1440.0, 900.0)
         .min_inner_size(960.0, 600.0)
         .visible(false) // 页面就绪后再显示, 避免白屏闪烁
+        // 关掉 Tauri 原生文件拖放接管: 它默认开启, 会在 WebView2 层吞掉
+        // 页面内全部 HTML5 dragstart/dragover/drop——侧栏项目拖动排序、
+        // 附件拖入输入卡因此在桌面端失效。Rust 侧无 DragDrop 事件消费者、
+        // 前端无人监听 tauri://drag-drop（已核查）, 关闭无回归; document 层
+        // BRIDGE_JS 的 dragover/drop preventDefault 兜底仍在, 文件拖进
+        // 窗口不会触发整页跳转。
+        .disable_drag_drop_handler()
         .initialization_script(&bridge_js);
     // Windows 上主窗常透明: 系统云母(Fluent·系统云母风格)要求窗口本体透明,
     // DWM 才能把壁纸采样垫到底下。运行期无法切换透明(Tauri 2 无该 API),
