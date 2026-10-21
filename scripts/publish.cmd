@@ -74,12 +74,23 @@ if errorlevel 1 (
 )
 
 set "NOTES=%~2"
-if "%NOTES%"=="" set "NOTES=Aulos v%VER%"
+echo [publish] Generating release notes from git log ...
+if "%NOTES%"=="" (
+  REM Default: auto-generate categorized notes from git log (same
+  REM generator as CI: scripts/make-release-notes.js)
+  node scripts\make-release-notes.js --tag v%VER% --out dist\release-notes.md
+  if errorlevel 1 exit /b 1
+  set "NOTES_FILE=--notes-file dist\release-notes.md"
+) else (
+  REM Manual notes win
+  set "NOTES_FILE=--notes !NOTES!"
+)
 
 echo [publish] Creating GitHub release v%VER% and uploading assets ...
-gh release create v%VER% "dist\%EXE%" "dist\%EXE%.sig" "%LATEST%" --title "Aulos v%VER%" --notes "%NOTES%"
+gh release create v%VER% "dist\%EXE%" "dist\%EXE%.sig" "%LATEST%" --title "Aulos v%VER%" !NOTES_FILE!
 if errorlevel 1 (
   echo [publish] gh failed - the release may already exist. Try:
+  echo [publish]   gh release edit v%VER% !NOTES_FILE!
   echo [publish]   gh release upload v%VER% dist\%EXE% dist\%EXE%.sig dist\latest.json --clobber
   exit /b 1
 )

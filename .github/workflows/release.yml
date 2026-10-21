@@ -195,6 +195,10 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          # release notes 生成器要 git log <prev>..<tag> + tag 列表,
+          # 浅克隆(depth=1)拿不到历史 —— 必须全量
+          fetch-depth: 0
 
       - uses: actions/download-artifact@v4
         with:
@@ -205,13 +209,18 @@ jobs:
       - name: Generate multi-platform latest.json
         run: node scripts/make-latest-multi.js --tag "$GITHUB_REF_NAME" --dist dist
 
+      - name: Generate release notes
+        run: node scripts/make-release-notes.js --tag "$GITHUB_REF_NAME" --out dist/release-notes.md
+
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # 标题统一 "Aulos vX.Y.Z" (与 publish.cmd / latest.json notes 同口径);
-          # create 已存在时靠 || true 吞掉, 随后 edit 兜底归一化标题 ——
-          # 无论 release 先由谁建出 (本地脚本/网页手动/CI), 最终标题都一致
-          gh release create "$GITHUB_REF_NAME" --title "Aulos ${GITHUB_REF_NAME}" --generate-notes || true
+          # 标题/正文统一 (与 publish.cmd 同口径): create 已存在时靠 || true
+          # 吞掉, 随后 edit 兜底归一化 —— 无论 release 先由谁建出 (本地脚本/
+          # 网页手动/CI), 最终标题都是 "Aulos vX.Y.Z"、正文都是生成的 notes
+          gh release create "$GITHUB_REF_NAME" --title "Aulos ${GITHUB_REF_NAME}" \
+            --notes-file dist/release-notes.md || true
           gh release upload "$GITHUB_REF_NAME" dist/* --clobber
-          gh release edit "$GITHUB_REF_NAME" --title "Aulos ${GITHUB_REF_NAME}"
+          gh release edit "$GITHUB_REF_NAME" --title "Aulos ${GITHUB_REF_NAME}" \
+            --notes-file dist/release-notes.md
