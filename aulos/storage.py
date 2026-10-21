@@ -324,7 +324,8 @@ class SessionStore:
             tmp.write_text("\n".join(kept) + "\n", encoding="utf-8")
             os.replace(tmp, path)
         return True
-        self._meta_cache.pop(session_id, None)   # 派生元数据随文件一起消失
+        # 注: 不手动清 _meta_cache——重写必改 (mtime_ns, size), 缓存键
+        # 自然失配, get_meta 下次自动重算。与按预算裁剪路径同一哲学。
 
     # --- 会话命名 (prompt_dev/session_title.md) ---
     # 存储方案: 标题作为独立记录类型与消息条目共存于同一 JSONL 文件。
