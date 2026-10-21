@@ -3,6 +3,13 @@ REM ============================================================
 REM Publish a release that existing installs can auto-update to.
 REM Prereq: build-exe.cmd tauri <ver> has been run (dist\ populated).
 REM
+REM Branch protection: main is a protected branch (PR + approve + squash only).
+REM Land the version bump via PR first, then run this script on merged,
+REM up-to-date main - it hard-fails otherwise (no tagging stale branches).
+REM Pushing the v* tag triggers CI (release.yml) to build Win/macOS/Linux and
+REM create the GitHub Release; the gh block below is the local fallback that
+REM publishes the Windows assets immediately (CI later clobbers/normalizes).
+REM
 REM   scripts\publish.cmd <ver> [notes]
 REM   e.g. scripts\publish.cmd 3.4.0 "fix a, add b"
 REM
@@ -25,6 +32,25 @@ set "VER=%~1"
 if "%VER%"=="" (
   echo Usage: scripts\publish.cmd ^<ver^> [notes]
   echo e.g.   scripts\publish.cmd 3.4.0 "fix a, add b"
+  exit /b 1
+)
+
+REM Branch-protection guard: the tag must sit on merged, up-to-date main.
+REM (Version-bump PRs are squash-merged, so main's SHA only matches after a pull.)
+git fetch origin main
+if errorlevel 1 exit /b 1
+for /f %%B in ('git rev-parse --abbrev-ref HEAD') do set "BRANCH=%%B"
+for /f %%B in ('git rev-parse HEAD') do set "LOCALSHA=%%B"
+for /f %%B in ('git rev-parse origin/main') do set "REMOTESHA=%%B"
+if /i not "%BRANCH%"=="main" (
+  echo [publish] Not on main - current branch is %BRANCH%.
+  echo [publish]   Releases must be tagged on merged main.
+  echo [publish]   Run: git checkout main, then: git pull origin main
+  exit /b 1
+)
+if not "%LOCALSHA%"=="%REMOTESHA%" (
+  echo [publish] Local main is out of sync with origin/main - refusing to tag a stale base.
+  echo [publish]   Run: git pull origin main
   exit /b 1
 )
 
@@ -60,9 +86,19 @@ if not exist "dist\%EXE%.sig" (
 )
 
 echo [publish] Pushing tag v%VER% ...
-git tag -f v%VER%
+git rev-parse -q --verify "refs/tags/v%VER%" >nul 2>&1
+if not errorlevel 1 (
+  echo [publish] Tag v%VER% already exists - refusing to overwrite ^(no more "tag -f"^).
+  echo [publish]   Tags map 1:1 to releases and are immutable: bump the version instead.
+  exit /b 1
+)
+git tag v%VER%
 git push origin v%VER%
 if errorlevel 1 exit /b 1
+echo [publish] Tag pushed. CI ^(release.yml^) is now building Win/macOS/Linux and
+echo [publish]   will create/normalize the release. Track it with:
+echo [publish]     gh run list --workflow Release --limit 1
+echo [publish]     gh release view v%VER%
 
 where gh >nul 2>&1
 if errorlevel 1 goto :manual

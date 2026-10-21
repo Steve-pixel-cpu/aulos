@@ -88,7 +88,7 @@ UTF-8 不经转码；PowerShell 5.1 的 cmdlet 会按 ANSI(GBK) 转码，读 UTF
 |---|---|
 | `build-exe.cmd` | 一键打包入口：装 PyInstaller → 冻结后端 → 按目标走 Tauri 或 Electron 打包 |
 | `scripts/make-latest.js` | 生成自动更新清单 `dist\latest.json`（版本号 + .sig 签名内容 + 下载直链） |
-| `scripts/publish.cmd` | 发布一个版本：打 tag → `gh release create` 上传安装包/.sig/latest.json |
+| `scripts/publish.cmd` | 发布一个版本：校验在最新 main 上 → 打 `v<版本>` tag 推送（触发 CI 三平台构建发 Release）→ 本地兜底上传 |
 | `build/server/aulos-server.exe` | PyInstaller 产物（中间产物），`static/` 已打入 exe 内部 |
 | `src-tauri/tauri.conf.json` | Tauri 配置：窗口、NSIS 打包、后端 exe 经 `bundle.resources` 进安装包 |
 | `src-tauri/src/main.rs` | 桌面壳主体：探活/拉后端/整树杀、令牌门禁、单实例、外部链接转系统浏览器、自动更新命令 |
@@ -108,7 +108,7 @@ GitHub Release 上的更新清单，发现新版本 → 标题栏版本号出现
 ```
 build-exe.cmd tauri <版本>          ← .tauri\aulos.key 签名, 产出 .exe + .exe.sig
   └─ node scripts\make-latest.js   ← 生成 dist\latest.json（签名内容 + 下载直链）
-scripts\publish.cmd <版本> "说明"    ← git tag v<版本> + gh release create 上传 3 个文件
+scripts\publish.cmd <版本> "说明"    ← 校验 main 已同步 → 打 v<版本> tag 推送 → CI 三平台构建并自动发 Release
                                         ↓
 用户端应用启动 → 读 releases/latest/download/latest.json
   → 比对版本 → 校验 minisign 签名 → 下载 → 校验 → NSIS 静默装 → 重启
@@ -125,11 +125,23 @@ scripts\publish.cmd <版本> "说明"    ← git tag v<版本> + gh release crea
 
 ### 发布清单（每次发版）
 
-1. `build-exe.cmd tauri <新版本>`（会同步版本号到四处配置文件）
-2. 确认 `dist\` 里三件套齐全：`aulos_<版本>_x64-setup.exe`、同名 `.sig`、`latest.json`
-3. `scripts\publish.cmd <版本> "更新说明"`（需要 gh CLI 并已 `gh auth login`；
-   没装就按脚本打印的手动步骤在 GitHub 网页上传同样三个文件）
-4. 资产名是约定：tag 必须 `v<版本>`、安装包名不能改——`latest.json` 里的直链靠它定位
+main 是保护分支，**版本号改动也要走 PR**，发版必须在合并后的最新 main 上打 tag：
+
+1. `git checkout main && git pull origin main`（开工先同步）
+2. `git checkout -b feature/release-x.y.z`，然后 `build-exe.cmd tauri <新版本>`
+   （同步版本号到四处配置文件；可顺便本地构建自测）
+3. 推分支 → 发 PR → 协作者 Approve → **Squash and merge**
+4. `git checkout main && git pull origin main`（拿到合并结果——tag 必须打在这上面）
+5. `scripts\publish.cmd <版本> "更新说明"`（需要 gh CLI 并已 `gh auth login`）：
+   脚本校验「在 main 且与 origin/main 一致」→ 打 `v<版本>` tag 并推送 → CI（release.yml）
+   三平台构建、自动创建 Release；本地 `dist\` 三件套齐全时脚本会立即上传 Windows 包
+   （`Aulos_<版本>_x64-setup.exe`、同名 `.sig`、`latest.json`），CI 稍后归一化全部资产
+6. 盯进度：`gh run list --workflow Release --limit 1`；完成后 `gh release view v<版本>`
+7. 资产名是约定：tag 必须 `v<版本>`、安装包名不能改——`latest.json` 里的直链靠它定位
+
+> 脚本会拒绝两种情况：不在 main 或落后于 origin/main 时打 tag；覆盖已存在的 tag
+> （`-f` 已移除——tag 与 Release 一一对应，发布了就不可变）。真要作废一个误推的
+> tag：删 Release → 删远端 tag → **换新版本号**重发，不要复用旧版本号。
 
 ### 实现位置
 
