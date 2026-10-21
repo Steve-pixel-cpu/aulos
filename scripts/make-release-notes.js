@@ -11,7 +11,12 @@
  *   - 全角冒号同权（feat：xxx 不再漏进「其他」）
  *   - scope 归一化（去 -phaseN 后缀）并映射通俗中文标签（i18n → 多语言）
  *   - 平铺嵌套前缀（"A + fix(plan): B" → "A + B"）
- *   - 无 prev tag（首个版本）时只列最近 15 条，标注"更早从略"
+ *
+ * 精简规则（v5.5.0 51 条平铺太长的教训）：
+ *   - 可见行只取「——」前的短摘要，全文进折叠块
+ *   - 同节同 scope ≥ MERGE_AT 条 → 合并为一行摘要 + <details> 明细
+ *   - 每节可见块超过 SECTION_CAP → 余量折进「其余 N 项」
+ *   - 无 prev tag（首个版本）时只取最近 NO_PREV_CAP 条
  *
  * 分类：feat → ✨ 新特性；fix → 🐛 修复；perf → ⚡ 性能；其余 → 🔧 体验优化。
  * 与 make-latest-multi.js 同口径：下载表文件名前缀取自
@@ -32,6 +37,8 @@ const tag = argOf("--tag");
 const repo = argOf("--repo", "Steve-pixel-cpu/aulos");
 const out = argOf("--out");
 const NO_PREV_CAP = 15; // 首个 tag 无 diff 基线, 只列最近 N 条
+const MERGE_AT = 4; // 同节同 scope ≥ N 条 → 1 行摘要 + 折叠明细
+const SECTION_CAP = 8; // 每节最多显示 N 个块, 其余折进「其余 N 项」
 
 if (!tag) {
   console.error("[make-release-notes] 缺少 --tag (如 v5.3.2)");
@@ -100,6 +107,17 @@ function cleanDesc(desc) {
     .trim();
 }
 
+// 短摘要：本仓库 commit 惯用 "摘要——解释"，可见行只留摘要段
+function shortDesc(desc) {
+  const i = desc.indexOf("——");
+  return (i > 0 ? desc.slice(0, i) : desc).trim();
+}
+
+// 可见行硬截断（无「——」分隔的长描述兜底, 如 "会话列表添加置顶功能以及设置增加并发上限配置，…"）
+function truncate(text, max) {
+  return text.length <= max ? text : text.slice(0, max) + "…";
+}
+
 // scope 归一化 + 通俗中文标签（覆盖仓库常用 scope, 未收录原样保留）
 function normScope(scope) {
   if (!scope) return null;
@@ -139,31 +157,31 @@ const scopeLabel = (scope) => SCOPE_LABELS[scope] || scope;
 // ---- 分类聚合 ----------------------------------------------------------
 
 const BUCKETS = [
-  { type: "feat", title: "✨ 新特性" },
-  { type: "fix", title: "🐛 修复" },
-  { type: "perf", title: "⚡ 性能" },
+  { type: "feat", title: "✨ 新特性", noun: "特性" },
+  { type: "fix", title: "🐛 修复", noun: "修复" },
+  { type: "perf", title: "⚡ 性能", noun: "优化" },
 ];
-const OTHER_TITLE = "🔧 体验优化";
+const OTHER = { type: "other", title: "🔧 体验优化", noun: "改进" };
+const ALL_BUCKETS = [...BUCKETS, OTHER];
 
-let dropped = 0;
-const grouped = new Map(BUCKETS.map((b) => [b.type, []]));
-let other = [];
+const dropped = { n: 0 };
+const grouped = new Map(ALL_BUCKETS.map((b) => [b.type, []]));
 for (const c of commits) {
   const { type, scope, desc: rawDesc } = parseSubject(c.subject);
-  if (isVersionBump(rawDesc)) { dropped++; continue; }
-  if (DROP_TYPES.has(type)) { dropped++; continue; }
-  const item = { scope: normScope(scope), desc: cleanDesc(rawDesc), hash: c.hash };
-  if (grouped.has(type)) grouped.get(type).push(item);
-  else other.push(item);
+  if (isVersionBump(rawDesc)) { dropped.n++; continue; }
+  if (DROP_TYPES.has(type)) { dropped.n++; continue; }
+  grouped.get(grouped.has(type) ? type : "other").push({
+    scope: normScope(scope),
+    desc: cleanDesc(rawDesc),
+    hash: c.hash,
+  });
 }
 
 // 首个 tag（无 diff 基线）只保留最近 N 条, 避免把全部历史搬上 Release
 if (!prev && commits.length > NO_PREV_CAP) {
   const kept = new Set(commits.slice(0, NO_PREV_CAP).map((c) => c.hash));
-  for (const [t, list] of grouped) grouped.set(t, list.filter((i) => kept.has(i.hash)));
-  const before = other.length;
-  other = other.filter((i) => kept.has(i.hash));
-  dropped += before - other.length;
+  for (const [t, list] of grouped)
+    grouped.set(t, list.filter((i) => kept.has(i.hash)));
 }
 
 // 重点方向: feat+fix+perf 里出现最多的前 3 个 scope（≥2 次才值得提）
@@ -179,38 +197,107 @@ const topScopes = [...scopeCount.entries()]
 
 // ---- 渲染 --------------------------------------------------------------
 
-// 实际列出的条数（cap 截断后），头部文案用它, 不用 shown
-const listed =
-  [...grouped.values()].reduce((n, l) => n + l.length, 0) + other.length;
+// 每个 item 两种行: 可见行(短摘要 + hash) / 明细行(全文 + hash)
+const plainLine = (it) =>
+  `- ${it.scope ? `**${scopeLabel(it.scope)}**: ` : ""}${truncate(
+    shortDesc(it.desc),
+    40
+  )} (\`${it.hash}\`)`;
+const fullLine = (it) =>
+  `- ${it.scope ? `**${scopeLabel(it.scope)}**: ` : ""}${it.desc} (\`${it.hash}\`)`;
 
-function section(title, items) {
-  if (items.length === 0) return [];
-  const lines = [`### ${title}`, ""];
-  for (const { scope, desc, hash } of items) {
-    lines.push(`- ${scope ? `**${scopeLabel(scope)}**: ` : ""}${desc} (\`${hash}\`)`);
+// 节渲染: scope 归组(≥MERGE_AT 折叠) + 节级截断(余量折叠)
+// 返回 null 表示该节无内容
+function buildSection(bucket, items) {
+  if (items.length === 0) return null;
+
+  // 按 scope 首次出现顺序归组（无 scope 的保持流水）
+  const groups = [];
+  const byScope = new Map();
+  for (const it of items) {
+    const key = it.scope || "";
+    if (!byScope.has(key)) {
+      const g = { scope: it.scope, items: [] };
+      byScope.set(key, g);
+      groups.push(g);
+    }
+    byScope.get(key).items.push(it);
   }
-  lines.push("");
-  return lines;
+
+  // 组 → 块: 大组折叠成一行 summary, 小组逐条平铺
+  const blocks = []; // {item} 平铺行 | {summary, items} 折叠块
+  for (const g of groups) {
+    if (g.scope && g.items.length >= MERGE_AT) {
+      blocks.push({
+        summary: `${scopeLabel(g.scope)}：${g.items.length} 项${bucket.noun}`,
+        items: g.items,
+      });
+    } else {
+      for (const it of g.items) blocks.push({ item: it });
+    }
+  }
+
+  const out = [`### ${bucket.title}`, ""];
+  let anyCollapsed = false;
+  const visible = blocks.slice(0, SECTION_CAP);
+  const rest = blocks.slice(SECTION_CAP);
+  for (const b of visible) {
+    if (b.item) {
+      out.push(plainLine(b.item));
+    } else {
+      anyCollapsed = true;
+      out.push(
+        "<details>",
+        `<summary>${b.summary}</summary>`,
+        "",
+        ...b.items.map(fullLine),
+        "</details>",
+        ""
+      );
+    }
+  }
+  if (rest.length > 0) {
+    anyCollapsed = true;
+    const lines = rest.flatMap((b) => (b.item ? [fullLine(b.item)] : b.items.map(fullLine)));
+    out.push(
+      "<details>",
+      `<summary>其余 ${rest.reduce((n, b) => n + (b.item ? 1 : b.items.length), 0)} 项${bucket.noun}</summary>`,
+      "",
+      ...lines,
+      "</details>"
+    );
+  }
+  // 节尾空行: 下个标题紧跟列表行时部分渲染器不识别为标题
+  out.push("");
+  return { text: out, anyCollapsed };
 }
 
+const listed = ALL_BUCKETS.reduce((n, b) => n + grouped.get(b.type).length, 0);
+
 const md = [];
+let anyCollapsed = false;
 if (listed <= 0) {
   md.push(`## ${tag}`, "", "本版本无独立代码变更（跳版发布）。", "");
 } else {
   const truncated = !prev && commits.length > NO_PREV_CAP;
   const intro = prev
     ? `自 ${prev} 以来的 ${listed} 项变更`
-    : `首批发布，以下为最近 ${listed} 项变更`;
+    : `首批发布，共 ${listed} 项变更`;
   md.push(
     `## 更新内容\n\n${intro}${
       topScopes.length ? `，重点集中在 ${topScopes.join("、")}` : ""
-    }\n`
+    }${truncated || true ? "，以下为主要条目" : ""}\n`
   );
   if (truncated) {
     md.push(`> 历史变更较多，仅列出最近 ${listed} 条，更早从略。\n`);
   }
-  for (const b of BUCKETS) md.push(...section(b.title, grouped.get(b.type)));
-  md.push(...section(OTHER_TITLE, other));
+  for (const b of ALL_BUCKETS) {
+    const s = buildSection(b, grouped.get(b.type));
+    if (s) {
+      md.push(...s.text);
+      anyCollapsed = anyCollapsed || s.anyCollapsed;
+    }
+  }
 }
 
 // 下载表: 与 make-latest-multi.js 同一 productName 单点
@@ -228,7 +315,6 @@ md.push(
   `| macOS (Apple Silicon) | \`${productName}_${ver}_aarch64.dmg\` |`,
   `| Linux (deb) | \`${productName}_${ver}_amd64.deb\` |`,
   "",
-  // GitHub compare 不认 "0...tag"，空树 SHA 是官方支持的「从起点开始」写法
   `**完整变更**: https://github.com/${repo}/compare/${prev ? `${prev}...${tag}` : `4b825dc642cb6eb9a060e54bf8d69288fbee4904...${tag}`}`,
   "",
   "> 已安装用户将在下次启动时自动收到更新提示。"
