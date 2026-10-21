@@ -1434,3 +1434,35 @@ def test_llm_error_status_classification():
     ok, detail = server._llm_error_status(ValueError("weird"))
     assert ok is False
     assert "请求失败" in detail and "weird" in detail
+
+
+# ------------------------------------------------------------
+# 子代理事件 sink — 断连窗口的持久化兜底
+# ------------------------------------------------------------
+
+def test_subagent_sink_persists_when_disconnected(isolated_store):
+    """spawn 恰逢所有连接断开(emits 为空): sink 不再返回 None,
+    流仍写持久化——重连后按历史回放重建面板, 而不是整条丢失。"""
+    server.get_or_create_web_session("s-disc")   # 会话存在但无 WS 连接
+    sink = server._subagent_event_sink("s-disc")
+    assert sink is not None, "emits 为空也应有 sink(只持久化不广播)"
+
+    sink({"type": "subagent_started", "agent_id": "ag1",
+          "subagent_type": "explore", "description": "查"})
+    sink({"type": "subagent_event", "agent_id": "ag1",
+          "event": {"type": "user_message", "text": "任务全文"}})
+    sink({"type": "subagent_done", "agent_id": "ag1",
+          "status": "completed", "duration_s": 2.0})
+
+    streams = isolated_store.get_subagent_streams("s-disc")
+    assert "ag1" in streams, "断连窗口内的事件已持久化"
+    types = [e["type"] for e in streams["ag1"]["events"]]
+    assert types == ["user_message"], "工具事件分界冲刷, 剩余缓冲在 done 收口"
+    assert streams["ag1"]["ok"] is True
+    assert streams["ag1"]["duration_s"] == 2.0
+
+
+def test_subagent_sink_none_for_unknown_session(isolated_store):
+    """会话不存在(已删除/从未创建): 仍返回 None, 不做无主持久化。"""
+    assert server._subagent_event_sink("no-such-session") is None
+    assert server._subagent_event_sink(None) is None

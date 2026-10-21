@@ -507,13 +507,16 @@ def _subagent_event_sink(session_id: Optional[str]):
     膨胀。worker 线程调用 → 缓冲操作全程持锁。"""
     if not session_id or session_id not in _sessions:
         return None
-    web_session = _sessions[session_id]
-    if not web_session.emits:
-        return None
 
+    web_session = _sessions[session_id]
     persister = _StreamPersister(session_id)
     _SUBAGENT_PERSISTERS[session_id] = persister
 
+    # emits 为空（spawn 恰逢所有连接断开）不再整条丢弃: 广播空转
+    # (broadcast 对零连接安全), 流仍写持久化缓冲——重连后走历史
+    # 回放路径重建面板。此前这里直接 return None, worker 的整条
+    # 事件流既不广播也不入库, 断连窗口内 spawn 的子代理重连后面板
+    # 空白、卡片永远"运行中"。
     def _sink(payload: dict) -> None:
         web_session.broadcast(payload)
         persister.feed(payload)

@@ -96,6 +96,14 @@ function handleServerMessage(msg, sid) {
     else if (msg.type === "mode_changed") onModeChanged(msg, sid);
     else if (msg.type === "thinking_changed") onThinkingChanged(msg, sid);
     else if (msg.type === "model_changed") onModelChanged(msg, sid);
+    // 子代理事件照常派发: 卡片建在派它的会话自己的 run 里(col 逻辑
+    // 上隐藏但节点活着, 切回即所见)。此前该分支吞掉 subagent_*,
+    // 切走期间完成的子代理永远停在"运行中", 任务 prompt 气泡
+    // (user_message 镜像)也丢——切回因 run.loaded 不重拉历史,
+    // 无任何自救路径(2026-10-21 现场: 面板有结果但卡仍"运行中")。
+    else if (msg.type === "subagent_started") onSubagentStarted(msg, sid);
+    else if (msg.type === "subagent_event") onSubagentEvent(msg, sid);
+    else if (msg.type === "subagent_done") onSubagentDone(msg, sid);
 
     else if (msg.type === "tool_result") bumpUnread(sid);
     else if (msg.type === "permission_resolved") onPermissionResolved(msg, sid);
@@ -1148,7 +1156,7 @@ function setSaDesc(card, zh, descText) {
   }
 }
 
-function upgradeToSubagentCard(card, agentId) {
+function upgradeToSubagentCard(card, agentId, sid) {
   if (!card || card._saAgentId) return;
   card._saAgentId = agentId;
   card.classList.add("sa-card");
@@ -1175,11 +1183,11 @@ function upgradeToSubagentCard(card, agentId) {
     if (_saOpenAgent === agentId) { closeSaPanel(); return; }
     openSaPanel(agentId);
   };
-  // 登记进正确的 run: 实时事件用当前会话; 历史回放（分片渲染期间
-  // pinnedRun 置位）必须登记进被回放会话的 run——后台会话回放时
-  // state.sessionId 是别的会话, 路由表写错桶的话 subagent_event/done
-  // 按 agent_id 找不到卡, 侧栏选项卡也数不到它。
-  registerSubagentCard(pinnedRun || runOf(state.sessionId), agentId, card);
+  // 登记进正确的 run: 实时事件用事件所属会话(sid); 历史回放（分片渲染
+  // 期间 pinnedRun 置位）登记进被回放会话的 run——否则后台会话的卡
+  // 写进前台会话的路由表, 后续 event/done 按 sid 找不到卡
+  // (2026-10-21 现场: 切走期间完成的子代理永久"运行中")。
+  registerSubagentCard(pinnedRun || runOf(sid || state.sessionId), agentId, card);
 }
 
 function registerSubagentCard(run, agentId, card) {
@@ -1187,6 +1195,12 @@ function registerSubagentCard(run, agentId, card) {
   const prev = run.subagents[agentId];
   if (prev && prev !== card && prev.isConnected) return;   // 已登记别卡: 不抢
   run.subagents[agentId] = card;
+  // 归属登记: agent_id -> 卡片。saColFor 据此把伪会话流路由到正确
+  // 的卡片——此前它只查 runOf(state.sessionId), 后台会话的子代理
+  // 事件(切走期间照常到达)解析到别的会话的 run, 找不到卡,
+  // user_message 气泡/流全部落进顶层兜底隐藏列, 面板打开是空的。
+  card._saRun = run;
+  _saCardOwner.set(agentId, card);
 }
 
 function saCardOf(run, agentId) {
@@ -1196,6 +1210,11 @@ function saCardOf(run, agentId) {
   if (card && !card.isConnected) card = run.subagents[agentId] = null;
   return card || null;
 }
+
+/* agent_id -> 卡片的全局归属表: 伪会话 id("sub:"+agent_id)不携带
+ * 会话信息, saColFor 需要跨会话定位卡片。卡片从 DOM 摘除时由
+ * saCardOf 的 isConnected 判定自然失效, 这里同表冗余一查。 */
+const _saCardOwner = new Map();
 
 /* subagent_started: 兜底建卡。正常时序里 spawn 的 agent_tool 工具卡先
  * 出现、tool_result 登记路由; 这里处理事件先于工具卡到达的乱序——
@@ -1227,7 +1246,7 @@ function onSubagentStarted(msg, sid) {
       input: JSON.stringify({ subagent_type: msg.subagent_type,
                               description: msg.description }) }, colOf(sid));
   }
-  upgradeToSubagentCard(card, msg.agent_id);
+  upgradeToSubagentCard(card, msg.agent_id, sid);
   // started 已带全量描述, 工具卡描述不再等 tool_use 事件来补
   setSaDesc(card, SUB_TYPE_LABEL[msg.subagent_type] || msg.subagent_type || "",
             msg.description || "");
@@ -1272,8 +1291,15 @@ function onSubagentEvent(msg, sid) {
  * 持引用; 面板打开时 saPlaceCol 整体搬进 #sa-body, 事件路由零改动。
  * 游离期间 colOf(伪 id) 返回同一节点, 流式内容/工具卡照常累积, 不丢。 */
 function saColFor(pseudo) {
-  const agentId = pseudo.slice( 4);
-  const card = saCardOf(runOf(state.sessionId), agentId);
+  const agentId = pseudo.slice(4);
+  // 优先按卡片归属找: 后台会话的子代理流切走期间照常到达, 按
+  // state.sessionId 找会把事件写错桶(找不到卡 → 顶层隐藏列, 面板
+  // 空白)。card._saRun 由 registerSubagentCard 登记; 无归属(极老
+  // 数据/异常路径)再退回当前会话兜底。
+  let card = null;
+  const owner = _saCardOwner.get(agentId);
+  if (owner && owner.isConnected) card = owner;
+  if (!card) card = saCardOf(runOf(state.sessionId), agentId);
   if (!card) return colOf(pseudo);   // 兜底: 顶层隐藏列, 事件不丢
   let col = card._saStream;
   if (!col) {
