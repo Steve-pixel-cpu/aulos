@@ -51,6 +51,9 @@ const UNTITLED_TITLE = () => t("sidebar.010");   // 工厂: 现取
 
 /* 「显示更多」递进展开: 每次点 +5 条, 全部可见后变「收起」(重置回 5 条) */
 const SIDEBAR_REVEAL_STEP = 5;
+/* 项目组拖拽排序的模块级状态: 拖拽源 workdir / 最近一次渲染的组序快照 */
+let projectDragFrom = null;
+let renderedProjectOrder = [];
 const SM_CHEV_SVG = '<svg class="sm-chev" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
 
 /* 「显示更多（N 条）」/「收起」行工厂: extra>0 = 还能再显示 extra 条;
@@ -574,7 +577,15 @@ function renderSessionList() {
     if (!groups.has(wd)) groups.set(wd, []);
   }
   const named = [...groups.entries()];
-  named.sort((a, b) => (b[1][0]?.id ?? "").localeCompare(a[1][0]?.id ?? ""));  // 组间按最新会话
+  /* 组间排序: 手动拖过的项目按 projectOrder 排最前, 其余按最新会话倒序兜底
+   * （Array.sort 稳定, 两段各自口径互不干扰） */
+  const rankOf = wd => {
+    const i = state.projectOrder.indexOf(wd);
+    return i < 0 ? Number.MAX_SAFE_INTEGER : i;
+  };
+  named.sort((a, b) => rankOf(a[0]) - rankOf(b[0])
+    || (b[1][0]?.id ?? "").localeCompare(a[1][0]?.id ?? ""));  // 组间按最新会话
+  renderedProjectOrder = named.map(([wd]) => wd);   // 拖拽换位时的当前组序快照
   const chev = '<svg class="p-chev" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
   for (const [wd, items] of named) {
     items.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));   // 组内置顶在前
@@ -597,6 +608,41 @@ function renderSessionList() {
       removeProject(wd, items.length);
     };
     header.onclick = () => toggleProject(wd);
+    header.dataset.wd = wd;   // 组头身份标记（搜索态也设, 供测试/排查定位）
+    /* 拖动排序: 搜索态禁用（过滤后的列表换位语义不明确） */
+    if (!q) {
+      header.draggable = true;
+      header.addEventListener("dragstart", ev => {
+        projectDragFrom = wd;
+        header.classList.add("dragging");
+        if (ev.dataTransfer) { ev.dataTransfer.effectAllowed = "move"; ev.dataTransfer.setData("text/plain", wd); }
+      });
+      header.addEventListener("dragend", () => {
+        projectDragFrom = null;
+        header.classList.remove("dragging");
+        clearDropMarks();
+      });
+      header.addEventListener("dragover", ev => {
+        if (!projectDragFrom || projectDragFrom === wd) return;
+        ev.preventDefault();
+        if (ev.dataTransfer) ev.dataTransfer.dropEffect = "move";
+        const rect = header.getBoundingClientRect();
+        const before = ev.clientY < rect.top + rect.height / 2;
+        header.classList.toggle("drop-above", before);
+        header.classList.toggle("drop-below", !before);
+      });
+      header.addEventListener("dragleave", () => {
+        header.classList.remove("drop-above", "drop-below");
+      });
+      header.addEventListener("drop", ev => {
+        ev.preventDefault();
+        clearDropMarks();
+        if (!projectDragFrom || projectDragFrom === wd) return;
+        const rect = header.getBoundingClientRect();
+        const before = ev.clientY < rect.top + rect.height / 2;
+        reorderProjects(projectDragFrom, wd, before);
+      });
+    }
     list.appendChild(header);
     if (collapsed) continue;
     /* 「显示更多」递进展开: 搜索态/激活会话在可见窗口之外时强制全量,
@@ -792,8 +838,25 @@ function pickBatchDays(trigger, onOpen) {
   });
 }
 
-function toggleProject(wd) {
-  state.collapsedProjects.has(wd)
+/* 项目组拖动排序（纯前端, 与 xc-projects 同层级 localStorage 持久化）:
+ * 基于当前渲染组序把 fromWd 移到 toWd 前/后, 再物化为完整 order 数组。
+ * 物化是刻意的: 排序生效后所有组都进入 order, 未拖拽项目的相对顺序
+ * 由本次渲染快照保住, 后续新会话不再改变整体观感。 */
+function reorderProjects(fromWd, toWd, before) {
+  const order = renderedProjectOrder.filter(w => w !== fromWd);
+  const ti = order.indexOf(toWd);
+  if (ti < 0) return;
+  order.splice(before ? ti : ti + 1, 0, fromWd);
+  state.projectOrder = order;
+  localStorage.setItem("xc-project-order", JSON.stringify(order));
+  renderSessionList();
+}
+function clearDropMarks() {
+  document.querySelectorAll(".project-item.drop-above, .project-item.drop-below")
+    .forEach(el => el.classList.remove("drop-above", "drop-below"));
+}
+
+function toggleProject(wd) {  state.collapsedProjects.has(wd)
     ? state.collapsedProjects.delete(wd)
     : state.collapsedProjects.add(wd);
   localStorage.setItem("xc-collapsed", JSON.stringify([...state.collapsedProjects]));
@@ -852,6 +915,8 @@ async function removeProject(wd, count) {
   state.customProjects = state.customProjects.filter(w => w !== wd);
   localStorage.setItem("xc-projects", JSON.stringify(state.customProjects));
   state.collapsedProjects.delete(wd);
+  state.projectOrder = state.projectOrder.filter(w => w !== wd);   // 手动排序记录一并清掉
+  localStorage.setItem("xc-project-order", JSON.stringify(state.projectOrder));
   localStorage.setItem("xc-collapsed", JSON.stringify([...state.collapsedProjects]));
   state.projectReveal.delete(wd);   // 「显示更多」进度一并清掉
   localStorage.setItem("xc-project-reveal", JSON.stringify([...state.projectReveal]));

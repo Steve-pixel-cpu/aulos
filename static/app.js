@@ -94,6 +94,9 @@ state.collapsedTasks = localStorage.getItem("xc-collapsed-tasks") === "1";   // 
  * 值为"当前可见条数"（初始缺省 = 5), 每次 +5 直到全部可见后按钮变「收起」 */
 state.projectReveal = new Map(JSON.parse(localStorage.getItem("xc-project-reveal") || "[]"));
 state.tasksReveal = Number(localStorage.getItem("xc-tasks-reveal")) || 5;
+/* 项目组手动排序: workdir 数组, 在数组中的组按其顺序排最前; 不在其中的
+ * 项目（从未拖拽过/新建的）排其后, 组间仍按最新会话倒序兜底 */
+state.projectOrder = JSON.parse(localStorage.getItem("xc-project-order") || "[]");
 state.draftInput = "";   // 草稿态未发送的输入
 state.skillCache = null; // 当前工作目录的技能清单（refreshSkillCache 填充, 斜杠补全数据源）
 
@@ -1075,9 +1078,9 @@ function renderHistoryMessage(m) {
         // 而非只有截断描述的通用工具卡——像子代理会话一样可回看
         if (b.name === "present_plan") {
           const card = renderHistoryPlanCard(b, run);
-          colOf(state.sessionId).appendChild(card);
-          run.toolResultIndex[b.id] = card;
-          continue;
+          msgCol().appendChild(card);   // 回放期 pinned 到缓冲列, 按数组序就位;
+          run.toolResultIndex[b.id] = card;   // 若写 colOf(真列) 会被换入逻辑
+          continue;                         // 当作"实时节点"挪到整个历史之后
         }
         const card = addToolCard({ id: b.id, name: b.name, input: b.input });
         run.toolResultIndex[b.id] = card;   // 等 tool 角色的结果块配对

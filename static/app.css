@@ -433,6 +433,11 @@
     transition: transform .15s;
   }
   .project-item.collapsed .p-chev { transform: rotate(-90deg); }
+  /* 项目组拖动排序: 源项半透明, 目标项上/下半插入指示线 */
+  .project-item[draggable="true"] { cursor: grab; }
+  .project-item.dragging { opacity: .35; }
+  .project-item.drop-above { box-shadow: inset 0 2px 0 var(--accent); }
+  .project-item.drop-below { box-shadow: inset 0 -2px 0 var(--accent); }
   .session-item.in-project { margin-left: 26px; width: calc(100% - 42px); }
 
   /* 「任务」区块折叠: 标题行 chevron + 折叠态占位概要行 */
