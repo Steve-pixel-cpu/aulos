@@ -416,6 +416,26 @@ def test_token_gate_blocks_and_allows(client, monkeypatch):
     assert client.get("/api/settings").status_code == 200
 
 
+def test_token_query_authenticates_first_page_subresources(client, monkeypatch):
+    """页面脚本尚未执行时, 浏览器也能携带响应 cookie 加载首屏资源。"""
+    monkeypatch.setattr(server, "API_TOKEN", "secret-token")
+    response = client.get("/?token=secret-token")
+    assert response.status_code == 200
+    assert client.cookies.get("aulos_token") == "secret-token"
+    assert "HttpOnly" in response.headers["set-cookie"]
+    assert "SameSite=strict" in response.headers["set-cookie"]
+    assert client.get("/static/app.css").status_code == 200
+    assert client.get("/static/vendor/marked.umd.js").status_code == 200
+
+
+def test_invalid_token_does_not_set_auth_cookie(client, monkeypatch):
+    monkeypatch.setattr(server, "API_TOKEN", "secret-token")
+    response = client.get("/?token=wrong")
+    assert response.status_code == 403
+    assert "set-cookie" not in response.headers
+    assert client.get("/static/app.css").status_code == 403
+
+
 def test_token_gate_disabled_when_empty(client, monkeypatch):
     monkeypatch.setattr(server, "API_TOKEN", "")
     assert client.get("/api/settings").status_code == 200

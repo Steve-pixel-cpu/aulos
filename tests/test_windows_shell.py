@@ -150,6 +150,7 @@ def test_51前导追加写文件cmdlet默认值_pwsh7不用(monkeypatch, tmp_pat
 # ------------------------------------------------------------
 
 def test_启动检查_git可用时返回None(monkeypatch, tmp_path):
+    monkeypatch.setattr(tools.platform, "system", lambda: "Windows")
     bash = _mk_bash(tmp_path / "Git")
     reset(monkeypatch, tmp_path, which={"bash": bash})
 
@@ -157,6 +158,7 @@ def test_启动检查_git可用时返回None(monkeypatch, tmp_path):
 
 
 def test_启动检查_缺失时给可操作的说明(monkeypatch, tmp_path):
+    monkeypatch.setattr(tools.platform, "system", lambda: "Windows")
     reset(monkeypatch, tmp_path)                      # 什么都不装
 
     reason = tools.git_bash_unavailable_reason()

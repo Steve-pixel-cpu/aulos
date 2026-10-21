@@ -178,7 +178,13 @@ async def _token_gate(request: Request, call_next):
                 status_code=403,
                 content={"detail": t("server.034")},
             )
-    return await call_next(request)
+    response = await call_next(request)
+    # 首次加载时预加载器可能先于页面脚本请求 CSS/JS。
+    # 在响应头中种下 cookie, 让这些请求立即携带令牌, 避免首屏 403。
+    if API_TOKEN and request.query_params.get("token") == API_TOKEN:
+        response.set_cookie("aulos_token", API_TOKEN, max_age=31536000,
+                            httponly=True, samesite="strict")
+    return response
 
 
 @app.middleware("http")

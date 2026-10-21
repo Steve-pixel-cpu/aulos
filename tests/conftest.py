@@ -29,7 +29,10 @@ def _force_zh_language(monkeypatch, tmp_path):
     每条用例强制 zh + 隔离 settings 文件, 保证文案断言稳定。"""
     import aulos.i18n as i18n
     from aulos import config
-    monkeypatch.setattr(config, "SETTINGS_FILE", tmp_path / "none.json")
+    settings_file = tmp_path / "none.json"
+    monkeypatch.setattr(config, "SETTINGS_FILE", settings_file)
+    # 设置路由经 server 的导入别名写盘, 也必须隔离到同一个临时文件。
+    monkeypatch.setattr(server, "SETTINGS_FILE", settings_file)
     i18n._current["lang"] = "zh"
     yield
     i18n._current["lang"] = None

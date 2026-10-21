@@ -16,7 +16,7 @@ from aulos.multi_agent import (AgentJob, AgentManifest, MirrorToolExecutor,
                                WireToolEnd, WireToolStart,
                                SubagentEventMirror as _M)  # noqa: F401
 from aulos.tools import ToolRegistry
-from aulos.agent_tools import (spawn_agent_tool, set_subagent_event_bridge)
+from aulos.agent_tools import spawn_agent_tool
 
 
 # ---------------------------------------------------------------------------
@@ -120,19 +120,24 @@ def test_mirror_executor_no_sink_is_silent():
 # ---------------------------------------------------------------------------
 
 @pytest.fixture()
-def fake_worker(monkeypatch):
+def fake_worker(monkeypatch, tmp_path):
     """把 build_subagent_runtime/run_turn 替换成发射假 wire 事件的 stub。"""
     import aulos.multi_agent as ma
+    import aulos.agent_tools as at
 
     started = threading.Event()
+    workers = []
+    monkeypatch.setattr(at._toolbox, "_orchestrator", ma.AgentOrchestrator(tmp_path))
 
     def fake_build(job):
+        workers.append(threading.current_thread())
         class _Runtime:
             def run_turn(self, prompt):
                 started.set()
                 sink = job.event_sink
-                sink({"type": "subagent_event", "agent_id": job.manifest.agent_id,
-                      "event": {"type": "text_delta", "text": "worker 说你好"}})
+                if sink is not None:
+                    sink({"type": "subagent_event", "agent_id": job.manifest.agent_id,
+                          "event": {"type": "text_delta", "text": "worker 说你好"}})
                 from aulos.models import Session as _S
                 return type("S", (), {"assistant_messages": [], "iterations": 1,
                                       "budget_exhausted": False,
@@ -155,55 +160,51 @@ def fake_worker(monkeypatch):
         return _Runtime()
 
     monkeypatch.setattr(ma, "build_subagent_runtime", fake_build)
-    return started
+    yield started
+    # worker 完全退出后才还原全局替身, 防止后台收尾落到下一个用例。
+    for worker in workers:
+        worker.join(timeout=5)
+        assert not worker.is_alive()
 
 
-def test_spawn_emits_started_and_done(tmp_path, fake_worker):
-    events = []
-    set_subagent_event_bridge(lambda sid: events.append)
-    try:
-        # get_orchestrator 是模块级单例: 临时换到 tmp_path
-        import aulos.agent_tools as at
-        orch = at.get_orchestrator()
-        old_dir = orch._store_dir
-        orch._store_dir = tmp_path
-        try:
-            out = spawn_agent_tool({"description": "d", "prompt": "p",
-                                    "subagent_type": "explore"})
-        finally:
-            orch._store_dir = old_dir
-        assert "agent_id:" in out
-        fake_worker.wait(timeout=5)
-        import time as _t
-        deadline = _t.time() + 5
-        while _t.time() < deadline and not any(
-                e.get("type") == "subagent_done" for e in events):
-            _t.sleep(0.05)
-        types = [e.get("type") for e in events]
-        assert types[0] == "subagent_started"
-        assert events[0]["subagent_type"] == "explore"
-        assert "subagent_event" in types     # worker 的镜像事件
-        assert types[-1] == "subagent_done"  # 终态收口
-        done = events[-1]
-        assert done["status"] == "completed"
-        assert isinstance(done["duration_s"], float)
-    finally:
-        set_subagent_event_bridge(None)
-
-
-def test_no_bridge_is_silent(tmp_path, fake_worker):
-    set_subagent_event_bridge(None)
+def test_spawn_emits_started_and_done(fake_worker, monkeypatch):
     import aulos.agent_tools as at
+    events = []
+    completed = threading.Event()
+
+    def sink(event):
+        events.append(event)
+        if event.get("type") == "subagent_done":
+            completed.set()
+
+    monkeypatch.setattr(at, "_event_bridge", lambda sid: sink)
+    out = spawn_agent_tool({"description": "d", "prompt": "p",
+                            "subagent_type": "explore"})
+    assert "agent_id:" in out
+    assert fake_worker.wait(timeout=5)
+    assert completed.wait(timeout=5)
+    types = [e.get("type") for e in events]
+    assert types[0] == "subagent_started"
+    assert events[0]["subagent_type"] == "explore"
+    assert "subagent_event" in types
+    assert types[-1] == "subagent_done"
+    done = events[-1]
+    assert done["status"] == "completed", done.get("error")
+    assert isinstance(done["duration_s"], float)
+    assert at.get_orchestrator().get_status(done["agent_id"]).status == "completed"
+
+
+def test_no_bridge_is_silent(fake_worker, monkeypatch):
+    import aulos.agent_tools as at
+    monkeypatch.setattr(at, "_event_bridge", None)
     orch = at.get_orchestrator()
-    old_dir = orch._store_dir
-    orch._store_dir = tmp_path
-    try:
-        out = spawn_agent_tool({"description": "d", "prompt": "p",
-                                "subagent_type": "explore"})
-        assert "agent_id:" in out
-        fake_worker.wait(timeout=5)
-    finally:
-        orch._store_dir = old_dir
+    out = spawn_agent_tool({"description": "d", "prompt": "p",
+                            "subagent_type": "explore"})
+    assert "agent_id:" in out
+    assert fake_worker.wait(timeout=5)
+    manifests = orch.wait_agents([m.agent_id for m in orch.list_agents()], timeout_s=5)
+    assert len(manifests) == 1
+    assert manifests[0].status == "completed"
 
 
 def test_job_event_sink_none_by_default():

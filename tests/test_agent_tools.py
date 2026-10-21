@@ -530,14 +530,9 @@ def test_cleanup_keeps_running_regardless_of_age():
 def test_cleanup_keeps_recent_failed_record():
     """未过期的 failed 记录保留（错误信息还在排查窗口内）。"""
     orch = agent_tools._toolbox._orchestrator
-    rec = RecordingSpawn()
-    orch2 = AgentOrchestrator(orch._store_dir, spawn_fn=rec)
-    try:
-        orch2.spawn_agent("", "")   # 空描述直接 ValueError, 不产生文件
-    except ValueError:
-        pass
-    m = orch2.spawn_agent("新失败", "p", _owner_pid=1)  # PID 1 视为死 → 后续可标 failed
-    orch2.reconcile_orphans()   # 把它标成 failed（终态）
+    # 本用例测终态清理, 直接构造失败记录; PID 1 在 POSIX 上是活进程。
+    m = orch.spawn_agent("新失败", "p")
+    orch.fail_agent(m.agent_id, "测试失败")
     _age_manifest(orch, m.agent_id, days=2)   # 2 天, 未过期
     removed = orch.cleanup_expired(retention_days=7)
     assert removed == 0
@@ -547,10 +542,8 @@ def test_cleanup_keeps_recent_failed_record():
 def test_cleanup_removes_old_failed_record():
     """超期的 failed 记录同样清理。"""
     orch = agent_tools._toolbox._orchestrator
-    rec = RecordingSpawn()
-    orch2 = AgentOrchestrator(orch._store_dir, spawn_fn=rec)
-    m = orch2.spawn_agent("老失败", "p", _owner_pid=1)
-    orch2.reconcile_orphans()   # 标 failed
+    m = orch.spawn_agent("老失败", "p")
+    orch.fail_agent(m.agent_id, "测试失败")
     _age_manifest(orch, m.agent_id, days=10)
     removed = orch.cleanup_expired(retention_days=7)
     assert removed == 1
