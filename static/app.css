@@ -1468,6 +1468,18 @@
     border-radius: var(--r-sm); border: 1px solid var(--border-strong);
     cursor: zoom-in; background: var(--surface-2);
   }
+  /* 纯图片消息(iMessage/Telegram 语言): 无文字无文件时去掉强调色便签底
+   * 与内边距——图片本体即气泡, 圆角沿用气泡轮廓(右下 6px 小角保留指向感)。
+   * 强调色越艳, 图周围那圈 tint 越像便利贴; 装饰层不进图片区。 */
+  .msg.user .bubble:has(> .u-imgs.solo):not(:has(.u-text)):not(:has(.file-chip)) {
+    padding: 0; background: transparent; border-color: transparent;
+  }
+  .msg.user .bubble:has(> .u-imgs.solo):not(:has(.u-text)):not(:has(.file-chip)) .u-imgs.solo {
+    max-width: 100%;
+  }
+  .msg.user .bubble:has(> .u-imgs.solo):not(:has(.u-text)):not(:has(.file-chip)) .u-img {
+    border-radius: var(--r-lg); border-bottom-right-radius: 6px;
+  }
   .bubble .file-chip {
     background: rgba(0, 0, 0, .14); border-color: var(--accent-border);
     color: inherit; display: flex; margin-top: 6px;
