@@ -714,6 +714,9 @@ class WebPermissionPrompter:
         self._cancelled = False
         self._pending_plan_id: Optional[str] = None   # 挂起中的 present_plan 请求 id
         self._plan_record_id: Optional[str] = None    # 本请求对应的 plans 记录 id
+        # 本轮已批准的 (request_id, plan_record_id): worker 正常收口时
+        # 逐个回写 completed 并广播 plan_completed（打断/异常轮不回写）
+        self._approved_plans: list[tuple[str, str]] = []
 
     def decide(self, request: PermissionRequest) -> PermissionResult:
         if self._cancelled:
@@ -746,6 +749,8 @@ class WebPermissionPrompter:
                 plans_mod.set_plan_status(
                     self._plan_record_id,
                     "approved" if approved else "rejected")
+                if approved:
+                    self._approved_plans.append((request_id, self._plan_record_id))
             return result
         finally:
             if request.tool_name == "present_plan":
@@ -836,6 +841,13 @@ class WebPermissionPrompter:
         decide() 在工作线程阻塞等待, _pending_request_id 由它写入;
         事件循环线程只读, 供"继续聊天隐性否决计划"判断用。"""
         return self._pending_plan_id
+
+    def approved_plan_ids(self) -> list[tuple[str, str]]:
+        """本轮已批准的 (request_id, plan_record_id) 列表（拷贝）。
+
+        worker 正常收口时消费: 回写 completed + 广播 plan_completed。
+        打断/异常轮次不消费——实施没跑完, 语义上不算完成, 保留 approved。"""
+        return list(self._approved_plans)
 
     def cancel(self) -> None:
         """打断等待（stop / 断连）: 立即解除 decide 阻塞并朝安全侧拒绝。"""
@@ -1430,6 +1442,21 @@ def _spawn_turn_thread(web_session: WebSession, text: str,
                     "cache_read_input_tokens": u.cache_read_input_tokens,
                 },
             })
+            # 计划实施完成终态: 本轮批准过的计划随正常收口回写 completed 并
+            # 广播 plan_completed（前端把计划卡推进"已完成"）。放在 turn_done
+            # 之后、与 AI 命名同式的追加动作; 只在正常路径执行——打断/异常轮
+            # 次不走这里, 计划保留 approved（实施没跑完不算完成）。
+            for req_id, plan_id in prompter.approved_plan_ids():
+                plans_mod.set_plan_status(plan_id, "completed")
+                try:
+                    emitter({
+                        "type": "plan_completed",
+                        "plan_id": plan_id,
+                        "request_id": req_id,
+                        "session_id": web_session.session_id,
+                    })
+                except Exception:
+                    pass   # 广播失败不影响收口
             # AI 命名放在 turn_done 之后: 前端先收尾，标题好了再单独广播。
             # 排队区非空 = 用户正在连续驱动: 跳过命名请求, 避免与接力的下一轮
             # 撞同一账户限流窗口（本次拿不到 AI 标题, 截断回退仍在, UI 无感）

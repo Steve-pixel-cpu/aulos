@@ -107,6 +107,7 @@ function handleServerMessage(msg, sid) {
 
     else if (msg.type === "tool_result") bumpUnread(sid);
     else if (msg.type === "permission_resolved") onPermissionResolved(msg, sid);
+    else if (msg.type === "plan_completed") onPlanCompleted(msg, sid);
     else if (msg.type === "turn_done" || msg.type === "error") {
       bumpUnread(sid);
       settleBackgroundTurnEnd(run, sid);
@@ -141,6 +142,7 @@ function handleServerMessage(msg, sid) {
     case "turn_interrupting":  onTurnInterrupting(msg, sid); break;
     case "permission_request": onPermissionRequest(msg, sid); break;
     case "permission_resolved": onPermissionResolved(msg, sid); break;
+    case "plan_completed":    onPlanCompleted(msg, sid); break;
     case "mode_changed":       onModeChanged(msg, sid); break;
     case "thinking_changed":   onThinkingChanged(msg, sid); break;
     case "model_changed":      onModelChanged(msg, sid); break;
@@ -639,14 +641,23 @@ function setToolState(row, kind) {
 }
 
 function completeToolCard(row, { is_error, denied, result_meta, output }) {
-  // present_plan 历史计划卡: 只更新状态徽标（拒绝=已拒, 其余=已批）,
-  // 不追加输出面板/不降级——全文重看靠卡片点击（renderHistoryPlanCard）。
+  // present_plan 特判, 按卡的形态分流:
+  //   .plan-card（历史回放计划卡）: 只更新状态徽标（拒绝=已拒, 其余=已批）,
+  //     不追加输出面板/不降级——全文重看靠卡片点击（renderHistoryPlanCard）。
+  //   .tool-row（实时镜像工具卡, addToolCard 建, state=run）: 必须 setToolState
+  //     收口——此前只加 allowed class 就提前 return, "运行中"状态字永远不清,
+  //     分组头摘要也跟着滞留（2026-10-21 用户实测: 计划实施完成后卡仍转圈）。
+  //   两者都不渲染输出面板: 计划全文重看靠计划卡/历史面板。
   if (row.dataset.tool === "present_plan") {
-    row.classList.add(denied || is_error ? "denied" : "allowed");
-    const head = row.querySelector(".plan-head");
-    if (head && !head.querySelector(".pl-st")) {
-      head.insertAdjacentHTML("beforeend",
-        planStatusBadge(denied || is_error ? "rejected" : "approved"));
+    if (row.classList.contains("plan-card")) {
+      row.classList.add(denied || is_error ? "denied" : "allowed");
+      const head = row.querySelector(".plan-head");
+      if (head && !head.querySelector(".pl-st")) {
+        head.insertAdjacentHTML("beforeend",
+          planStatusBadge(denied || is_error ? "rejected" : "approved"));
+      }
+    } else {
+      setToolState(row, denied || is_error ? "denied" : "ok");
     }
     return;
   }
@@ -1761,9 +1772,10 @@ function openPlanInPanel(planText, titleSuffix) {
 
 function planStatusBadge(status) {
   const map = {
-    pending:  ['pl-st-pending',  t("ws_handlers.072")],
-    approved: ['pl-st-approved', t("ws_handlers.085")],
-    rejected: ['pl-st-rejected', t("ws_handlers.086")],
+    pending:    ['pl-st-pending',    t("ws_handlers.072")],
+    approved:   ['pl-st-approved',   t("ws_handlers.085")],
+    rejected:   ['pl-st-rejected',   t("ws_handlers.086")],
+    completed:  ['pl-st-completed',  t("ws_handlers.118")],
   };
   const [cls, label] = map[status] || map.pending;
   return '<span class="pl-st ' + cls + '">' + label + '</span>';
@@ -1945,6 +1957,30 @@ function markPermResolved(sid, requestId, approved) {
     pa.appendChild(makePrMark(approved ? t("ws_handlers.085") : t("ws_handlers.086"), approved));
   }
   renderSessionList();   // 批复即重绘: 侧栏"待批计划"徽标立刻熄灭（本地批复与广播共用此口）
+}
+
+/* 计划实施完成终态: 服务端 turn 正常收口后广播 plan_completed
+ * {plan_id, request_id, session_id}。把已批准的计划卡推进"已完成"——
+ * 此前卡停在"已批准 · 开始实施", 实施进度再无回执, 历史面板也
+ * 无法区分"实施中/已完成"。幂等: 已定格 completed 的不重复。 */
+function onPlanCompleted(msg, sid) {
+  const rid = msg.request_id;
+  if (!rid) return;
+  colOf(sid).querySelectorAll(`.plan-card[data-req-id="${rid}"]`).forEach(card => {
+    if (!card.classList.contains("allowed")) return;   // 只推进已批准的卡
+    card.classList.remove("expired");
+    card.classList.add("completed");
+    const old = card.querySelector(".pr-mark");
+    if (old) old.remove();
+    card.appendChild(makePrMark(t("ws_handlers.118"), true));
+  });
+  // 右侧面板: 显示的正是这份计划（且属本会话）→ 脚注推进"已完成"
+  const pa = $("plan-actions");
+  if (pa.dataset.reqId === rid && pa.dataset.reqSession === sid) {
+    pa.innerHTML = "";
+    pa.appendChild(makePrMark(t("ws_handlers.118"), true));
+    $("plan-body").classList.remove("stale");
+  }
 }
 
 /* 桌宠/REST 批复的同步: 服务端广播 permission_resolved, 主窗据此清

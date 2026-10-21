@@ -2364,6 +2364,10 @@
   }
   .plan-card.allowed .pr-mark { color: var(--ok, #3f9b6e); }
   .plan-card.allowed .plan-title { color: var(--ok, #3f9b6e); }
+  /* 实施完成终态: 计划卡与右侧面板脚注的"已完成"标记 */
+  .plan-card.completed .pr-mark { color: var(--ok, #3f9b6e); font-weight: 600; }
+  /* 定格态隐藏头行"等待确认"提示（pr-dot 脉动一并消失）——与 .perm-row 对齐 */
+  .plan-card.allowed .pr-hint, .plan-card.denied .pr-hint { display: none; }
   .plan-card.denied .plan-title { color: var(--text-3); }
   .plan-card.denied .plan-body { opacity: .55; }
   /* 过期定格的特化标记: "已过期 · 继续对话后重新规划" */
@@ -2599,6 +2603,7 @@ body.col-resizing, body.col-resizing * { cursor: col-resize !important; }
 .pl-st-approved { color: var(--ok, #3f9b6e); border-color: color-mix(in srgb, var(--ok, #3f9b6e) 45%, var(--border)); }
 .pl-st-rejected { color: var(--err, #c2554f); border-color: color-mix(in srgb, var(--err, #c2554f) 45%, var(--border)); }
 .pl-st-pending  { color: var(--warn, #b8860b); border-color: color-mix(in srgb, var(--warn, #b8860b) 45%, var(--border)); }
+.pl-st-completed { color: var(--ok, #3f9b6e); border-color: color-mix(in srgb, var(--ok, #3f9b6e) 45%, var(--border)); }
 /* 可点击重看的计划卡: 头行手型 + hint 提示 */
 .plan-card.plan-viewable .plan-head { cursor: pointer; }
 .plan-card.plan-viewable .plan-head:hover .pr-title { color: var(--accent); }
