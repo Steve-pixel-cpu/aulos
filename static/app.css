@@ -148,25 +148,25 @@
    * 一处全局透出。RGB 保持原值只降 alpha(乘 --bg-surf, 随"壁纸亮度"滑块
    * 联动: 100% 最透 / 50% 默认 / 更低更实), 文字对比度不受影响 */
   :root[data-bg="1"] {
-    --bg:        rgb(24 24 28 / calc(.48 * var(--bg-surf, 1)));
-    --surface:   rgb(30 30 35 / calc(.55 * var(--bg-surf, 1)));
-    --surface-2: rgb(36 36 42 / calc(.50 * var(--bg-surf, 1)));
-    --surface-3: rgb(46 46 53 / calc(.46 * var(--bg-surf, 1)));
-    --code-bg:   rgb(19 19 22 / calc(.45 * var(--bg-surf, 1)));
-    --code-head: rgb(23 23 27 / calc(.55 * var(--bg-surf, 1)));
-    --hover:     rgb(36 36 42 / calc(.38 * var(--bg-surf, 1)));
-    --active:    rgb(38 38 45 / calc(.40 * var(--bg-surf, 1)));
+    --bg:        rgb(24 24 28 / calc(.60 * var(--bg-surf, 1)));
+    --surface:   rgb(30 30 35 / calc(.68 * var(--bg-surf, 1)));
+    --surface-2: rgb(36 36 42 / calc(.62 * var(--bg-surf, 1)));
+    --surface-3: rgb(46 46 53 / calc(.57 * var(--bg-surf, 1)));
+    --code-bg:   rgb(19 19 22 / calc(.56 * var(--bg-surf, 1)));
+    --code-head: rgb(23 23 27 / calc(.68 * var(--bg-surf, 1)));
+    --hover:     rgb(36 36 42 / calc(.47 * var(--bg-surf, 1)));
+    --active:    rgb(38 38 45 / calc(.50 * var(--bg-surf, 1)));
   }
   :root[data-theme="light"][data-bg="1"] {
-    --bg:        rgb(255 255 255 / calc(.48 * var(--bg-surf, 1)));
-    --surface:   rgb(255 255 255 / calc(.55 * var(--bg-surf, 1)));
-    --surface-2: rgb(243 243 245 / calc(.50 * var(--bg-surf, 1)));
-    --surface-3: rgb(234 234 238 / calc(.46 * var(--bg-surf, 1)));
-    --code-bg:   rgb(247 247 249 / calc(.45 * var(--bg-surf, 1)));
-    --code-head: rgb(239 239 242 / calc(.55 * var(--bg-surf, 1)));
-    --hover:     rgb(243 243 245 / calc(.38 * var(--bg-surf, 1)));
-    --active:    rgb(236 236 239 / calc(.40 * var(--bg-surf, 1)));
-    --accent-soft: rgb(241 242 244 / calc(.55 * var(--bg-surf, 1)));
+    --bg:        rgb(255 255 255 / calc(.60 * var(--bg-surf, 1)));
+    --surface:   rgb(255 255 255 / calc(.68 * var(--bg-surf, 1)));
+    --surface-2: rgb(243 243 245 / calc(.62 * var(--bg-surf, 1)));
+    --surface-3: rgb(234 234 238 / calc(.57 * var(--bg-surf, 1)));
+    --code-bg:   rgb(247 247 249 / calc(.56 * var(--bg-surf, 1)));
+    --code-head: rgb(239 239 242 / calc(.68 * var(--bg-surf, 1)));
+    --hover:     rgb(243 243 245 / calc(.47 * var(--bg-surf, 1)));
+    --active:    rgb(236 236 239 / calc(.50 * var(--bg-surf, 1)));
+    --accent-soft: rgb(241 242 244 / calc(.68 * var(--bg-surf, 1)));
   }
   /* 普通主题 + 壁纸: 侧栏本体降到 88% 不透明度, dock 同步透明跟随,
    * 免得播放条比侧栏更实、在底部显出一截白带 */
@@ -585,14 +585,7 @@
 
   /* ============ 右侧主区 ============ */
   #pane { flex: 1; display: flex; flex-direction: column; min-width: 0; background: var(--bg); position: relative; }
-  /* 顶部氛围光: 深色下一抹暖色渐晕，增加纵深 */
-  #pane::before {
-    content: ""; position: absolute; top: -160px; left: 50%; transform: translateX(-50%);
-    width: 680px; height: 320px; border-radius: 50%;
-    background: radial-gradient(closest-side, var(--accent-soft), transparent 72%);
-    pointer-events: none; z-index: 0; opacity: .9;
-  }
-  #doc-header, #messages, #composer { position: relative; z-index: 1; }
+  #doc-header, #messages, #composer { position: relative; }
 
   /* 文档标题栏 */
   #doc-header {
@@ -3578,7 +3571,6 @@ body.col-resizing, body.col-resizing * { cursor: col-resize !important; }
   .code-lang::before {
     content: ""; width: 8px; height: 8px; border-radius: 50%;
     background: var(--lang-dot, var(--accent));
-    box-shadow: 0 0 6px color-mix(in srgb, var(--lang-dot, var(--accent)) 60%, transparent);
     flex: none;
   }
   /* 语言→徽标色: 低饱和同系色相区分, 与深浅色主题都兼容 */
@@ -3627,7 +3619,7 @@ body.col-resizing, body.col-resizing * { cursor: col-resize !important; }
 
   /* ---------- ⑤ 欢迎页: 水印光晕 + 渐变问候语 + 建议 chips ---------- */
   .empty-state .watermark {
-    filter: drop-shadow(0 12px 38px color-mix(in srgb, var(--accent) 32%, transparent));
+    filter: drop-shadow(0 8px 22px color-mix(in srgb, var(--accent) 16%, transparent));
   }
   .empty-state.welcome h2 {
     background: linear-gradient(120deg, var(--text) 30%, var(--accent-deep));
@@ -3651,7 +3643,7 @@ body.col-resizing, body.col-resizing * { cursor: col-resize !important; }
   #messages {
     background-image:
       radial-gradient(58% 42% at 50% -6%,
-        color-mix(in srgb, var(--accent) 6%, transparent), transparent 70%);
+        color-mix(in srgb, var(--accent) 4%, transparent), transparent 70%);
   }
 
   /* ---------- ①b 工具分组头部: 同样扁平, 不做卡片 ----------

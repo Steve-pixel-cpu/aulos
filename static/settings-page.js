@@ -375,11 +375,11 @@ function extractAccentFromDataUrl(dataUrl, cb) {
         if (best < 0 || bestW <= 0) return cb(null);
         const bk = buckets[best];
         let { r, g, b } = { r: bk.r / bk.w, g: bk.g / bk.w, b: bk.b / bk.w };
-        // RGB → HSL 整定: 饱和度钳到 .45-.8, 明度按深浅主题定档
+        // RGB → HSL 整定: 饱和度钳到 .38-.62, 明度按深浅主题定档
         const mx = Math.max(r, g, b) / 255, mn = Math.min(r, g, b) / 255;
         const l0 = (mx + mn) / 2, s0 = mx === mn ? 0 : (mx - mn) / (1 - Math.abs(2 * l0 - 1));
         const h = bkToHue(best);
-        const s = Math.min(.8, Math.max(.45, s0));
+        const s = Math.min(.62, Math.max(.38, s0));
         const dark = document.documentElement.dataset.theme === "dark";
         const l = dark ? Math.min(.72, Math.max(.58, l0)) : Math.min(.48, Math.max(.34, l0));
         cb(hslToHex(h, s, l));
