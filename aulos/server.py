@@ -1048,7 +1048,9 @@ def fallback_title_on_interrupt(web_session: WebSession, emitter: TurnEmitter) -
     title = _truncated_title(web_session.runtime.session().messages)
     if not title:
         return
-    store.set_title(web_session.session_id, title)
+    # 首条消息已即时截断命名（发送路径）: 内容相同则只补广播不重复写盘
+    if store.get_title(web_session.session_id) != title:
+        store.set_title(web_session.session_id, title)
     web_session.titled = True
     emitter({
         "type": "session_renamed",
@@ -1255,6 +1257,23 @@ def _spawn_turn_thread(web_session: WebSession, text: str,
                        attachments: Optional[list[dict]],
                        emitter: TurnEmitter, prompter: WebPermissionPrompter) -> None:
     """真正起工作线程跑一轮。槽位已由调用方持有。"""
+    # 首条消息即刻截断命名: 消灭"未命名"窗口——旧时序里标题要等轮次结束
+    # 才落盘（AI 命名还比 turn_done 晚几秒）, 前端漏收 session_renamed 时
+    # 侧栏要等用户下次操作才显形（实测 2026-10-21: 标题 02:08 已落盘,
+    # UI 到 02:12 二次发消息才显示）。以用户原文截断落盘并广播; titled
+    # 不动, 轮次结束后 maybe_auto_title 的 AI 标题照常覆盖。判断看盘上
+    # 是否已有命名记录（而非 titled 旗）: 普通发送/排队接力/插队全经此
+    # 咽喉点, 接力轮也不会把已命名的标题覆盖掉。
+    if text and store.get_title(web_session.session_id) is None:
+        title = text[:AUTO_TITLE_LEN]
+        store.set_title(web_session.session_id, title)
+        # 与轮末 AI 命名同一事件出口（定向来源连接, 不 broadcast——
+        # 广播会让同会话的其他连接重复收到 emitter 已发的一份）
+        emitter({
+            "type": "session_renamed",
+            "session_id": web_session.session_id,
+            "title": title,
+        })
 
     def worker():
         # 必须在工作线程内绑定（按线程号路由）; should_stop 让流式代理逐事件检查打断;

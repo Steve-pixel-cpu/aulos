@@ -1352,6 +1352,75 @@ def test_纯图片首条消息不回填命名(client, isolated_store):
 
 
 # ------------------------------------------------------------
+# 首条消息即刻截断命名（消灭"未命名"窗口, 2026-10-21）
+# ------------------------------------------------------------
+
+def test_首轮开跑即刻截断命名(client, isolated_store, monkeypatch):
+    """未命名会话的轮次一开跑就以用户原文截断命名: 落盘 + 发
+    session_renamed。轮次结束前侧栏即有标题, 不再依赖 AI 命名的异步落盘。"""
+    sid = "s-immediate-title"
+    web_session = server.get_or_create_web_session(sid)
+    monkey_text = "帮我排查会话标题的生成逻辑，这是一个足够长的首条消息用来验证截断"
+
+    # 只测 _spawn_turn_thread 的同步段: 不让 worker 线程真跑
+    # （TestClient 环境下 runtime 未就绪, 真跑会抛槽位/线程噪音）
+    monkeypatch.setattr(server.threading.Thread, "start", lambda self: None)
+
+    events: list = []
+    server._turn_slots.acquire()               # 平衡 worker finally 里的 release
+    server._spawn_turn_thread(web_session, monkey_text, [],
+                              server.TurnEmitter(events.append), None)
+
+    # 命名发生在 _spawn_turn_thread 同步段（起线程前）: 调用返回即已落盘
+    renamed = [e for e in events if e["type"] == "session_renamed"]
+    assert renamed and renamed[0]["title"] == monkey_text[:30]
+    assert isolated_store.get_title(sid) == monkey_text[:30]
+    # titled 旗不动: 轮次结束后 AI 命名仍有机会覆盖截断标题
+    assert web_session.titled is False
+
+
+def test_已命名会话不被即刻命名覆盖(client, isolated_store, monkeypatch):
+    """盘上已有命名记录（AI 命名/手动改名/接力第二轮）: 即刻命名跳过,
+    不追加重复记录、不发事件。"""
+    sid = "s-already-titled"
+    web_session = server.get_or_create_web_session(sid)
+    isolated_store.set_title(sid, "AI 起的标题")
+    monkeypatch.setattr(server.threading.Thread, "start", lambda self: None)
+
+    events: list = []
+    server._spawn_turn_thread(web_session, "新消息文本", [],
+                              server.TurnEmitter(events.append), None)
+
+    assert not [e for e in events if e["type"] == "session_renamed"]
+    assert isolated_store.get_title(sid) == "AI 起的标题"
+
+
+def test_打断兜底不重复写同名标题(client, isolated_store):
+    """首条消息已即刻截断命名 + 首轮被打断: 兜底命名识别同内容标题,
+    不追加第二条 TitleRecord（追加式存储里重复记录无意义）。"""
+    sid = "s-interrupt-dedupe"
+    web_session = server.get_or_create_web_session(sid)
+    monkey_text = "足够长的首条消息文本用来触发即刻截断命名的路径验证"
+    isolated_store.set_title(sid, monkey_text[:30])   # 模拟即刻命名已落盘
+    web_session.runtime = _InterruptRuntime(web_session, monkey_text)
+
+    events: list = []
+    emitter = server.TurnEmitter(events.append)
+    server.fallback_title_on_interrupt(web_session, emitter)
+
+    # 不重复写盘（仍只有 1 条 TitleRecord）, 但照常发广播（前端可能没见过）
+    import aulos.storage as storage_mod
+    titles = [e for e in storage_mod.SessionStore._read_entries(
+        isolated_store, isolated_store._session_path(sid))
+        if type(e).__name__ == "TitleRecord"]
+    assert len(titles) == 1
+    assert web_session.titled is True
+    renamed = [e for e in events if e["type"] == "session_renamed"]
+    assert renamed and renamed[0]["title"] == monkey_text[:30]
+
+
+
+# ------------------------------------------------------------
 # 连接指示器: LLM 层状态（llm_status 建连快照 / _set_llm_status 广播 / 错误分类）
 # ------------------------------------------------------------
 

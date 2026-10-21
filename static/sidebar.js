@@ -77,11 +77,16 @@ function displayTitle(s) {
   return (!s || s.title === t("sidebar.011")) ? UNTITLED_TITLE() : s.title;
 }
 
+let loadSessionsSeq = 0;     // 发出序号
+let loadSessionsWritten = 0; // 已落地写入的最大序号
 async function loadSessions() {
+  const seq = ++loadSessionsSeq;
   try {
     const r = await fetch("/api/sessions");
     const data = await r.json();
+    if (seq < loadSessionsWritten) return;   // 已有更新的响应写过: 丢弃旧响应
     state.sessions = data.sessions;
+    loadSessionsWritten = seq;
     // 会话列表同源回填: 顶栏工作区胶囊读 run.currentWorkdir, 而它只在
     // 首次切入会话时从 /messages 填充一次——发送首条消息落盘 workdir、
     // 或已开会话被移动项目后若不刷新, 胶囊与侧栏分组会各说各话。

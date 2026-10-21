@@ -2228,8 +2228,16 @@ function sendFixedText(text) {
 }
 
 function onSessionRenamed(msg) {
-  // AI 命名完成（在 turn_done 之后异步到达）: 刷新列表 + 顶栏标题
-  (async () => { await loadSessions(); refreshDocTitle(); })();
+  // 命名完成（在 turn_done 之后异步到达）: 事件自带权威标题, 就地更新
+  // 后立即重绘——不依赖 loadSessions 的网络往返（旧实现丢掉 msg.title
+  // 只重新 fetch, turn_done 时刻的旧列表响应可能晚到把标题盖回未命名,
+  // 表现为"第一轮结束后侧栏仍是未命名, 第二次发消息才显形"）。
+  const s = (state.sessions || []).find(x => x.id === msg.session_id);
+  if (s && msg.title) s.title = msg.title;
+  renderSessionList();
+  refreshDocTitle();
+  // 后台仍同步一次: 顺带刷新消息数/排序等其余字段（竞态由 loadSessions 序号防护）
+  loadSessions().catch(() => { });
 }
 
 function onSessionUnarchived(msg) {
