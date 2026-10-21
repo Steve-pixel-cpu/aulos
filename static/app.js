@@ -697,14 +697,12 @@ async function loadSessionHistory(id) {
     while (buf.firstChild) col.appendChild(buf.firstChild);
     for (const n of live) col.appendChild(n);
     run.loaded = true;
-    // 子代理卡片回填: 刷新后嵌套流(subagent_event)不落盘, 卡片只有
-    // spawn 回执的 agent_id, 面板点开空白。manifest 已持久化全部摘要
-    // (type/description/status/result), 非阻塞拉一次, 给没有实时流的
-    // 子代理卡补摘要气泡, 让历史选项卡点开有内容可看。
-    // 只在当前会话(或回放会话)首次加载后做一次; 后台会话回放同样需要。
-    if (!run._saManifestsFetched) {
-      run._saManifestsFetched = true;
-      reconcileSaCardsFromManifests(id).catch(() => {});
+    // 子代理流回放: 服务端已把 worker 线级事件持久化(subagent_stream),
+    // 随 messages 一次性带回。对每条流把事件喂给现有 onSubagentEvent
+    // 渲染管线(伪会话 id), 面板按真实流重建——prompt 气泡/思考/工具
+    // 全文都在, 不再用 manifest 摘要兜底。旧会话无流记录则跳过。
+    if (data.subagent_streams && Object.keys(data.subagent_streams).length) {
+      replaySubagentStreams(id, data.subagent_streams);
     }
     // selectSession 不再 await 本函数: 滚动到底在这里补——同一任务内
     // 先滚后绘制, 观感即"加载中"直接跳到最新, 无滚动过程
@@ -719,53 +717,29 @@ async function loadSessionHistory(id) {
   }
 }
 
-/* 历史回放后: 用 /api/agents 的 manifest 摘要回填子代理卡片。
- * 只处理"没有实时 _saStream"的卡(即回放重建的空白卡); 有流的卡
- * (会话期间后台仍在跑/刚跑完)不动。补上摘要气泡后调用方会在
- * openSaPanel 时把它搬进面板当内容。 */
-async function reconcileSaCardsFromManifests(id) {
-  const run = runOf(id);
-  let data;
-  try {
-    const r = await fetch("/api/agents");
-    if (!r.ok) return;
-    data = await r.json();
-  } catch (e) { return; }
-  const agents = (data && data.agents) || [];
-  if (!agents.length || !run.subagents) return;
-  for (const m of agents) {
-    const card = run.subagents[m.agent_id];
-    if (!card || !card.isConnected) continue;
-    if (saColOf(card)) continue;   // 有实时流: 不回填, 保持实时内容
-    // 补摘要气泡（页面打开时搬进面板）; 已有则不重复
-    if (card.querySelector(".sa-summary")) continue;
-    const sum = document.createElement("div");
-    sum.className = "sa-summary msg";
-    const meta = document.createElement("div");
-    meta.className = "sa-summary-meta";
-    const zh = SUB_TYPE_LABEL[m.subagent_type] || m.subagent_type || "";
-    const stLabel = m.status === "completed" ? t("ws_handlers.052")
-      : m.status === "failed" ? t("ws_handlers.053") : m.status || "";
-    meta.textContent = (zh ? zh + " · " : "") + (m.description || m.agent_id.slice(0, 8)) +
-      (stLabel ? " — " + stLabel : "");
-    // 正文走 markdown 渲染: result 是 worker 汇报原文, 与主列气泡
-    // 同一套 renderMd（失败自动降级转义纯文本）; 用 div 不用 pre,
-    // 渲染出的 <p>/<strong>/<code> 才有正常排版
-    const body = document.createElement("div");
-    body.className = "sa-summary-body";
-    body.innerHTML = renderMd(m.result_preview || m.error || "");
-    sum.appendChild(meta);
-    sum.appendChild(body);
-    // 超长截断提示: /api/agents 只回前 1200 字符, 明示省略
-    if (m.result_truncated) {
-      const tip = document.createElement("span");
-      tip.className = "sa-sum-trunc";
-      tip.textContent = t("ws_handlers.121");
-      meta.appendChild(tip);
+/* 历史回放后: 按持久化的子代理流重建面板内容。
+ * data.subagent_streams: { agent_id -> {events, ok, duration_s} }。
+ * 事件与实时 subagent_event 的 event 字段同构——逐条喂给 onSubagentEvent
+ * (伪会话 id "sub:"+agent_id), 复用现有渲染管线零新渲染代码。
+ * 卡片本身已由 spawn 回执路径(renderHistoryMessage 的 tool_result
+ * 升级)建好; 这里只填流内容 + 置终态。 */
+function replaySubagentStreams(id, streams) {
+  for (const [agentId, s] of Object.entries(streams)) {
+    const pseudo = "sub:" + agentId;
+    const events = (s && s.events) || [];
+    for (const ev of events) {
+      try { onSubagentEvent({ type: "subagent_event",
+                              agent_id: agentId, event: ev }, id); }
+      catch (e) { /* 单条事件坏不拖垮整段回放 */ }
     }
-    sum.appendChild(meta);
-    sum.appendChild(body);
-    card.appendChild(sum);
+    // 终态: 流记录带 ok 说明 worker 已收尾(历史会话必然如此);
+    // 按现有生命周期函数置卡片绿/红 + 耗时, 与实时路径同一出口
+    if (s && s.ok !== null && s.ok !== undefined) {
+      try { onSubagentDone({ type: "subagent_done", agent_id: agentId,
+                             status: s.ok ? "completed" : "failed",
+                             duration_s: s.duration_s }, id); }
+      catch (e) { /* 同上 */ }
+    }
   }
 }
 

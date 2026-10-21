@@ -1079,24 +1079,6 @@ $("sa-scroll-btn").onclick = () => {
   $("sa-body").scrollTo({ top: $("sa-body").scrollHeight, behavior: "smooth" });
 };
 
-/* 摘要气泡的搬回, 与 saPlaceCol 的"搬回"半边对称。回放卡片没有实时
- * 流, 面板内容就是 .sa-summary 本身; 每份搬进面板的摘要都记着宿主卡
- * (_saHomeCard + _sahome 标记), 换 tab / 收面板时按引用搬回卡尾——
- * 否则它永远留在 #sa-body 里, 下一个子代理开面板时叠着上一个的旧
- * 内容（串台）。宿主卡已随旧会话 DOM 移除时(isConnected=false)节点
- * 直接丢弃。 */
-function saHomeSummaries() {
-  $("sa-body").querySelectorAll(".sa-summary[_sahome]").forEach(sum => {
-    const home = sum._saHomeCard;
-    if (home && home.isConnected) {
-      sum.classList.remove("hosted", "msg", "bubble-host");
-      home.appendChild(sum);   // appendChild 自带摘除, 搬回卡尾
-    } else {
-      sum.remove();
-    }
-  });
-}
-
 function openSaPanel(agentId, cardRef) {
   const card = cardRef || saCardOf(runOf(state.sessionId), agentId);
   if (!card || !card.isConnected) return;
@@ -1112,22 +1094,9 @@ function openSaPanel(agentId, cardRef) {
   pane.classList.remove("plan-open");   // 侧栏互斥: 打开子代理面板则收起计划面板
   saPlaceCol(card, true);
   card.classList.add("sa-open-in-panel");
-  // 历史回放的空流回填: 会话刷新后嵌套流(子代理内部事件)不落盘,
-  // 只有 manifest 摘要。开面板时若无 _saStream 且有 .sa-summary
-  // （回放时登记的"摘要气泡"）就把它搬进面板作内容, 否则空白。
-  // 有实时流(_saStream 持引用)就证明会话期间有事件, 不覆盖实时。
-  // 搬入前先归还面板里其他摘要(带 _sahome 标记的): 面板只装当前
-  // 代理的内容, 旧摘要不还回去就会越叠越多。
-  if (!saColOf(card)) {
-    saHomeSummaries();
-    const sum = card.querySelector(".sa-summary");
-    if (sum) {
-      sum.setAttribute("_sahome", "");   // 标记宿主归属, 供搬回时识别
-      sum._saHomeCard = card;
-      $("sa-body").appendChild(sum);
-      sum.classList.add("hosted", "msg", "bubble-host");
-    }
-  }
+  // 历史会话的流内容已由 replaySubagentStreams 重建(_saStream 存在),
+  // 面板直接展示; 旧会话(无持久化流)面板为空——不再做 manifest 摘要
+  // 回填(/api/agents 已随摘要机制一并移除)。
   saRenderTabs(runOf(state.sessionId));
   saNearBottom = true;                       // 打开即看最新: 重置贴底态
   $("sa-scroll-btn").classList.remove("show");
@@ -1142,7 +1111,6 @@ function closeSaPanel() {
   $("pane").classList.remove("sa-open");
   if (card && card.isConnected) {
     saPlaceCol(card, false);
-    saHomeSummaries();   // 与流列对称: 面板收起时摘要也搬回宿主卡
     card.classList.remove("sa-open-in-panel");
   }
   if (state.sessionId) saRenderTabs(runOf(state.sessionId));

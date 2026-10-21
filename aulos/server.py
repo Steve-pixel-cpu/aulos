@@ -498,17 +498,103 @@ def _subagent_event_sink(session_id: Optional[str]):
 
     返回的 callable 可从任意线程调用（worker 线程事件镜像）: 逐个 emit
     包 try/except, 单个连接断开不影响其余订阅者。CLI 未设置 bridge,
-    不会走到这里。"""
+    不会走到这里。
+
+    (2026-10-21) 双写: 广播的同时把事件累积进持久化缓冲, 定期冲刷成
+    SessionStore 的 subagent_stream 记录——重启/回放时子代理面板按真实
+    流重建, 替代旧 manifest 摘要回填。缓冲以工具事件(tool_use/tool_result)
+    为分界批量冲刷: text/thinking delta 原地合并, 文件不随 delta 条数
+    膨胀。worker 线程调用 → 缓冲操作全程持锁。"""
     if not session_id or session_id not in _sessions:
         return None
     web_session = _sessions[session_id]
     if not web_session.emits:
         return None
 
+    persister = _StreamPersister(session_id)
+    _SUBAGENT_PERSISTERS[session_id] = persister
+
     def _sink(payload: dict) -> None:
         web_session.broadcast(payload)
+        persister.feed(payload)
 
     return _sink
+
+
+class _StreamPersister:
+    """单会话的子代理流持久化缓冲（多 agent 共用一把锁）。
+
+    feed() 由 worker 线程经事件镜像调用; finish() 由终态广播点调用。
+    持久化失败一律吞掉——它是增强路径, 绝不能影响实时广播/任务执行。"""
+
+    def __init__(self, session_id: str):
+        self._session_id = session_id
+        self._lock = threading.Lock()
+        # agent_id -> {"events": [...], "ok": None, "dur": None}
+        self._buf: dict[str, dict] = {}
+
+    def feed(self, payload: dict) -> None:
+        ptype = payload.get("type", "")
+        if ptype == "subagent_done":
+            # 终态信封: 冲刷剩余缓冲并补 ok/duration（worker 收尾点）
+            agent_id = payload.get("agent_id") or ""
+            status = payload.get("status", "")
+            if agent_id and status in ("completed", "failed", "error"):
+                self.finish(agent_id, status == "completed",
+                            payload.get("duration_s"))
+            return
+        if ptype != "subagent_event":
+            return
+        agent_id = payload.get("agent_id") or ""
+        event = payload.get("event") or {}
+        etype = event.get("type", "")
+        with self._lock:
+            b = self._buf.setdefault(
+                agent_id, {"events": [], "ok": None, "dur": None})
+            # delta 原地合并: 同类型连续 delta 拼接, 大幅减少记录条数
+            if etype in ("text_delta", "thinking_delta") and b["events"]:
+                last = b["events"][-1]
+                if last.get("type") == etype:
+                    last["text"] = str(last.get("text", "")) + \
+                        str(event.get("text", ""))
+                    return
+            b["events"].append(event)
+            # 工具事件是自然分界: 冲刷缓冲, 避免进程崩溃丢整段流
+            if etype in ("tool_use_started", "tool_use", "tool_result",
+                         "user_message"):
+                self._flush_locked(agent_id, b)
+
+    def finish(self, agent_id: str, ok: bool, duration_s=None) -> None:
+        """worker 终态: 冲刷剩余缓冲并补 ok/duration。"""
+        with self._lock:
+            b = self._buf.get(agent_id)
+            if b is None:
+                return
+            b["ok"] = ok
+            b["dur"] = duration_s
+            self._flush_locked(agent_id, b)
+            self._buf.pop(agent_id, None)
+
+    def _flush_locked(self, agent_id: str, b: dict) -> None:
+        if not b["events"] and b["ok"] is None:
+            return
+        try:
+            store.append_subagent_stream(
+                self._session_id, agent_id, b["events"],
+                ok=b["ok"], duration_s=b["dur"])
+        except Exception:
+            pass
+        b["events"] = []
+
+
+def _subagent_persister(session_id: Optional[str]):
+    """取回该会话的流持久化缓冲（终态冲刷用）。无则 None。"""
+    if not session_id:
+        return None
+    return _SUBAGENT_PERSISTERS.get(session_id)
+
+
+_SUBAGENT_PERSISTERS: dict[str, _StreamPersister] = {}
 
 
 set_subagent_event_bridge(_subagent_event_sink)
@@ -1999,46 +2085,69 @@ async def api_get_messages(session_id: str):
         # 新建后尚未落盘的会话: 返回空历史而不是 404——否则前端"新建会话"
         # 会走加载失败分支，渲染成空白
         return {"session_id": session_id, "messages": [],
-                "workdir": store.get_workdir(session_id)}
+                "workdir": store.get_workdir(session_id),
+                "subagent_streams": {}}
     detail, _ = store.load_session_detail(session_id)
     return {"session_id": session_id,
             "messages": [_message_to_dict(m, ts) for m, ts in detail],
-            "workdir": store.get_workdir(session_id)}
+            "workdir": store.get_workdir(session_id),
+            # 子代理流持久化: 回放时前端按真实流重建面板（替代 /api/agents
+            # 摘要回填）。旧会话无流记录 → 空 dict, 前端跳过回放。
+            "subagent_streams": store.get_subagent_streams(session_id)}
 
 
-@app.get("/api/agents")
-async def api_list_agents():
-    """子代理摘要: 供历史回放时回填空白的子代理卡片/选项卡。
-
-    子代理的线级事件(subagent_event)不落盘, 刷新后卡片重建时只有
-    agent_tool 的 spawn 回执(agent_id), 面板内容空白。manifest 已
-    持久化 type/description/status/result 全文, 前端据此补一个摘要
-    气泡, 并在重放时把没有实时流的卡片收进"历史"分组而不是冒充运行中。
-    返回全部 manifest 的摘要字段（不含大体积 output_file 文本）;
-    前端按 agent_id 匹配显示。失败时返回空列表, 不阻塞历史回放。"""
+def _prune_subagent_streams_once() -> int:
+    """会话流按保留期清理一轮: 与 manifest 的 DEFAULT_RETENTION_DAYS
+    同一个口径(7 天)。以会话为粒度剔除(见 store.prune_subagent_streams),
+    返回发生重写的会话数。"""
+    n = 0
     try:
-        from aulos.multi_agent import AgentManifest
-        from aulos.agent_tools import get_orchestrator
-        manifests = get_orchestrator().list_agents()
-        data = []
-        for m in manifests:
-            if not getattr(m, "agent_id", None):
+        for sid in store.list_sessions():
+            try:
+                if store.prune_subagent_streams(
+                        sid, retention_days=_STREAM_RETENTION_DAYS):
+                    n += 1
+            except Exception:
                 continue
-            # result 可能很长(汇报全文), 前端要点开才看, 这里不展开
-            data.append({
-                "agent_id": m.agent_id,
-                "subagent_type": getattr(m, "subagent_type", "") or "",
-                "description": getattr(m, "description", "") or "",
-                "status": getattr(m, "status", "") or "",
-                "result_preview": (getattr(m, "result", "") or "")[:1200],
-                # 明示截断: 前端据此在摘要行尾加"已截断"提示
-                "result_truncated": len(getattr(m, "result", "") or "") > 1200,
-                "error": getattr(m, "error", "") or "",
-                "duration_s": None,
-            })
-        return {"agents": data}
-    except Exception as e:
-        return {"agents": []}
+    except Exception:
+        pass
+    return n
+
+
+_STREAM_RETENTION_DAYS = 7   # 与 orchestrator.DEFAULT_RETENTION_DAYS 同口径
+
+
+async def _daily_stream_prune_loop() -> None:
+    """每日一轮: 会话子代理流超期清理。首轮延迟 10s(让位启动探测), 之后
+    每 24h 重跑。异常吞掉——清理失败不影响服务。"""
+    import asyncio
+    while True:
+        try:
+            await asyncio.sleep(24 * 3600)
+        except Exception:
+            return
+        try:
+            _prune_subagent_streams_once()
+        except Exception:
+            pass
+
+
+def _startup_stream_prune() -> None:
+    """启动即清一轮(同步, 量小: 只对有流记录的会话重写), 并拉起每日循环。"""
+    import asyncio
+    try:
+        _prune_subagent_streams_once()
+    except Exception:
+        pass
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            loop.create_task(_daily_stream_prune_loop())
+    except Exception:
+        pass
+
+
+app.router.add_event_handler("startup", _startup_stream_prune)
 
 
 @app.get("/api/plans")

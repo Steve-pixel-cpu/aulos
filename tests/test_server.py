@@ -612,41 +612,6 @@ def test_start_pending_turn_无排队时静默返回(monkeypatch):
 
 
 # ------------------------------------------------------------
-# /api/agents — result_preview 截断宽度与 result_truncated 明示
-# （历史回放回填子代理卡片用; handler 内局部 import get_orchestrator,
-#   故 patch aulos.agent_tools 侧）
-# ------------------------------------------------------------
-
-def test_api_agents_preview_truncation(monkeypatch):
-    from types import SimpleNamespace
-    import aulos.agent_tools as agent_tools
-
-    long_result = "x" * 1500
-    manifests = [
-        SimpleNamespace(agent_id="ag-long", subagent_type="explore",
-                        description="长结果", status="completed",
-                        result=long_result, error=None),
-        SimpleNamespace(agent_id="ag-short", subagent_type="general",
-                        description="短结果", status="completed",
-                        result="short", error=None),
-    ]
-    monkeypatch.setattr(agent_tools, "get_orchestrator",
-                        lambda: SimpleNamespace(list_agents=lambda: manifests))
-
-    tc = TestClient(server.app)
-    r = tc.get("/api/agents")
-    assert r.status_code == 200
-    by_id = {a["agent_id"]: a for a in r.json()["agents"]}
-
-    long_a = by_id["ag-long"]
-    assert len(long_a["result_preview"]) == 1200, "预览截到 1200 字符"
-    assert long_a["result_truncated"] is True, "长结果明示截断"
-
-    short_a = by_id["ag-short"]
-    assert short_a["result_preview"] == "short"
-    assert short_a["result_truncated"] is False, "短结果不标截断"
-
-
 # ------------------------------------------------------------
 # 启动对账接线 — startup 事件经 get_orchestrator 调 reconcile_orphans
 # （曾经 get_orchestrator 只 import 未使用, 对账从未发生）

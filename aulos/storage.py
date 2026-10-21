@@ -89,6 +89,20 @@ class SessionMemoryRecord(BaseModel):
     timestamp: str
 
 
+class SubagentStreamRecord(BaseModel):
+    """子代理流持久化: worker 的线级事件(user_message prompt/思考/正文/
+    工具)经事件镜像落盘, 会话回放时据此原样重建子代理面板, 替代 manifest
+    摘要回填。追加式: 同一 agent_id 可有多条记录(工具事件为分界分批冲刷),
+    读取侧按 agent_id 聚合、后者续接前者。events 为前端 onSubagentEvent
+    消费的事件数组(Wire 事件原样), ok/err 终态随最后一批落盘。"""
+    type: Literal["subagent_stream"] = "subagent_stream"
+    agent_id: str
+    events: list[dict] = []
+    ok: Optional[bool] = None       # 终态: True 完成 / False 出错 / None 未完(续)
+    duration_s: Optional[float] = None
+    timestamp: str
+
+
 class SessionStore:
 
     # 进程内互斥: 大记录(几十 KB 的工具结果)经缓冲写入可能拆成多次
@@ -198,6 +212,118 @@ class SessionStore:
         if not file_path.exists():
             raise KeyError(session_id)
         file_path.unlink()
+
+    # --- 子代理流持久化 (2026-10-21) ---
+    # 单会话子代理流的总字节预算: 超限重写丢弃最老的整条流(以 agent
+    # 为粒度, 不撕裂单条流)。量级: delta 已在 sink 侧合并, 单代理流
+    # 通常 10~100KB; 2MB ≈ 数十个完整子代理会话, 深挖型长会话也够用。
+    SUBAGENT_STREAM_BUDGET = 2 * 1024 * 1024
+
+    def append_subagent_stream(self, session_id: str, agent_id: str,
+                               events: list[dict],
+                               ok: Optional[bool] = None,
+                               duration_s: Optional[float] = None) -> None:
+        """追加一段子代理流事件（一批 = 一条记录）。写入前做字节预算:
+        超限时重写会话文件, 丢最老的整条流记录, 保住预算内最新内容。
+        消息链(StorageEntry)与其余记录类型原样保留, 不受清理影响。"""
+        path = self._session_path(session_id)
+        self._append_entry(path, SubagentStreamRecord(
+            agent_id=agent_id, events=events, ok=ok,
+            duration_s=duration_s,
+            timestamp=datetime.now(timezone.utc).isoformat(),
+        ))
+        self._enforce_stream_budget(session_id)
+
+    def _enforce_stream_budget(self, session_id: str) -> None:
+        """字节预算: 会话文件里 subagent_stream 记录总量超预算时, 从最老
+        的整条流开始丢弃, 直到回到预算内。重写在 _append_lock 内进行,
+        与追加互斥; 先写临时文件再原子替换, 半途崩溃不损原文件。"""
+        path = self._session_path(session_id)
+        try:
+            size = path.stat().st_size
+        except OSError:
+            return
+        if size <= self.SUBAGENT_STREAM_BUDGET:
+            return
+        with self._append_lock:
+            # 重新读全文件(含锁外新追加的), 按行分拣
+            text = read_text_with_retry(path)
+            lines = text.split("\n")
+            kept: list[str] = []
+            stream_lines: list[str] = []   # (json_text, approx_bytes) 有序
+            approx: list[int] = []
+            for line in lines:
+                if not line.strip():
+                    continue
+                if '"subagent_stream"' in line[:60]:
+                    stream_lines.append(line)
+                    approx.append(len(line.encode("utf-8")) + 1)
+                else:
+                    kept.append(line)
+            # 非流记录本体也可能超预算(工具结果大头): 流全丢也救不了时
+            # 不做无谓重写(丢光流后仍超限, 说明主体是消息, 不归这里管)
+            total = sum(approx)
+            i = 0
+            while total > self.SUBAGENT_STREAM_BUDGET and i < len(stream_lines):
+                total -= approx[i]
+                i += 1
+            if i == 0:
+                return   # 流记录总量本就未超限: 超的是消息本体, 放弃
+            # i 之前的流整条丢弃
+            new_lines = kept + stream_lines[i:]
+            # 注意: kept 与流的原相对顺序被打乱(流统一挪到尾部)。所有
+            # 读者都按"消息链 + 类型记录"分流, 不依赖行序, 安全。
+            tmp = path.with_suffix(".jsonl.tmp")
+            tmp.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+            os.replace(tmp, path)
+
+    def get_subagent_streams(self, session_id: str) -> dict[str, dict]:
+        """读取会话的全部子代理流, 聚合为 agent_id -> {
+        events: [...合并后...], ok: bool|None, duration_s } 。
+        同一 agent 多条记录按文件序续接; 旧会话无流记录返回空 dict。"""
+        file_path = self._session_path(session_id)
+        out: dict[str, dict] = {}
+        for e in self._read_entries(file_path):
+            if not isinstance(e, SubagentStreamRecord):
+                continue
+            agg = out.setdefault(e.agent_id,
+                                 {"events": [], "ok": None, "duration_s": None})
+            agg["events"].extend(e.events or [])
+            if e.ok is not None:
+                agg["ok"] = e.ok
+            if e.duration_s is not None:
+                agg["duration_s"] = e.duration_s
+        return out
+
+    def prune_subagent_streams(self, session_id: str,
+                               retention_days: int) -> bool:
+        """按保留期清理: 会话文件最老记录时间距今超期时, 剔除该会话全部
+        subagent_stream 记录(以会话为粒度——流只为回放服务, 半新半旧的
+        会话留一半流没有消费场景)。返回是否发生重写。"""
+        import time as _time
+        path = self._session_path(session_id)
+        if not path.exists():
+            return False
+        entries = self._read_entries(path)
+        streams = [e for e in entries if isinstance(e, SubagentStreamRecord)]
+        if not streams:
+            return False
+        oldest = streams[0].timestamp
+        try:
+            ts = datetime.fromisoformat(oldest)
+            age_days = (_time.time() - ts.timestamp()) / 86400
+        except ValueError:
+            return False
+        if age_days <= retention_days:
+            return False
+        with self._append_lock:
+            text = read_text_with_retry(path)
+            kept = [ln for ln in text.split("\n")
+                    if ln.strip() and '"subagent_stream"' not in ln[:60]]
+            tmp = path.with_suffix(".jsonl.tmp")
+            tmp.write_text("\n".join(kept) + "\n", encoding="utf-8")
+            os.replace(tmp, path)
+        return True
         self._meta_cache.pop(session_id, None)   # 派生元数据随文件一起消失
 
     # --- 会话命名 (prompt_dev/session_title.md) ---
@@ -553,6 +679,8 @@ class SessionStore:
                     result.append(ArchiveRecord.model_validate(data))
                 elif data.get("type") == "pin":
                     result.append(PinRecord.model_validate(data))
+                elif data.get("type") == "subagent_stream":
+                    result.append(SubagentStreamRecord.model_validate(data))
                 else:
                     result.append(StorageEntry.model_validate(data))
             except json.JSONDecodeError as e:

@@ -151,35 +151,3 @@ test("已完成子代理不再进 tab 行（历史胶囊已移除）; 点当前 
                "live1", "切换到 live1");
 });
 
-test("回放后 reconcileSaCardsFromManifests: 给空白卡补摘要气泡", async () => {
-  const w = setup("s-sa6");
-  // 卡片已由回放登记 (无流, 无状态), 模拟 empty 卡
-  w.onToolUseStarted({ id: "tu1", name: "agent_tool", input: "{}" }, "s-sa6");
-  w.onSubagentStarted({ agent_id: "ag6", subagent_type: "verify",
-                        description: "校验" }, "s-sa6");
-  // 无 subagent_event, 卡片无 _saStream
-  const card = w.runOf("s-sa6").subagents.ag6;
-
-  // mock fetch: 只 mock /api/agents, 其余路径仍走 stub(抛错)——
-  // 否则 init() 的 loadSettings/loadSessions 会被"成功 mock"打进
-  // 意外成功路径, 反而触发真实 bug
-  const realFetch = w.fetch;
-  w.fetch = (url) => {
-    if (String(url).includes("/api/agents")) {
-      return Promise.resolve({
-        ok: true,
-        json: async () => ({ agents: [{
-          agent_id: "ag6", subagent_type: "verify", description: "校验",
-          status: "completed", result_preview: "12 项全过", error: "",
-        }] }),
-      });
-    }
-    return realFetch(url);
-  };
-
-  await w.reconcileSaCardsFromManifests("s-sa6");
-  const sum = card.querySelector(".sa-summary");
-  assert.ok(sum, "空白卡补上摘要气泡");
-  assert.match(sum.textContent, /12 项全过/, "摘要含结果预览");
-  assert.match(sum.textContent, /完成/, "摘要元信息含状态");
-});
