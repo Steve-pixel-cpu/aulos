@@ -56,11 +56,14 @@
   }
   :root[data-theme="light"] {
     color-scheme: light;
-    --bg: #ffffff;
+    /* 主区微冷白(2026-10): 旧纯白与 surface 同值, 卡片只能靠边框分界。
+       降 2 点带微冷 → 三层梯子 side #f5f6f8 → bg #fcfcfd → surface #fff,
+       卡片自然浮起; 深色模式不动。 */
+    --bg: #fcfcfd;
     /* 浅色调优(2026-10): 旧 #f7f7f8 与纯白主区仅差 8/255, 观感"没洗干净的灰"。
-       改冷调石墨 #f3f4f6(+微蓝) 并把 hover/active 加深一档拉开层次(GitHub/Linear
-       浅色做法); 分层职责仍由 1px 边框承担, 深色模式不动。 */
-    --bg-side: #f3f4f6;
+       第一版 #f3f4f6 用户实测偏深, 收半档到 #f5f6f8(仍带微蓝冷调),
+       hover/active 同步回调保持梯子间距。深色模式不动。 */
+    --bg-side: #f5f6f8;
     --surface: #ffffff;
     --surface-2: #f3f3f5;
     --surface-3: #eaeaee;
@@ -69,8 +72,8 @@
     --text: #1d1d22;
     --text-2: #5f6068;
     --text-3: #9a9ba3;
-    --hover: #ececef;
-    --active: #e4e4e8;
+    --hover: #efeff2;
+    --active: #e9e9ed;
     --accent: #757b85;
     --accent-deep: #5d626b;
     --accent-soft: #f1f2f4;
@@ -161,14 +164,14 @@
     --active:    rgb(38 38 45 / calc(.50 * var(--bg-surf, 1)));
   }
   :root[data-theme="light"][data-bg="1"] {
-    --bg:        rgb(255 255 255 / calc(.60 * var(--bg-surf, 1)));
+    --bg:        rgb(252 252 253 / calc(.60 * var(--bg-surf, 1)));
     --surface:   rgb(255 255 255 / calc(.68 * var(--bg-surf, 1)));
     --surface-2: rgb(243 243 245 / calc(.62 * var(--bg-surf, 1)));
     --surface-3: rgb(234 234 238 / calc(.57 * var(--bg-surf, 1)));
     --code-bg:   rgb(247 247 249 / calc(.56 * var(--bg-surf, 1)));
     --code-head: rgb(239 239 242 / calc(.68 * var(--bg-surf, 1)));
-    --hover:     rgb(236 236 239 / calc(.47 * var(--bg-surf, 1)));
-    --active:    rgb(228 228 232 / calc(.50 * var(--bg-surf, 1)));
+    --hover:     rgb(239 239 242 / calc(.47 * var(--bg-surf, 1)));
+    --active:    rgb(233 233 237 / calc(.50 * var(--bg-surf, 1)));
     --accent-soft: rgb(241 242 244 / calc(.68 * var(--bg-surf, 1)));
   }
   /* 普通主题 + 壁纸: 侧栏本体降到 88% 不透明度, dock 同步透明跟随,
