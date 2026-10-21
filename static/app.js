@@ -1491,7 +1491,15 @@ async function loadSettings() {
     loadUtilityProvider();   // side-call 小模型设置（下拉项依赖供应商列表）
     loadWorkerProvider();    // 子代理模型设置（下拉项同样依赖供应商列表）
     syncModelDropdown(s.provider_id, s.model_id);
-    modeDd.setValue(mkModeValue(s.permission_mode || "prompt", !!s.permission_plan));
+    // 权限回显只属于"无会话"态（全局默认的展示窗口）: 草稿预选优先,
+    // 无预选显示全局默认（与 startDraft 草稿条回显同口径）。会话运行中
+    // 不碰——会话级显示归 selectSession/onModeChanged, 在这里刷全局默认
+    // 会把显示串回「每次询问」（2026-10-21: 切模型等触发本函数的场景）
+    if (!state.sessionId) {
+      modeDd.setValue(state.draftMode || state.draftPlan != null
+        ? mkModeValue(state.draftMode || "prompt", !!state.draftPlan)
+        : mkModeValue(s.permission_mode || "prompt", !!s.permission_plan));
+    }
     thinkDd.setValue(s.thinking_level);
     // 全局默认值快照: 供切会话/草稿态回显兜底（见 state.globalDefaults 注释）
     state.globalDefaults = {
@@ -2328,9 +2336,13 @@ async function saveSettings(patch) {
     }
     const s = await r.json();
     thinkDd.setValue(s.thinking_level);
-    // 草稿态: 无会话, 显示全局默认（基础模式 + 计划开关双状态）
+    // 草稿态: 无会话, 显示全局默认（基础模式 + 计划开关双状态）;
+    // 草稿预选优先（同 startDraft 口径）——切模型走的正是本函数,
+    // 不能把用户预选的权限档显示刷回全局默认
     if (!state.sessionId) {
-      modeDd.setValue(mkModeValue(s.permission_mode || "prompt", !!s.permission_plan));
+      modeDd.setValue(state.draftMode || state.draftPlan != null
+        ? mkModeValue(state.draftMode || "prompt", !!state.draftPlan)
+        : mkModeValue(s.permission_mode || "prompt", !!s.permission_plan));
     }
     // 草稿态下 REST 修改的全局默认, 同步进快照（切会话/下次进草稿的兜底值）
     if (s.thinking_level != null) state.globalDefaults.thinkingLevel = s.thinking_level;
