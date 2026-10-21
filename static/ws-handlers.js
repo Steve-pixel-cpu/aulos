@@ -975,7 +975,9 @@ function saColOf(card) {
  * 点卡片: 流式列整体搬进 #sa-body（DOM 移动保留子节点, 事件路由零改动
  * ——colOf(伪 id) 返回的还是同一个节点）, 侧栏头部出现对应选项卡。
  * 多个子代理并行时各占一个 tab（状态点: 转圈/绿/红）, 点 tab 切换展示
- * 的流, 互不混淆。再点当前 tab 或 ✕ 收起: 列搬回卡片内嵌位置。 */
+ * 的流, 互不混淆。点 ✕ 收起: 列搬回卡片内嵌位置。
+ * tab 行只放 运行中 + 当前打开的: 已完成的代理从主消息流的卡片入口
+ * 打开（点卡片即进面板）, 不再做「历史」聚合。 */
 let _saOpenAgent = null;   // 侧栏当前展示的 agent_id
 let _saOpenCard = null;    // 对应卡片引用: 关闭/搬回按引用走, 不按会话查表（切会话后查表会找错卡片）
 
@@ -990,38 +992,24 @@ function saTabLabel(card, agentId) {
 }
 
 /* 重建侧栏选项卡。
- * 分组策略（2026-10-20 修复: 长会话累积十几个已完成子代理, 选项
- * 卡挤成一行乱码单字）: 运行中/当前选中平铺在最前; 其余已完成的
- * 收进右侧一个「历史 N」胶囊按钮, 点击弹出列表面板, 不再占满
- * tab 行。sa-history 为 DOM 上的持久的宿主容器（#sa-body 同级）,
- * 面板关闭时隐藏但保留选项 DOM 便于状态点同步着色。 */
+ * 分组策略: 运行中的子代理平铺成 tab; 已完成的不聚合、不平铺——
+ * 它们的入口是主消息流里的卡片（点卡片打开面板后以「当前打开」
+ * tab 出现）。tab 顺序不随点击重排: 始终 运行中 → 当前打开。 */
 function saTabSortKey(card, agentId) {
-  if (agentId === _saOpenAgent) return "0-" + agentId;
   if (card && card.dataset.state === "run") return "1-" + agentId;
   return "2-" + agentId;
 }
 function saRenderTabs(run) {
   const tabs = $("sa-tabs");
   tabs.innerHTML = "";
-  // 历史弹出层: 挂 body 顶层, 与 #sa-body 同级（避免被面板内容裁切）
-  let histEl = document.getElementById("sa-history");
-  if (!histEl) {
-    histEl = document.createElement("div");
-    histEl.id = "sa-history";
-    histEl.className = "sa-history";
-    histEl.addEventListener("click", ev => ev.stopPropagation());
-    document.body.appendChild(histEl);
-  }
-  histEl.innerHTML = "";
   const map = run.subagents || {};
-  const running = [], done = [];
+  const shown = [];
   for (const [agentId, card] of Object.entries(map)) {
     if (!card || !card.isConnected) continue;
-    (agentId === _saOpenAgent || (card.dataset.state === "run")
-      ? running : done).push([agentId, card]);
+    if (card.dataset.state === "run" || agentId === _saOpenAgent) shown.push([agentId, card]);
   }
-  // 排序: 当前选中 → 运行中（保持登记序）→ 历史（按时间倒序, 新的在前）
-  running.sort((a, b) => saTabSortKey(a[1], a[0]).localeCompare(saTabSortKey(b[1], b[0])));
+  // 排序: 运行中（保持登记序）→ 其余（当前打开的已完成代理）
+  shown.sort((a, b) => saTabSortKey(a[1], a[0]).localeCompare(saTabSortKey(b[1], b[0])));
   const mkTab = (agentId, card) => {
     const full = saTabLabel(card, agentId.slice(0, 8));
     const b = document.createElement("button");
@@ -1050,69 +1038,11 @@ function saRenderTabs(run) {
     b.appendChild(dot);
     b.appendChild(label);
     b.dataset.agent = agentId;
-    b.onclick = () => {
-      if (_saOpenAgent === agentId) { closeSaPanel(); return; }
-      openSaPanel(agentId, card);
-    };
+    // 点 tab 只做切换: 点当前已打开的不再关闭面板（收起走 ✕）
+    b.onclick = () => openSaPanel(agentId, card);
     return b;
   };
-  for (const [aid, card] of running) tabs.appendChild(mkTab(aid, card));
-  // 历史胶囊按钮
-  if (done.length) {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.id = "sa-hist-btn";
-    btn.className = "sa-tab sa-hist-btn";
-    btn.textContent = t("ws_handlers.118", { n: done.length });
-    btn.onclick = (ev) => {
-      ev.stopPropagation();
-      const show = histEl.classList.toggle("open");
-      if (show) saRenderHistoryList(histEl, done);
-    };
-    tabs.appendChild(btn);
-    // 历史面板开着且本次渲染更新了集合: 保持内容同步（不丢用户当前视图）
-    if (histEl.classList.contains("open")) saRenderHistoryList(histEl, done);
-  }
-  // 点击空白处收起历史面板
-  const closeHist = (ev) => {
-    if (histEl.classList.contains("open") &&
-        !ev.target.closest("#sa-hist-btn") &&
-        !ev.target.closest("#sa-history")) {
-      histEl.classList.remove("open");
-      histEl.innerHTML = "";
-    }
-  };
-  document.removeEventListener("click", closeHist);
-  document.addEventListener("click", closeHist);
-}
-
-/* 渲染历史弹出层的内容列表（done 数组 = [agentId, card] 对的数组） */
-function saRenderHistoryList(histEl, done) {
-  histEl.innerHTML = "";
-  for (const [aid, card] of done) {
-    const it = document.createElement("button");
-    it.type = "button";
-    it.className = "sa-hist-item" +
-      (card.classList.contains("sa-done-err") ? " done-err" :
-       card.classList.contains("sa-done-ok") ? " done-ok" : "");
-    // 摘要: 类型 · 描述（无描述则 agent_id 短码）
-    const zh = SUB_TYPE_LABEL[card.dataset.saType] || card.dataset.saType || "";
-    const desc = (card.querySelector(".tdesc") || {}).textContent || "";
-    const text = (desc || aid.slice(0, 8)).trim();
-    it.textContent = (zh && !text.startsWith(zh + " · ") ? zh + " · " : "") + text;
-    // 角标: 耗时/失败
-    const tag = document.createElement("span");
-    tag.className = "sa-hist-tag";
-    const dur = card.querySelector(".t-dur");
-    if (card.classList.contains("sa-done-ok") && dur && dur.textContent) {
-      tag.textContent = t("ws_handlers.119", { n: dur.textContent.replace(/[^0-9.]/g, "") });
-    } else if (card.classList.contains("sa-done-err")) {
-      tag.textContent = t("ws_handlers.120");
-    }
-    it.appendChild(tag);
-    it.onclick = () => openSaPanel(aid, card);
-    histEl.appendChild(it);
-  }
+  for (const [aid, card] of shown) tabs.appendChild(mkTab(aid, card));
 }
 
 function saPlaceCol(card, attach) {

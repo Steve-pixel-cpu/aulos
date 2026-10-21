@@ -108,7 +108,7 @@ test("侧栏 tab 状态点随生命周期翻转", () => {
   assert.ok(tab.classList.contains("done-ok"), "完成: 点变绿");
 });
 
-test("长会话历史分组: 已完成子代理收进「历史 N」胶囊, 不再占满 tab 行", () => {
+test("已完成子代理不再进 tab 行（历史胶囊已移除）; 点当前 tab 不关面板、顺序不跳变", () => {
   const w = setup("s-sa5");
   // 8 个已完成 + 1 个运行中
   for (let i = 1; i <= 8; i++) {
@@ -120,32 +120,35 @@ test("长会话历史分组: 已完成子代理收进「历史 N」胶囊, 不�
   w.onSubagentStarted({ agent_id: "live1", subagent_type: "general",
                         description: "实时代理" }, "s-sa5");
 
-  // 渲染状态: tab 行只放 1 个运行中的 tab + 1 个历史胶囊
-  // （openSaPanel(null) 会提前 return 不渲染 —— 直接调渲染函数）
+  // 渲染状态: tab 行只有运行中的 tab, 无历史胶囊、无 #sa-history 节点
   w.saRenderTabs(w.runOf("s-sa5"));
   const tabs = w.document.querySelectorAll("#sa-tabs .sa-tab");
-  const histBtn = w.document.querySelector("#sa-tabs .sa-hist-btn");
-  assert.ok(histBtn, "存在历史胶囊");
-  assert.match(histBtn.textContent, /历史 ?8/, "胶囊计数 8");
-  assert.equal(tabs.length, 2, "tab 行 = 运行中 + 胶囊 (历史不再平铺)");
-
-  // 运行中 tab 是 live1, 不是 done 系列
-  assert.ok(tabs[0].classList.contains("running"), "平铺的是运行中代理");
+  assert.equal(tabs.length, 1, "tab 行只有运行中的代理");
   assert.equal(tabs[0].dataset.agent, "live1");
+  assert.ok(tabs[0].classList.contains("running"), "平铺的是运行中代理");
+  assert.ok(!w.document.querySelector("#sa-tabs .sa-hist-btn"), "无历史胶囊");
+  assert.ok(!w.document.getElementById("sa-history"), "无历史弹层节点");
 
-  // 点开胶囊: 列出 8 个历史项
-  histBtn.click();
-  const items = w.document.querySelectorAll("#sa-history .sa-hist-item");
-  assert.equal(items.length, 8, "历史列表面板有 8 项");
-  assert.match(items[0].textContent, /探索/, "历史项带类型前缀");
-  // 点开历史项 → openSaPanel(done1), tab 行变成"当前选中 done1"置顶
-  items[0].click();
-  const tabsAfter = w.document.querySelectorAll("#sa-tabs .sa-tab");
+  // 打开已完成的 done1（从主消息流卡片入口）: tab 行 = live1 + done1
+  w.openSaPanel("done1");
+  const tabsOpen = w.document.querySelectorAll("#sa-tabs .sa-tab");
+  assert.equal(tabsOpen.length, 2, "运行中 + 当前打开");
+  assert.equal(tabsOpen[0].dataset.agent, "live1", "运行中的仍在首位, 不被点击顶走");
   const onTab = w.document.querySelector("#sa-tabs .sa-tab.on");
-  assert.ok(onTab, "有打开中的 tab 高亮");
-  assert.equal(onTab.dataset.agent, "done1", "点历史项打开对应代理面板");
-  assert.equal(tabsAfter[0].dataset.agent, "done1", "当前打开的历史代理置顶");
+  assert.equal(onTab.dataset.agent, "done1", "当前打开的高亮");
   assert.ok(w.runOf("s-sa5").subagents.done1, "历史代理卡仍在路由表");
+
+  // 点当前已打开的 tab: 面板不关闭（收起只走 ✕）
+  onTab.click();
+  assert.ok(w.document.getElementById("pane").classList.contains("sa-open"),
+            "点当前 tab 不收起面板");
+  assert.equal(w.document.querySelectorAll("#sa-tabs .sa-tab")[0].dataset.agent,
+               "live1", "顺序不因点击重排");
+
+  // 点另一个 tab: 切换打开对象, 两个 tab 都在且顺序不变
+  w.document.querySelector('#sa-tabs .sa-tab[data-agent="live1"]').click();
+  assert.equal(w.runOf("s-sa5").subagents && w.document.querySelector("#sa-tabs .sa-tab.on").dataset.agent,
+               "live1", "切换到 live1");
 });
 
 test("回放后 reconcileSaCardsFromManifests: 给空白卡补摘要气泡", async () => {

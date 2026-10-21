@@ -2455,41 +2455,6 @@
   flex: none; width: 10px; height: 10px; border-radius: 50%;
   background: var(--text-3); opacity: .45;
 }
-/* ---- 历史分组: 完成的子代理收进胶囊, 点击弹出列表面板 ---- */
-.sa-hist-btn {
-  flex: none; font-weight: 600;
-  border-style: dashed;
-  color: var(--text-2);
-}
-.sa-hist-btn:hover { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
-#sa-history {
-  position: fixed; z-index: 300;
-  top: 56px; right: 16px;
-  min-width: 260px; max-width: 340px;
-  max-height: 60vh; overflow-y: auto;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: 0 8px 30px rgba(0,0,0,.18);
-  padding: 6px;
-  display: none;
-}
-#sa-history.open { display: block; }
-.sa-hist-item {
-  display: flex; align-items: center; gap: 8px;
-  width: 100%; text-align: left;
-  padding: 8px 10px; border: none; border-radius: 8px;
-  background: none; cursor: pointer;
-  color: var(--text-1); font-size: 13px;
-}
-.sa-hist-item:hover { background: var(--hover); }
-.sa-hist-item .sa-hist-tag {
-  margin-left: auto; flex: none;
-  font-size: 11px; color: var(--text-3);
-  background: var(--bg-2); border-radius: 8px; padding: 1px 6px;
-}
-.sa-hist-item.done-err { color: var(--err); }
-.sa-hist-item.done-err .sa-hist-tag { color: var(--err); background: color-mix(in srgb, var(--err) 12%, transparent); }
 /* ---- 历史回放的摘要气泡: 无实时流的子代理卡, 面板里展示 manifest 摘要 ---- */
 .sa-summary {
   padding: 12px 16px; border-radius: 12px;
