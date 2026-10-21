@@ -1,0 +1,58 @@
+/* pet.css - Feibi desktop pet for the promo site.
+   Sprite contract from aulos static/pet.js:
+   CELL 192x208, SHEET 1536x2288 (8 cols x 11 rows).
+   Promo renders at 1.5x integer scale (144x156 frame,
+   sheet 1152x1716) - all coordinates stay integral to
+   avoid sub-pixel flicker. */
+#feibi {
+  position: fixed;
+  right: 32px;
+  bottom: 32px;
+  z-index: 90;
+  width: 144px;
+  height: 156px;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+  filter: drop-shadow(0 6px 14px rgba(0, 0, 0, .35));
+  transition: none;
+}
+#feibi:active { cursor: grabbing; }
+#feibi:hover { filter: drop-shadow(0 8px 20px rgba(0, 0, 0, .45)); }
+#feibi .fb-sprite {
+  width: 100%;
+  height: 100%;
+  background-repeat: no-repeat;
+  background-size: 1152px 1716px;
+  will-change: background-position;
+  backface-visibility: hidden;
+}
+#feibi .fb-bubble {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  right: 0;
+  max-width: 220px;
+  padding: 7px 11px;
+  border: 1px solid var(--border);
+  border-radius: 12px 12px 3px 12px;
+  background: var(--pop-bg);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  box-shadow: var(--shadow-md);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: normal;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity .18s ease, transform .18s ease;
+  pointer-events: none;
+}
+#feibi .fb-bubble.on {
+  opacity: 1;
+  transform: none;
+}
+@media (max-width: 720px) {
+  #feibi { display: none; }
+}
