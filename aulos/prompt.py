@@ -23,7 +23,35 @@ PLAN_MODE_SECTION = (
     " - Plan format: structured markdown with sections '## 目标', '## 改动' (a step-by-step nested checklist, one step per line, file paths in backticks), '## 验证' and '## 假设'.\n"
 )
 
-FRONTIER_MODEL_NAME = "Claude Opus 4.6"
+# 环境段的模型行: 构建期只留占位符, 由 runtime 在每次请求前按"本次实际
+# 使用的模型"渲染（见 ConversationRuntime._sync_rendered_prompt）。
+# 旧实现是构建期硬编的 FRONTIER_MODEL_NAME = "Claude Opus 4.6"——那是从
+# Claude Code 的 prompt.rs 搬过来的残留: 无论用户配的是 OpenAI 兼容端点
+# 还是 deepseek, 系统提示都自称 Opus, 模型自己也被这句骗到。会话内换
+# 模型/跨供应商切换都必须即时反映, 所以不能在任何一层固化。
+MODEL_LINE_PREFIX = "Model: "
+MODEL_PLACEHOLDER = "__AULOS_ACTIVE_MODEL__"
+
+
+def render_active_model(sections: list[str], model: Optional[str]) -> list[str]:
+    """把系统提示里的模型占位符替换成实际模型名。
+
+    model 为空（未配置供应商 / 未选模型）时整行省略——宁可不说, 也不说
+    一个假名字。逐 section 处理: 占位符只在环境段出现, 其余 section 原样
+    返回（逐字节不变, 静态前缀的 prompt 缓存不受影响）。"""
+    name = (model or "").strip()
+    out: list[str] = []
+    for section in sections:
+        if MODEL_PLACEHOLDER not in section:
+            out.append(section)
+            continue
+        if name:
+            out.append(section.replace(MODEL_PLACEHOLDER, name))
+        else:
+            out.append("\n".join(
+                line for line in section.split("\n")
+                if MODEL_PLACEHOLDER not in line))
+    return out
 
 class ContextFile(BaseModel):
     path: Path = Field(default_factory=Path)
@@ -441,7 +469,8 @@ class SystemPromptBuilder:
         os_name = self._os_name or "unknown"
         os_version = self._os_version or "unknown"
         items = [
-            f"Model family: {FRONTIER_MODEL_NAME}",
+            # 占位符, 由 runtime 按本次请求的模型渲染（见 render_active_model）
+            f"{MODEL_LINE_PREFIX}{MODEL_PLACEHOLDER}",
             f"Working directory: {cwd}",
             f"Date: {date}",
             f"Platform: {os_name} {os_version}",

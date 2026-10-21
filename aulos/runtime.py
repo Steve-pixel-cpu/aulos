@@ -35,7 +35,8 @@ from aulos.models import Message, TextContentBlock, AnyContentBlock, ImageConten
 from aulos.permissions import (PermissionMode, PermissionPolicy, PermissionPrompter,
                          PermissionDecision, MUTATING_SHELL_TOOLS,
                          READ_ONLY_MODE, shell_command_is_read_only)
-from aulos.prompt import PLAN_MODE_SECTION, SYSTEM_PROMPT_DYNAMIC_BOUNDARY
+from aulos.prompt import (PLAN_MODE_SECTION, SYSTEM_PROMPT_DYNAMIC_BOUNDARY,
+                    render_active_model)
 
 DEFAULT_MAX_ITERATIONS = 128
 # auto-compact 触发阈值: 必须明显低于模型真实上下文窗口——一次请求还要
@@ -902,6 +903,21 @@ class ConversationRuntime:
 
     def set_model(self, model: Optional[str]) -> None:
         self._model = model
+        # 无需重建提示: 模型行在发请求时按 active_model_name() 现渲染
+        # （见 _rendered_system_prompt）, 换模型下一轮即生效
+
+    def active_model_name(self) -> Optional[str]:
+        """本次请求实际使用的模型名: 会话覆盖优先, 否则 api_client 的。"""
+        return self._model or getattr(self._api_client, "model", None)
+
+    def _rendered_system_prompt(self) -> list[str]:
+        """生效系统提示 + 实际模型名渲染（每次请求现算）。
+
+        模型占位符必须在发送前才落地: 会话内换模型（set_model）、跨供应商
+        热换 client（set_api_client）都要立刻反映, 任何一层固化都会让模型
+        看到过期/虚假的自我描述。仅环境段一行变化, 静态前缀逐字节不变。"""
+        return render_active_model(self._effective_system_prompt,
+                                   self.active_model_name())
 
     def set_api_client(self, api_client) -> None:
         """热替换 api_client（会话切换到跨 provider 模型时, 服务端构建
@@ -1383,7 +1399,7 @@ class ConversationRuntime:
                 messages = (view_override if view_override is not None
                             else self._model_view())
                 return self._api_client.stream(
-                    system_prompt=self._effective_system_prompt,
+                    system_prompt=self._rendered_system_prompt(),
                     messages=messages,
                     thinking_level=effective_level,
                     model=self._model,
