@@ -240,7 +240,7 @@ function makeSessionItem(s) {
     + '<span class="title"></span><span class="meta"></span>'
     + '<div class="s-snippet"></div>'
     + (archivedView ? "" :
-        '<button class="s-pin" data-tip="' + t("sidebar.086") + '">' + PIN_SMALL_SVG + '</button>'
+        '<button class="s-pin" data-tip="' + (s.pinned ? t("sidebar.087") : t("sidebar.086")) + '">' + PIN_SMALL_SVG + '</button>'
         + '<button class="s-arc" data-tip="' + t("sidebar.083") + '">' + ARCHIVE_BOX_SVG + '</button>');
   item.querySelector(".title").textContent = displayTitle(s);
   if (s.pinned) item.classList.add("pinned");
@@ -425,6 +425,35 @@ function renderSessionList() {
     l.textContent = text;
     list.appendChild(l);
   };
+  /* 「已置顶」区块: 置顶会话集中提到列表顶部（📌 图标由 makeSessionItem
+   * 的 .pinned 类自带）。项目/任务/分组三种视图共用; 无置顶时不渲染。
+   * 「显示更多」递进展开, 进度存 pinnedReveal; 搜索态或激活会话在
+   * 可见窗口之外时强制全量（口径与项目组/任务区一致） */
+  function renderPinnedBlock(pool) {
+    const pinned = pool.filter(s => s.pinned);
+    if (!pinned.length) return;
+    addLabel(t("sidebar.094"));
+    const reveal = revealCount(state.pinnedReveal, pinned.length);
+    const activeIdx = pinned.findIndex(s => s.id === state.sessionId);
+    const forceAll = !!q || activeIdx >= reveal;
+    const visible = forceAll ? pinned.length : reveal;
+    for (const s of pinned.slice(0, visible)) list.appendChild(makeSessionItem(s));
+    if (!forceAll && pinned.length > SIDEBAR_REVEAL_STEP) {
+      const extra = pinned.length - visible;
+      list.appendChild(makeShowMoreRow(extra, false, () => {
+        const total = pinned.length;
+        const cur = revealCount(state.pinnedReveal, total);
+        if (cur < total) {
+          state.pinnedReveal = Math.min(cur + SIDEBAR_REVEAL_STEP, total);
+          localStorage.setItem("xc-pinned-reveal", String(state.pinnedReveal));
+        } else {
+          state.pinnedReveal = SIDEBAR_REVEAL_STEP;
+          localStorage.setItem("xc-pinned-reveal", String(state.pinnedReveal));
+        }
+        renderSessionList();
+      }));
+    }
+  }
   /* ---- 归档视图: 排序 + 批量归档 + …菜单(全部删除) 工具行 ---- */
   if (state.archiveView) {
     /* 工具行始终渲染——空列表时批量归档正是入口
@@ -524,11 +553,13 @@ function renderSessionList() {
       list.innerHTML = '<div class="list-empty">' + (q ? t("sidebar.055") : t("sidebar.056")) + "</div>";
       return;
     }
+    // 置顶会话独立成块: 集中提到列表顶部「已置顶」区块,
+    // 不再参与时间分组（与项目/任务视图口径一致）
+    renderPinnedBlock(sessions);
+    const rest = sessions.filter(s => !s.pinned);
     // 会话按时间倒序，分组标签自然按 今天→更早 顺序出现
-    // 置顶会话排最前（时间分组视图与项目/任务视图口径一致）
-    const ordered = [...sessions].sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
     let bucket = -1;
-    for (const s of ordered) {
+    for (const s of rest) {
       const b = sessionBucket(s.id);
       if (b !== bucket) { bucket = b; addLabel(BUCKET_LABELS()[b]); }
       list.appendChild(makeSessionItem(s));
@@ -536,7 +567,11 @@ function renderSessionList() {
     return;
   }
 
-  /* ---- 项目视图: 可折叠项目组 + 任务(未选择文件夹的会话) ---- */
+  /* ---- 项目视图: 置顶块 + 可折叠项目组 + 任务(未选择文件夹的会话) ---- */
+  /* 置顶会话先上提到顶部「已置顶」区块（项目/任务/分组三种口径一致）,
+   * 再渲染项目组与任务区——它们内部不再出现置顶会话 */
+  renderPinnedBlock(sessions);
+
   const headRow = document.createElement("div");
   headRow.className = "list-label-row";
   headRow.innerHTML = t("sidebar.057");
@@ -566,10 +601,10 @@ function renderSessionList() {
     list.appendChild(e);
   }
 
-  // 项目目录 = 会话的 workdir ∪ 手动添加的项目
+  // 项目目录 = 会话的 workdir ∪ 手动添加的项目（置顶会话已上提, 不入组）
   const groups = new Map();
   for (const s of sessions) {
-    if (!s.workdir) continue;
+    if (!s.workdir || s.pinned) continue;
     if (!groups.has(s.workdir)) groups.set(s.workdir, []);
     groups.get(s.workdir).push(s);
   }
@@ -588,7 +623,6 @@ function renderSessionList() {
   renderedProjectOrder = named.map(([wd]) => wd);   // 拖拽换位时的当前组序快照
   const chev = '<svg class="p-chev" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
   for (const [wd, items] of named) {
-    items.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));   // 组内置顶在前
     const collapsed = state.collapsedProjects.has(wd) && !q;   // 搜索时强制展开
     const header = document.createElement("div");
     header.className = "project-item" + (collapsed ? " collapsed" : "");
@@ -645,6 +679,15 @@ function renderSessionList() {
     }
     list.appendChild(header);
     if (collapsed) continue;
+    /* 空项目占位: 手动添加还没开过会话的项目（或会话全部置顶/搜索过滤
+     * 后为空）——一行「暂无任务」灰字, 与参考 UI 一致 */
+    if (!items.length) {
+      const e = document.createElement("div");
+      e.className = "list-empty in-proj";
+      e.textContent = t("sidebar.095");
+      list.appendChild(e);
+      continue;
+    }
     /* 「显示更多」递进展开: 搜索态/激活会话在可见窗口之外时强制全量,
      * 避免点开的项目里当前对话条目"看不见" */
     const reveal = revealCount(state.projectReveal.get(wd), items.length);
@@ -681,10 +724,9 @@ function renderSessionList() {
 
   // 任务 = 没有选择文件夹的会话; 标题行带 + 与项目分组一致
   // 标题行可点: 折叠/展开整个区块（与项目组折叠交互一致; 搜索时强制展开）
+  // 置顶的会话已上提到顶部「已置顶」区块, 不再出现在任务区
   const taskCollapsed = state.collapsedTasks && !q;
-  // 置顶会话排最前(组内), 其余按原序
-  const loose = sessions.filter(s => !s.workdir)
-    .sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
+  const loose = sessions.filter(s => !s.workdir && !s.pinned);
   const taskRow = document.createElement("div");
   taskRow.className = "list-label-row" + (loose.length ? " tappable" : "")
     + (taskCollapsed ? " collapsed" : "");

@@ -998,5 +998,7 @@ window.I18N_STRINGS_ZH = {
   "sidebar.091": "会话运行中——结束后再归档",
   "sidebar.092": "显示更多（{p0} 条）",
   "sidebar.093": "收起",
+  "sidebar.094": "已置顶",
+  "sidebar.095": "暂无任务",
 };
 })();

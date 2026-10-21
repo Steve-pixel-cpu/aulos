@@ -390,6 +390,8 @@
     font-weight: 600; letter-spacing: .04em;
   }
   .list-empty { font-size: calc(12.5px * var(--fs-ui)); color: var(--text-3); margin: 4px 18px; }
+  /* 空项目占位: 缩进对齐组内条目（.session-item.in-project 的 26px 缩进口径） */
+  .list-empty.in-proj { margin: 2px 18px 4px 44px; }
 
   /* 项目视图: 可折叠项目 + 添加项目按钮行 */
   .list-label-row {

@@ -1008,5 +1008,7 @@ window.I18N_STRINGS_EN = {
   "sidebar.091": "Session is running — archive it after it finishes",
   "sidebar.092": "Show {p0} more",
   "sidebar.093": "Show less",
+  "sidebar.094": "Pinned",
+  "sidebar.095": "No tasks yet",
 };
 })();
