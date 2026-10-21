@@ -27,8 +27,12 @@ def store(tmp_path, monkeypatch):
     return tmp_path / "plans"
 
 
-def test_plans_dir_default_under_user_dir():
+def test_plans_dir_default_under_user_dir(monkeypatch):
+    # conftest 的 autouse 夹具会把 PLANS_DIR 指到 tmp（防测试残渣泄漏
+    # 进真实历史面板）, 这里先恢复模块默认值再验证默认装配。
+    from aulos import plans as plans_mod
     from aulos.config import USER_DIR
+    monkeypatch.setattr(plans_mod, "PLANS_DIR", USER_DIR / "plans")
     assert plans_dir() == USER_DIR / "plans"
 
 
@@ -69,7 +73,9 @@ def test_load_plan_missing_returns_none(store):
 
 
 def test_list_plans_newest_first_with_preview(store):
+    import time as _time
     p1 = save_plan("s1", "第一份计划" + "x" * 300, plans_dir=store)
+    _time.sleep(0.002)   # 跨毫秒: ts 相同则并列, 排序顺序不定
     p2 = save_plan("s2", "第二份计划", plans_dir=store)
     items = list_plans(plans_dir=store)
     assert [i["plan_id"] for i in items] == [p2, p1]

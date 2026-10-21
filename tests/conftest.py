@@ -52,6 +52,19 @@ def _no_user_mcp_in_tools():
 
 
 @pytest.fixture(autouse=True)
+def _isolate_plans_store(monkeypatch, tmp_path):
+    """实施计划存储指向 tmp, 不污染用户真实 ~/.aulos/plans/。
+
+    server 的 WebPermissionPrompter.decide() 对 present_plan 弹卡即存盘
+    (plans_mod.save_plan 直读模块级 PLANS_DIR); 不隔离的话跑一次
+    test_plan_mode 就会在前端"历史计划"里留下 "# t"、"# A 的计划" 等
+    测试残渣（真实事故: 2026-10-20 的历史面板全是 pp-a/pp-b 假数据）。
+    plans.py 所有读写都在调用时取 PLANS_DIR, monkeypatch 即生效。"""
+    import aulos.plans as plans_mod
+    monkeypatch.setattr(plans_mod, "PLANS_DIR", tmp_path / "plans")
+
+
+@pytest.fixture(autouse=True)
 def _no_real_api():
     """连接信息置空: 真实调用会在首次请求时立即认证失败（不可重试）,
     泄漏线程秒退, 不再拖住测试进程或烧真实额度。"""
