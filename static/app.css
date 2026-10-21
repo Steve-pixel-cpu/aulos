@@ -3689,6 +3689,12 @@ body.col-resizing, body.col-resizing * { cursor: col-resize !important; }
   :root[data-mica="1"] #pane.plan-open > #plan-panel {
     background: transparent;
   }
+  /* 右侧子代理面板: 与计划面板同一套网格并排栏(见 3877 行注释),
+   * 同坐裸云母——2026-10-21 mica 扫描遗漏, 实底 --bg 把右栏云母
+   * 整列遮死, 与 plan-panel 症状一致 */
+  :root[data-mica="1"] #pane.sa-open > #sa-panel {
+    background: transparent;
+  }
   :root[data-mica="1"] #sidebar {
     background: color-mix(in srgb, var(--bg-side) 30%, transparent);
   }
