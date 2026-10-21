@@ -14,6 +14,7 @@ _BROWSER_POOL 那一个线程里跑。
 不抛异常——模型看到文本能把指引转述给用户，异常只会变成裸 ToolError。
 截图 PNG 落在用户目录（~/.aulos/screenshots/），不污染项目 git。
 """
+import concurrent.futures
 import threading
 import time
 import uuid
@@ -267,16 +268,64 @@ _STATE = _BrowserState()
 # max_workers=1: 所有 playwright 对象只被这一个线程触碰（sync API 非线程安全）
 _BROWSER_POOL = ThreadPoolExecutor(max_workers=1, thread_name_prefix="browser")
 
+# 与 tools.py 的 _WAIT_SLICE 同一约定: 小步快查取消, CPU 占用可忽略
+_WAIT_SLICE = 0.05
+# 单次浏览器操作的总上限（秒）。playwright 自身超时上限 60s, 这里兜底
+# 极端挂起（如驱动管道僵死）, 防止轮次工作线程无限期卡死。
+_OP_TIMEOUT_S = 120.0
+_INTERRUPTED_TEXT = "(用户中断了本轮对话)"
+
+
+def _cancel_requested() -> bool:
+    """读宿主注入的取消旗标（contextvars 随 runtime 的 copy_context()
+    传进本工具线程）。CLI 未注入时恒 False, 行为不变。"""
+    from aulos.tools import TOOL_CANCEL_CHECK
+    check = TOOL_CANCEL_CHECK.get()
+    return bool(check and check())
+
 
 def _run_in_browser_thread(fn, *args):
-    """把浏览器操作丢进单线程池执行。RuntimeError（安装/启动问题）原样
-    返回成 ERROR 文本; 其余异常转简短 ERROR（保 registry 的 ToolError 可读）。"""
-    try:
-        return _BROWSER_POOL.submit(fn, *args).result(timeout=120)
-    except RuntimeError as e:
-        return f"ERROR: {e}"
-    except Exception as e:
-        return f"ERROR: browser operation failed: {e}"
+    """把浏览器操作丢进单线程池执行, 等待期间分片轮询取消旗标。
+
+    取消路径（关键设计）: 不能只 return——池线程还被挂起的 playwright 调用
+    （如 page.goto 卡在慢页面）占着, 后续 browser 调用会继续在池队列里排队,
+    整轮照旧卡死。所以取消时向池再提交一个 _STATE._reset()（关 page/
+    browser/pw; sync API 要求必须在池线程执行, 池队列天然串行化）: 挂起中的
+    调用因 page 被关而立即抛错, 池线程被解放。浏览器下次调用会按现有
+    _launch 逻辑自动重开, 无残留状态。
+
+    RuntimeError（安装/启动问题）原样返回成 ERROR 文本; 其余异常转简短
+    ERROR（保 registry 的 ToolError 可读）。"""
+    if _cancel_requested():
+        return _INTERRUPTED_TEXT
+    fut = _BROWSER_POOL.submit(fn, *args)
+    deadline = time.monotonic() + _OP_TIMEOUT_S
+    while True:
+        try:
+            return fut.result(timeout=_WAIT_SLICE)
+        except concurrent.futures.TimeoutError:
+            now_cancelled = _cancel_requested()
+            if not now_cancelled and time.monotonic() < deadline:
+                continue
+            # 取消或总超时: 池线程可能仍被挂起的 playwright 调用占用。
+            # 提交 _reset 从池内拆台（关闭会让挂起调用立即抛错返回）,
+            # 等它跑完再收口——期间 fn 的 future 也会就绪（error 形态）。
+            reset = _BROWSER_POOL.submit(_STATE._reset)
+            try:
+                reset.result(timeout=10.0)
+            except concurrent.futures.TimeoutError:
+                pass   # reset 本身僵死就不再等, fn 的收尾交给 except 分支
+            try:
+                fut.result(timeout=5.0)
+            except Exception:
+                pass   # fn 的报错不覆盖下面的收口语义
+            return (_INTERRUPTED_TEXT if now_cancelled
+                    else f"ERROR: browser operation timed out after "
+                         f"{int(_OP_TIMEOUT_S)}s (browser has been reset)")
+        except RuntimeError as e:
+            return f"ERROR: {e}"
+        except Exception as e:
+            return f"ERROR: browser operation failed: {e}"
 
 
 # --- 参数整理（线程池外）: 统一签名 (params, workdir) -> str ---

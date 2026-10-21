@@ -1,5 +1,6 @@
 from typing import Protocol, Optional, List
 from concurrent.futures import ThreadPoolExecutor
+import concurrent.futures
 import contextvars
 import hashlib
 import json
@@ -2058,20 +2059,68 @@ class ConversationRuntime:
                 self._notify_iterate()   # 一致点: 中断结果已回填
                 raise TurnInterrupted()
 
+            interrupted_during_batch = False
             if len(pending) > 1:
                 # 池线程必须能看到本轮绑定（Web 端 emit/workdir 按 contextvars
                 # 路由）: 每个任务各自 copy_context()。不能共享同一份快照——
                 # Context 同一时刻只允许被一个线程进入, 并发 ctx.run 会炸出
                 # "cannot enter context: already entered"。
                 with ThreadPoolExecutor(max_workers=min(4, len(pending))) as pool:
-                    futures = [pool.submit(contextvars.copy_context().run,
-                                           self._execute_tool, b, pre)
-                               for _, b, pre in pending]
-                    for (i, _, _), fut in zip(pending, futures):
-                        finalized[i] = fut.result()
+                    futures_all = [pool.submit(contextvars.copy_context().run,
+                                               self._execute_tool, b, pre)
+                                   for _, b, pre in pending]
+                    # 分片等待: 工具执行中打断也可见。已开跑的工具靠自身的
+                    # 取消轮询收口（如 browser 的池内 reset、bash 的杀树）;
+                    # 这里感知到打断后等它们就绪（带限）, 仍没完成的就地
+                    # 终局——避免裸 fut.result() 无限等一个卡死的工具。
+                    remaining = list(futures_all)
+                    while remaining:
+                        done, remaining = concurrent.futures.wait(
+                            remaining, timeout=0.2)
+                        if not done and remaining and self._cancel_check \
+                                and self._cancel_check():
+                            # 打断落在批次执行中: 给已开跑的工具最多 30s
+                            # 走完自身的取消路径（browser reset 亚秒级,
+                            # 30s 兜底最不友好型工具）, 到点没完成的就绪
+                            # 部分照常回收, 其余按中断终局。
+                            remaining, _ = concurrent.futures.wait(
+                                remaining, timeout=30.0)
+                            interrupted_during_batch = True
+                            break
+                    for (i, _, _), fut in zip(pending, futures_all):
+                        if fut.done() and not fut.cancelled():
+                            try:
+                                finalized[i] = fut.result()
+                            except Exception:
+                                finalized[i] = None
             else:
                 for i, block, pre_res in pending:
                     finalized[i] = self._execute_tool(block, pre_res)
+
+            # 打断落在批次执行中: 没能就绪的工具就地终局（与批次前检查点
+            # 同一语义——补 error result 闭合工具卡, 历史保持一致）, 本迭代
+            # 已就绪的结果先回填, 再抛 TurnInterrupted。
+            if interrupted_during_batch:
+                for (i, block, _pre), fut in zip(pending, futures_all):
+                    if finalized[i] is None and not fut.cancelled():
+                        interrupted_result = Message.tool_result(
+                            id=block.id,
+                            name=block.name,
+                            output="(用户中断了本轮对话)",
+                            is_error=True,
+                        )
+                        finalized[i] = interrupted_result
+                        if self._on_tool_finalized is not None:
+                            try:
+                                self._on_tool_finalized(block, interrupted_result)
+                            except Exception as e:
+                                print(f"[WARN] tool-finalized hook failed: {e}")
+                for tool_result_msg in finalized:
+                    if tool_result_msg:
+                        curr_session.messages.append(tool_result_msg)
+                        tool_results.append(tool_result_msg)
+                self._notify_iterate()   # 一致点: 中断结果已回填
+                raise TurnInterrupted()
 
             for tool_result_msg in finalized:
                 if tool_result_msg:
