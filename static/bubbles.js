@@ -10,7 +10,8 @@
  * 读的前置全局: state / $ / colOf / scrollToBottom / decorateCode /
  *               decorateTables / sendWs / curRun / attachDraftOf /
  *               setAttachDraft / saveCurrentInput / autoGrow /
- *               updateSendBtn / fileChipEl / iconUrl / mmScheduleRebuild
+ *               updateSendBtn / fileChipEl / iconUrl / mmScheduleRebuild /
+ *               CHEVRON_SVG / t
  * 暴露的全局:   msgCol / addUserBubble / addAssistantBubble /
  *               openLightbox / renderQueueCards / editQueued / removeQueued
  * ============================================================ */
@@ -63,10 +64,50 @@ function addUserBubble(text, attachments, col, ts, qid) {
   }
   for (const f of files) b.appendChild(fileChipEl(f.name));
   div.appendChild(b);
+  applyTextFold(b, text);   // 长输入默认折叠（本地发送/历史回放/插队共用）
   (col || msgCol()).appendChild(div);
   mmScheduleRebuild();
   scrollToBottom();
   return b;
+}
+
+/* ---------- 长文本折叠: 限高 + 底部渐隐 + 「展开」胶囊 ----------
+ * 主聊天用户长输入与子代理任务气泡共用的折叠语言（视觉与长代码块
+ * 折叠同语言, CSS 见 .msg.user.sa-task-folded）。
+ * 判定用内容长度而非像素测量: 事件到达时气泡可能写在游离列上（面板
+ * 没开就不挂 DOM）——游离节点无布局盒, scrollHeight 恒为 0, "量高度
+ * 定折叠"永远判短。行数/字符数阈值与挂载状态、rAF 时序彻底解耦,
+ * 任何路径同步判定, 且 jsdom 可测。 */
+const FOLD_MAX = 176;    // px, 折叠态限高（约 8 行正文）
+const FOLD_LINES = 8;    // 行数超过 → 折叠
+const FOLD_CHARS = 300;  // 字符数超过（长段无换行）→ 同样折叠
+
+function applyTextFold(bubble, text) {
+  const uText = bubble.querySelector(".u-text");
+  if (!uText) return;
+  if (text.split("\n").length <= FOLD_LINES &&
+      text.length <= FOLD_CHARS) return;   // 短文本: 不折叠
+  const msgEl = bubble.closest(".msg");
+  if (!msgEl) return;
+  msgEl.classList.add("sa-task-folded");
+  uText.style.maxHeight = FOLD_MAX + "px";
+  const fade = document.createElement("div");
+  fade.className = "sa-task-fade";
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "sa-task-expand";
+  btn.innerHTML = CHEVRON_SVG + t("bubbles.013");
+  let open = false;
+  btn.addEventListener("click", ev => {
+    ev.stopPropagation();
+    open = !open;
+    msgEl.classList.toggle("sa-task-open", open);
+    btn.classList.toggle("open", open);
+    uText.style.maxHeight = open ? "none" : FOLD_MAX + "px";
+    btn.querySelector("span").textContent = open ? t("bubbles.014") : t("bubbles.015");
+  });
+  bubble.appendChild(fade);
+  bubble.appendChild(btn);
 }
 
 /* ---------- 图片灯箱: 缩放 / 拖动 / 多图切换, 点遮罩关闭, Esc 退出 ---------- */

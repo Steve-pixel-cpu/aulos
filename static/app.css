@@ -3882,26 +3882,27 @@ body.col-resizing, body.col-resizing * { cursor: col-resize !important; }
   .sa-stream .think-row { margin-left: 24px; }
   .sa-stream .msg { margin-left: 24px; }
 
-  /* ---------- 任务输入气泡折叠: 长任务提示默认收起, 点「展开」看全文 ----------
+  /* ---------- 长文本气泡折叠: 主聊天用户长输入与子代理任务提示共用 ----------
    * 视觉与长代码块折叠同语言: 限高 + 底部渐隐 + 悬浮胶囊按钮。
-   * 挂在 .msg 上切换态, 限高作用在 .u-text（气泡本身有 padding）。 */
-  .sa-stream .msg.user.sa-task-folded { position: relative; }
-  .sa-stream .msg.user.sa-task-folded .bubble {
+   * 挂在 .msg 上切换态, 限高作用在 .u-text（气泡本身有 padding）。
+   * 逻辑入口: bubbles.js 的 applyTextFold()。 */
+  .msg.user.sa-task-folded { position: relative; }
+  .msg.user.sa-task-folded .bubble {
     position: relative; overflow: hidden;
   }
-  .sa-stream .msg.user.sa-task-folded .u-text {
+  .msg.user.sa-task-folded .u-text {
     max-height: 176px;
     overflow: hidden;
     transition: max-height .3s cubic-bezier(.16, 1, .3, 1);
   }
-  .sa-stream .msg.user.sa-task-folded .sa-task-fade {
+  .msg.user.sa-task-folded .sa-task-fade {
     position: absolute; left: 1px; right: 1px; bottom: 1px; height: 56px;
     background: linear-gradient(180deg, transparent,
       color-mix(in srgb, var(--accent) 13%, var(--surface)) 78%);
     pointer-events: none;
     border-radius: 0 0 calc(var(--r-lg) - 1px) 6px;
   }
-  .sa-stream .msg.user.sa-task-open .sa-task-fade { display: none; }
+  .msg.user.sa-task-open .sa-task-fade { display: none; }
   /* 展开胶囊: 底部居中, 同 .code-expand 的语言 */
   .sa-task-expand {
     position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%);
