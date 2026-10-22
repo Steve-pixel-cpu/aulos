@@ -7,6 +7,7 @@
    无 bridge 时（CLI 形态）零额外事件且行为不变。
 """
 import threading
+import time
 
 import pytest
 
@@ -129,10 +130,12 @@ def fake_worker(monkeypatch):
     def fake_build(job):
         class _Runtime:
             def run_turn(self, prompt):
+                time.sleep(0.05)  # RED: 固定 CI 上的交错——主线程先恢复 _store_dir
                 started.set()
                 sink = job.event_sink
-                sink({"type": "subagent_event", "agent_id": job.manifest.agent_id,
-                      "event": {"type": "text_delta", "text": "worker 说你好"}})
+                if sink is not None:  # 生产侧所有镜像调用都带 None 守卫
+                    sink({"type": "subagent_event", "agent_id": job.manifest.agent_id,
+                          "event": {"type": "text_delta", "text": "worker 说你好"}})
                 from aulos.models import Session as _S
                 return type("S", (), {"assistant_messages": [], "iterations": 1,
                                       "budget_exhausted": False,
@@ -170,29 +173,35 @@ def test_spawn_emits_started_and_done(tmp_path, fake_worker):
         try:
             out = spawn_agent_tool({"description": "d", "prompt": "p",
                                     "subagent_type": "explore"})
+            assert "agent_id:" in out
+            fake_worker.wait(timeout=5)
+            import time as _t
+            deadline = _t.time() + 5
+            while _t.time() < deadline and not any(
+                    e.get("type") == "subagent_done" for e in events):
+                _t.sleep(0.05)
+            types = [e.get("type") for e in events]
+            assert types[0] == "subagent_started"
+            assert events[0]["subagent_type"] == "explore"
+            assert "subagent_event" in types     # worker 的镜像事件
+            assert types[-1] == "subagent_done"  # 终态收口
+            done = events[-1]
+            assert done["status"] == "completed"
+            assert isinstance(done["duration_s"], float)
         finally:
+            # _store_dir 还原必须等 worker 收尾(收到 done)之后: done 在
+            # complete_agent/_persist_terminal_state 写盘之后才发, 提前还原
+            # 会让 worker 的 get_status 读真实 ~/.aulos/agents 抛
+            # FileNotFoundError → job 被标 failed(2026-10-22 CI 现场竞态)。
             orch._store_dir = old_dir
-        assert "agent_id:" in out
-        fake_worker.wait(timeout=5)
-        import time as _t
-        deadline = _t.time() + 5
-        while _t.time() < deadline and not any(
-                e.get("type") == "subagent_done" for e in events):
-            _t.sleep(0.05)
-        types = [e.get("type") for e in events]
-        assert types[0] == "subagent_started"
-        assert events[0]["subagent_type"] == "explore"
-        assert "subagent_event" in types     # worker 的镜像事件
-        assert types[-1] == "subagent_done"  # 终态收口
-        done = events[-1]
-        assert done["status"] == "completed"
-        assert isinstance(done["duration_s"], float)
     finally:
         set_subagent_event_bridge(None)
 
 
 def test_no_bridge_is_silent(tmp_path, fake_worker):
     set_subagent_event_bridge(None)
+    import re
+
     import aulos.agent_tools as at
     orch = at.get_orchestrator()
     old_dir = orch._store_dir
@@ -201,8 +210,15 @@ def test_no_bridge_is_silent(tmp_path, fake_worker):
         out = spawn_agent_tool({"description": "d", "prompt": "p",
                                 "subagent_type": "explore"})
         assert "agent_id:" in out
-        fake_worker.wait(timeout=5)
+        # 等 worker 到磁盘终态(而非 run_turn 开跑)再还原 _store_dir:
+        # wait_agents 阻塞到 complete_agent/_persist_terminal_state 写盘
+        # 完成, 还原绝不与 worker 收尾交错(2026-10-22 CI 竞态教训)。
+        aid = re.search(r"agent_id: (\w+)", out).group(1)
+        manus = orch.wait_agents([aid], timeout_s=5)
+        assert manus[0].status == "completed"
     finally:
+        # 同 test_spawn_emits_started_and_done: 等 worker 收尾后再还原,
+        # 防止幽灵 manifest 写进真实 ~/.aulos/agents。
         orch._store_dir = old_dir
 
 
