@@ -3,13 +3,18 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- cache strategy: the game iterates fast (assets bumped several times
+     per day) and python http.server sends no Cache-Control, so browsers
+     keep heuristic-cached index.html pointing at OLD ?v= script refs.
+     no-store the document itself; versioned subresources stay cacheable -->
+<meta http-equiv="Cache-Control" content="no-store">
 <title>Aulos — 基于 MiniCC 的开源 AI 编程 Agent（学习项目）</title>
 <meta name="description" content="Aulos 是一个基于 MiniCC 的开源学习项目：本地运行的 AI 编程 Agent。你用自然语言下任务，它自己读文件、改代码、跑命令、查资料，直到把活干完。">
 <meta property="og:title" content="Aulos — 本地运行的 AI 编程 Agent">
 <meta property="og:description" content="自然语言下任务，Agent 自己读文件、改代码、跑命令，直到把活干完。完整开源，数据不出你的电脑。本项目为架构学习之作，欢迎读源码、提 issue。">
 <meta property="og:image" content="assets/dark.png">
 <link rel="icon" type="image/png" href="assets/icon-default.png">
-<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/style.css?v=87">
 <link rel="stylesheet" href="css/pet.css">
 </head>
 <body>
@@ -30,7 +35,7 @@
       <span class="brand-name">Aulos</span>
     </a>
     <nav class="nav-links">
-      <a href="#learn" data-i18n="nav.learn">学习项目</a>
+      <a href="#learn" data-i18n="nav.learn">简介</a>
       <a href="#features" data-i18n="nav.features">特性</a>
       <a href="#arch" data-i18n="nav.arch">架构</a>
       <a href="#shots" data-i18n="nav.shots">界面</a>
@@ -58,13 +63,13 @@
       <div class="hero-copy">
         <div class="hero-badge reveal">
           <span class="dot"></span>
-          <span data-i18n="hero.badge">开源学习项目 · 本地运行 · MIT</span>
+          <span data-i18n="hero.badge">开源 · MIT · 本地运行</span>
         </div>
-        <h1 class="reveal"><span data-i18n="hero.h1a">你下任务，</span><br><span class="grad" data-i18n="hero.h1b">Agent 干活</span></h1>
-        <p class="hero-sub reveal" data-i18n="hero.sub">Aulos 是一个本地运行的 AI 编程 Agent。用自然语言下任务，它自己读文件、改代码、跑命令、查资料，直到把活干完。数据不出你的电脑。</p>
+        <h1 class="reveal"><span data-i18n="hero.h1a">把任务说清楚，</span><br><span class="grad" data-i18n="hero.h1b">剩下的交给 Aulos</span></h1>
+        <p class="hero-sub reveal" data-i18n="hero.sub">Aulos 是一个运行在本地的编程 Agent：读代码、改代码、跑测试，直到全部通过。数据不出机器。基于 MiniCC 构建，全部源码开放审查。</p>
         <div class="hero-ctas reveal">
-          <a class="btn btn-primary" href="https://github.com/Steve-pixel-cpu/aulos/releases/latest" target="_blank" rel="noopener" data-i18n="hero.cta.download">下载桌面版</a>
-          <a class="btn btn-ghost" href="https://github.com/Steve-pixel-cpu/aulos" target="_blank" rel="noopener" data-i18n="hero.cta.github">GitHub 仓库</a>
+          <a class="btn btn-primary" href="https://github.com/Steve-pixel-cpu/aulos/releases/latest" target="_blank" rel="noopener" data-i18n="hero.cta.download">下载</a>
+          <a class="btn btn-ghost" href="https://github.com/Steve-pixel-cpu/aulos" target="_blank" rel="noopener" data-i18n="hero.cta.github">源码</a>
         </div>
         <div class="hero-install reveal">
           <span class="prompt">$</span><code id="installCmd">uv run python main.py</code>
@@ -80,6 +85,7 @@
           <img src="assets/icon-default.png" alt="" class="demo-tb-icon">
           <span class="demo-tb-title">Aulos</span>
           <span class="demo-tb-pill" data-i18n="demo.pill">本地会话</span>
+          <button id="demoFs" class="demo-fs-btn" title="全屏" aria-label="全屏">⛶</button>
           <div class="demo-win-btns" aria-hidden="true"><span></span><span></span><span class="close"></span></div>
         </div>
         <div class="demo-chat" id="demoChat">
@@ -87,10 +93,10 @@
             <div class="bubble"><span id="dUserText"></span></div>
           </div>
           <div class="d-step think-row" id="dThink">
-            <span class="t-ico">✻</span><span class="shine" data-i18n="demo.think">思考中 · 拆解任务…</span>
+            <span class="t-ico">✻</span><span class="shine" data-i18n="demo.think">拆解任务…</span>
           </div>
           <div class="d-step tool-group" id="dTools">
-            <div class="tg-head"><span class="tg-caret">▾</span><span class="tg-title" data-i18n="demo.tgTitle">派发子 Agent × 2</span><span class="tg-sum run" id="dToolsSum" data-i18n="demo.tgRun">运行中…</span></div>
+            <div class="tg-head"><span class="tg-caret">▾</span><span class="tg-title" data-i18n="demo.tgTitle">子 Agent × 2</span><span class="tg-sum run" id="dToolsSum" data-i18n="demo.tgRun">running…</span></div>
             <div class="tg-body">
               <div class="tool-row" id="dTool1"><span class="tr-caret">▸</span><span class="tr-name">read_file</span><span class="tr-arg">tests/test_billing.py</span></div>
               <div class="tool-row" id="dTool2"><span class="tr-caret">▸</span><span class="tr-name">edit_file</span><span class="tr-arg">src/billing.py</span><span class="diff add">+24</span><span class="diff del">−6</span></div>
@@ -108,12 +114,12 @@ tests/test_billing.py <span class="s">......</span>  <span class="m">[ 12/1070 ]
 tests/test_invoice.py <span class="s">......</span>  <span class="m">[ 18/1070 ]</span>
 <span class="ok">1070 passed</span> <span class="m">in 38.2s</span></code></pre>
               </div>
-              <p class="demo-done" id="dDone"><span class="ok-mark">✻</span> <span data-i18n="demo.done">任务完成</span><span class="done-meta"> · 4m12s · 12.4k tok</span></p>
+              <p class="demo-done" id="dDone"><span class="ok-mark">✻</span> <span data-i18n="demo.done">完成</span><span class="done-meta"> · 4m12s · 12.4k tok</span></p>
             </div>
           </div>
         </div>
         <div class="demo-input">
-          <span class="demo-input-ph" data-i18n="demo.input">输入任务，Enter 发送…</span>
+          <span class="demo-input-ph" data-i18n="demo.input">描述任务，Enter 发送</span>
           <span class="demo-send" aria-hidden="true"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg></span>
         </div>
       </div>
@@ -125,25 +131,25 @@ tests/test_invoice.py <span class="s">......</span>  <span class="m">[ 18/1070 ]
   <!-- ============ 学习项目 ============ -->
   <section class="section" id="learn">
     <div class="section-head reveal">
-      <span class="kicker" data-i18n="learn.kicker">LEARNING PROJECT</span>
-      <h2 data-i18n="learn.title">一个 open source 的学习项目</h2>
-      <p class="section-sub" data-i18n="learn.sub">做 Aulos 是为了彻底搞清楚 AI Agent 的内部构造。项目基于 MiniCC——一个极简的 Claude Code 复刻——在其架构上扩展出三层上下文压缩、多 Agent、MCP 接入等能力。读懂 MiniCC，就读懂了 Aulos 的一半。</p>
+      <span class="kicker" data-i18n="learn.kicker">ABOUT</span>
+      <h2 data-i18n="learn.title">项目简介</h2>
+      <p class="section-sub" data-i18n="learn.sub">Aulos 基于 MiniCC 构建。MiniCC 用尽量少的代码复刻了 Claude Code 的核心设计，Aulos 在它的骨架上补齐了上下文压缩、多 Agent 和 MCP。全部源码开放，想知道它怎么工作，读代码就行。</p>
     </div>
     <div class="learn-grid">
       <div class="card reveal">
-        <div class="card-ico">🎓</div>
-        <h3 data-i18n="learn.c1t">基于 MiniCC 构建</h3>
-        <p data-i18n="learn.c1d">Aulos 以 MiniCC 为起点。MiniCC 用最少的代码复刻了 Claude Code 的核心设计，Aulos 在这条骨架上继续生长，每一处改动都有出处可查。</p>
+        <div class="card-ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 2 7l10 5 10-5-10-5Z"/><path d="m2 12 10 5 10-5"/><path d="m2 17 10 5 10-5"/></svg></div>
+        <h3 data-i18n="learn.c1t">基于 MiniCC</h3>
+        <p data-i18n="learn.c1d">MiniCC 把 Claude Code 的核心设计整理成一个小而清晰的骨架，Aulos 不另起炉灶，直接在上面做扩展——每个功能加了什么、为什么这么加，都有据可查。</p>
       </div>
       <div class="card reveal">
-        <div class="card-ico">📖</div>
-        <h3 data-i18n="learn.c2t">读源码像读文档</h3>
-        <p data-i18n="learn.c2d">模块边界清晰、命名讲究、注释坦诚；38k 行 Python 就是这个项目最大的产出。</p>
+        <div class="card-ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/></svg></div>
+        <h3 data-i18n="learn.c2t">代码是写给人看的</h3>
+        <p data-i18n="learn.c2d">模块划分清楚，注释解释的是「为什么这么做」，而不是复述代码。想了解工作原理，从 aulos/runtime.py 的主循环读起就行——整个 Agent 都围着它转。</p>
       </div>
       <div class="card reveal">
-        <div class="card-ico">🤝</div>
-        <h3 data-i18n="learn.c3t">欢迎 issue 与 PR</h3>
-        <p data-i18n="learn.c3d">发现 bug、有想法、想加功能？直接开 issue；学习项目成长靠社区，星标也是鼓励。</p>
+        <div class="card-ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v6m0 8v6M2 12h6m8 0h6"/></svg></div>
+        <h3 data-i18n="learn.c3t">欢迎参与贡献</h3>
+        <p data-i18n="learn.c3d">发现 Bug 欢迎报 issue，最好带上复现步骤。想提 PR 的话：跑通全量测试，说清楚改动动机，风格跟着现有代码走。</p>
       </div>
     </div>
   </section>
@@ -152,39 +158,39 @@ tests/test_invoice.py <span class="s">......</span>  <span class="m">[ 18/1070 ]
   <section class="section" id="features">
     <div class="section-head reveal">
       <span class="kicker" data-i18n="feat.kicker">FEATURES</span>
-      <h2 data-i18n="feat.title">不是聊天玩具，是干活的工作台</h2>
-      <p class="section-sub" data-i18n="feat.sub">从 Agent 内核到桌面界面，每一层都是为「把任务做完」设计的。</p>
+      <h2 data-i18n="feat.title">干活的工具，不是玩具</h2>
+      <p class="section-sub" data-i18n="feat.sub">衡量标准只有一个：任务是否完成。以下机制都为此存在。</p>
     </div>
     <div class="feature-grid">
       <div class="card reveal">
         <div class="card-ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg></div>
-        <h3 data-i18n="f1.t">Agent 工具循环</h3>
-        <p data-i18n="f1.d">模型自己决定调用哪个工具——读文件、改代码、跑命令，执行结果喂回继续思考，循环直到任务完成。流式输出，思考过程实时可见。</p>
+        <h3 data-i18n="f1.t">工具循环</h3>
+        <p data-i18n="f1.d">模型自主选择工具——读文件、改代码、执行命令——结果回填继续推理，直至任务结束。全程流式，决策过程可审计。</p>
       </div>
       <div class="card reveal">
         <div class="card-ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 2 7l10 5 10-5-10-5Z"/><path d="m2 12 10 5 10-5"/><path d="m2 17 10 5 10-5"/></svg></div>
         <h3 data-i18n="f2.t">三层上下文压缩</h3>
-        <p data-i18n="f2.d">MicroCompact → Session Memory → Full Compact，长对话不爆上下文。逐字锚点对冲摘要漂移，熔断降级保证压缩链路永不断供。</p>
+        <p data-i18n="f2.d">MicroCompact、Session Memory、Full Compact 三级降级，长会话不超窗口。摘要锚定原文抑制漂移，链路带熔断。</p>
       </div>
       <div class="card reveal">
         <div class="card-ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="6" r="2.4"/><circle cx="19" cy="6" r="2.4"/><circle cx="12" cy="18" r="2.4"/><path d="M6.8 7.6 10.6 16M17.2 7.6 13.4 16"/></svg></div>
         <h3 data-i18n="f3.t">多 Agent 并行</h3>
-        <p data-i18n="f3.d">主 Agent 派生多个子 Agent 并行干活：强模型做诊断与规划，便宜模型执行落地，省钱且不牺牲决策质量。</p>
+        <p data-i18n="f3.d">主 Agent 拆解任务，子 Agent 并行执行。规划用强模型，执行用便宜模型。token 开销与决策质量分开考虑。</p>
       </div>
       <div class="card reveal">
         <div class="card-ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 7V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v3"/><path d="M9 17v3a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2v-3"/><path d="M4 7h16v10H4z"/><path d="M8 12h.01M12 12h.01M16 12h.01"/></svg></div>
-        <h3 data-i18n="f4.t">MCP 生态接入</h3>
-        <p data-i18n="f4.d">stdio / http / sse 三种接法接入外部工具，兼容 Claude Code 技能包（SKILL.md）与配置格式；外部工具与内置工具同一套权限审批。</p>
+        <h3 data-i18n="f4.t">MCP</h3>
+        <p data-i18n="f4.d">stdio / http / sse 三种传输，兼容 Claude Code 的 SKILL.md 与配置格式。外部工具与内置工具走同一套审批，没有特权路径。</p>
       </div>
       <div class="card reveal">
         <div class="card-ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 4 5.5V11c0 5 3.4 8.6 8 10 4.6-1.4 8-5 8-10V5.5L12 2Z"/><path d="m9 11.6 2.1 2.1L15.4 9"/></svg></div>
-        <h3 data-i18n="f5.t">三级权限安全</h3>
-        <p data-i18n="f5.d">plan 只读 → 工作区可写 → 全放行，越权操作弹窗审批。.git、~/.ssh 等敏感路径在任何模式下都强制人工确认，不可逆操作不静默。</p>
+        <h3 data-i18n="f5.t">三级权限</h3>
+        <p data-i18n="f5.d">plan 只读、工作区可写、完全放开，三档明确，越权即审批。.git 与 ~/.ssh 等路径无条件要求人工确认——没有例外，没有开关。</p>
       </div>
       <div class="card reveal">
         <div class="card-ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></div>
-        <h3 data-i18n="f6.t">桌面端 · 摸鱼电台</h3>
-        <p data-i18n="f6.d">Tauri 2 桌面壳：设置页、多供应商切换、计划卡片；还有桌宠悬浮窗和内置电台（网易云 / B站），写码间隙来点音乐。</p>
+        <h3 data-i18n="f6.t">桌面端</h3>
+        <p data-i18n="f6.d">Tauri 2 外壳：设置、多供应商、任务卡片。附带桌宠与电台，不影响核心功能，不喜欢可以无视。</p>
       </div>
     </div>
   </section>
@@ -193,8 +199,8 @@ tests/test_invoice.py <span class="s">......</span>  <span class="m">[ 18/1070 ]
   <section class="section" id="arch">
     <div class="section-head reveal">
       <span class="kicker">ARCHITECTURE</span>
-      <h2 data-i18n="arch.title">38k 行 Python，全部装在一个包里</h2>
-      <p class="section-sub" data-i18n="arch.sub">CLI 与桌面端共享同一个 Agent 内核；模块边界清晰，读源码像读文档。</p>
+      <h2 data-i18n="arch.title">模块划分</h2>
+      <p class="section-sub" data-i18n="arch.sub">CLI 与桌面端共用同一内核。划分如下：</p>
     </div>
     <div class="arch-code reveal">
       <div class="code-head"><span class="code-lang">aulos · package map</span></div>
@@ -214,10 +220,10 @@ tests/test_invoice.py <span class="s">......</span>  <span class="m">[ 18/1070 ]
                                        <span class="c"># 数据目录: ~/.aulos/</span></code></pre>
     </div>
     <div class="arch-legend">
-      <div class="legend-card reveal"><span class="lc-t" data-i18n="l1.t">不绑定官方 API</span><span class="lc-d" data-i18n="l1.d">任何兼容 Anthropic / OpenAI 接口的服务都能接，地址、Key、模型全可自定义</span></div>
-      <div class="legend-card reveal"><span class="lc-t" data-i18n="l2.t">评测驱动</span><span class="lc-d" data-i18n="l2.d">6 类真实任务自动打分 + 基线回归，能力退步在合并前就被发现</span></div>
-      <div class="legend-card reveal"><span class="lc-t" data-i18n="l3.t">缓存友好</span><span class="lc-d" data-i18n="l3.d">提示词排版对 prompt cache 友好，系统提示与工具定义固定在前，省钱省时</span></div>
-      <div class="legend-card reveal"><span class="lc-t" data-i18n="l4.t">会话持久化</span><span class="lc-d" data-i18n="l4.d">JSONL 原子增量写入，崩溃不丢；-c 接着聊，--resume 恢复指定会话</span></div>
+      <div class="legend-card reveal"><span class="lc-t" data-i18n="l1.t">不绑定供应商</span><span class="lc-d" data-i18n="l1.d">兼容 Anthropic / OpenAI 接口的服务均可接入。base URL、key、模型皆可配置。</span></div>
+      <div class="legend-card reveal"><span class="lc-t" data-i18n="l2.t">评测把关</span><span class="lc-d" data-i18n="l2.d">6 类真实任务自动打分，附带基线回归。回归在合并前暴露，而不是在用户那里。</span></div>
+      <div class="legend-card reveal"><span class="lc-t" data-i18n="l3.t">对 prompt cache 友好</span><span class="lc-d" data-i18n="l3.d">系统提示与工具定义固定在请求前缀。缓存命中率高，账单就低。这是设计约束，不是巧合。</span></div>
+      <div class="legend-card reveal"><span class="lc-t" data-i18n="l4.t">会话持久化</span><span class="lc-d" data-i18n="l4.d">JSONL 原子追加，崩溃不丢数据。-c 续接上一会话，--resume 恢复任意会话。</span></div>
     </div>
   </section>
 
@@ -225,17 +231,17 @@ tests/test_invoice.py <span class="s">......</span>  <span class="m">[ 18/1070 ]
   <section class="section" id="shots">
     <div class="section-head reveal">
       <span class="kicker">INTERFACE</span>
-      <h2 data-i18n="shots.title">看得顺眼，才用得长久</h2>
-      <p class="section-sub" data-i18n="shots.sub">桌面端深浅双主题，石墨锌色系 + 玻璃拟态，本页的设计语言与它完全一致。</p>
+      <h2 data-i18n="shots.title">界面</h2>
+      <p class="section-sub" data-i18n="shots.sub">深浅双主题，石墨锌配色。本页样式直接取自桌面端。</p>
     </div>
     <div class="shots-grid">
       <figure class="shot reveal">
         <img src="assets/light.png" alt="Aulos 桌面端浅色主题" loading="lazy">
-        <figcaption data-i18n="shots.cap1">浅色主题</figcaption>
+        <figcaption data-i18n="shots.cap1">浅色</figcaption>
       </figure>
       <figure class="shot reveal">
         <img src="assets/dark.png" alt="Aulos 桌面端深色主题" loading="lazy">
-        <figcaption data-i18n="shots.cap2">深色主题</figcaption>
+        <figcaption data-i18n="shots.cap2">深色</figcaption>
       </figure>
     </div>
   </section>
@@ -244,28 +250,28 @@ tests/test_invoice.py <span class="s">......</span>  <span class="m">[ 18/1070 ]
   <section class="section" id="download">
     <div class="section-head reveal">
       <span class="kicker">DOWNLOAD</span>
-      <h2 data-i18n="dl.title">三行命令，或一个安装包</h2>
-      <p class="section-sub" data-i18n="dl.sub">桌面端开箱即用；终端党用 uv 十秒起跑。</p>
+      <h2 data-i18n="dl.title">安装</h2>
+      <p class="section-sub" data-i18n="dl.sub">桌面安装包，或从源码运行。</p>
     </div>
     <div class="dl-grid">
       <a class="dl-card reveal" href="https://github.com/Steve-pixel-cpu/aulos/releases/latest" target="_blank" rel="noopener">
         <span class="dl-os">Windows</span><span class="dl-ext">.exe</span>
-        <span class="dl-desc" data-i18n="dl.d1">安装包内置 Python 运行时，装完即用，带自动更新</span>
+        <span class="dl-desc" data-i18n="dl.d1">内置 Python 运行时，支持自动更新</span>
       </a>
       <a class="dl-card reveal" href="https://github.com/Steve-pixel-cpu/aulos/releases/latest" target="_blank" rel="noopener">
         <span class="dl-os">macOS</span><span class="dl-ext">.dmg</span>
-        <span class="dl-desc" data-i18n="dl.d2">Apple Silicon 原生构建，拖进 Applications 即可</span>
+        <span class="dl-desc" data-i18n="dl.d2">Apple Silicon 原生构建</span>
       </a>
       <a class="dl-card reveal" href="https://github.com/Steve-pixel-cpu/aulos/releases/latest" target="_blank" rel="noopener">
-        <span class="dl-os">Linux</span><span class="dl-ext">.AppImage</span>
-        <span class="dl-desc" data-i18n="dl.d3">免安装单文件，chmod +x 直接运行</span>
+        <span class="dl-os">Linux</span><span class="dl-ext">.deb</span>
+        <span class="dl-desc" data-i18n="dl.d3">Debian / Ubuntu 系，dpkg -i 安装</span>
       </a>
       <a class="dl-card reveal" href="https://github.com/Steve-pixel-cpu/aulos" target="_blank" rel="noopener">
         <span class="dl-os">Source</span><span class="dl-ext mono">git</span>
-        <span class="dl-desc"><code>git clone</code> <span data-i18n="dl.d4">+ uv sync，38k 行源码随便读</span></span>
+        <span class="dl-desc"><code>git clone</code> <span data-i18n="dl.d4">uv sync 后直接运行，源码可审</span></span>
       </a>
     </div>
-    <p class="dl-note reveal" data-i18n="dl.note">打 tag 自动构建三平台安装包并发布 Release · Windows 需 Git for Windows（执行层依赖 Git Bash）</p>
+    <p class="dl-note reveal" data-i18n="dl.note">打 tag 触发三平台构建 · Windows 依赖 Git for Windows（执行层使用 Git Bash）</p>
   </section>
 
 </main>
@@ -277,16 +283,16 @@ tests/test_invoice.py <span class="s">......</span>  <span class="m">[ 18/1070 ]
       <img src="assets/icon-default.png" alt="" class="brand-logo">
       <div>
         <div class="footer-name">Aulos</div>
-        <div class="footer-tag" data-i18n="foot.tag">本地运行的 AI 编程 Agent</div>
+        <div class="footer-tag" data-i18n="foot.tag">本地运行的编程 Agent</div>
       </div>
     </div>
     <div class="footer-links">
       <a href="https://github.com/Steve-pixel-cpu/aulos" target="_blank" rel="noopener">GitHub</a>
-      <a href="https://github.com/Steve-pixel-cpu/aulos/releases" target="_blank" rel="noopener" data-i18n="foot.releases">全部版本</a>
-      <a href="https://github.com/Louisym/MiniCC" target="_blank" rel="noopener" data-i18n="foot.credit">基于 MiniCC · 致谢</a>
+      <a href="https://github.com/Steve-pixel-cpu/aulos/releases" target="_blank" rel="noopener" data-i18n="foot.releases">Releases</a>
+      <a href="https://github.com/Louisym/MiniCC" target="_blank" rel="noopener" data-i18n="foot.credit">基于 MiniCC</a>
       <a href="https://github.com/Steve-pixel-cpu/aulos/blob/main/LICENSE" target="_blank" rel="noopener">MIT License</a>
     </div>
-    <div class="footer-built" data-i18n="foot.built">✻ 本宣传页由 Aulos Agent 自己编写</div>
+    <div class="footer-built" data-i18n="foot.built">✻ 本页由 Aulos 生成</div>
   </div>
 </footer>
 
@@ -296,12 +302,16 @@ tests/test_invoice.py <span class="s">......</span>  <span class="m">[ 18/1070 ]
 </div>
 
 <!-- 菲比桌宠 -->
-<div id="feibi" title="菲比 · 拖着玩 / 点她有惊喜">
+<div id="feibi" title="菲比 · 拖着玩 / 双击进入 Aulos Dig">
   <div class="fb-bubble"></div>
   <div class="fb-sprite"></div>
 </div>
 
 <script src="js/main.js"></script>
 <script src="js/pet.js"></script>
+<script src="assets/mc/tiles.meta.js?v=2"></script>
+<script src="js/worldgen.js?v=10"></script>
+<script src="js/vendor/phaser.min.js"></script>
+<script src="js/game2.js?v=144"></script>
 </body>
 </html>
