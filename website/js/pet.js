@@ -143,6 +143,13 @@
     if (Math.random() < 0.6) { randomQuip(); }
   });
 
+  /* double-click: launch Aulos Dig (the only entry into the game).
+     Double-click fires two pointerdown/up pairs — the second drag
+     never starts (no move between), so only the extra jump plays. */
+  pet.addEventListener('dblclick', function () {
+    if (window.AulosDig) { window.AulosDig.toggle(); }
+  });
+
   /* -------- idle chatter -------- */
   function scheduleChatter() {
     var wait = 14000 + Math.random() * 18000;
