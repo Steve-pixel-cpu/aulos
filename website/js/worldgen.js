@@ -239,7 +239,11 @@
         for (var dx = -r; dx <= r; dx++) {
           var xx = cx + dx, yy = cy + dy;
           if (xx < 1 || xx >= W - 1 || yy < 1 || yy >= H - 1) { continue; }
-          if (dx * dx + dy * dy <= r2) { tile[yy * W + xx] = TILE.AIR; }
+          /* Reachability repair reuses carve after chest placement.
+             Preserve the chest tile as well as its registry entry. */
+          if (dx * dx + dy * dy <= r2 && tile[yy * W + xx] !== TILE.CHEST) {
+            tile[yy * W + xx] = TILE.AIR;
+          }
         }
       }
     }    var WORMS = 24;
