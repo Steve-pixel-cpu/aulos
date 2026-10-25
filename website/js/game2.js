@@ -26,7 +26,9 @@
   var WORLD_W = 512, WORLD_H = 256;
   /* average surface line (world px), set by create() from worldgen data */
   var PLAYER_SURFACE_Y = 96 * 32;
-  var MAX_HP = 3;
+  var MAX_HP = 10;                     /* hearts (was 3 — "血量提升为10格");
+                                          HUD heart row + hpChange follow
+                                          this constant automatically */
 
   var game = null;                     /* Phaser.Game */
   var scene = null;
@@ -44,10 +46,10 @@
   var loopLevel = 0;                         /* wins so far this session */
   var runStartT = 0;                         /* for the win-screen timer */
   var DIFF = [
-    { need: 3, bugCap: 10, torchLife: 150000, label: '第一夜' },
-    { need: 4, bugCap: 13, torchLife: 120000, label: '第二夜' },
-    { need: 5, bugCap: 16, torchLife: 100000, label: '第三夜' },
-    { need: 6, bugCap: 20, torchLife: 80000,  label: '深 渊' }
+    { need: 30, bugCap: 10, torchLife: 150000, label: '第一夜' },
+    { need: 30, bugCap: 13, torchLife: 120000, label: '第二夜' },
+    { need: 30, bugCap: 16, torchLife: 100000, label: '第三夜' },
+    { need: 30, bugCap: 20, torchLife: 80000,  label: '深 渊' }
   ];
   function diff() { return DIFF[Math.min(loopLevel, DIFF.length - 1)]; }
   /* TORCH FUEL: placed torches burn TORCH_LIFE ms then gutter out.
@@ -501,8 +503,34 @@
     /* ---- enemies ---- */
     this.bugs = this.physics.add.group();
     this.bullets = this.physics.add.group();
+    /* SPAWN CADENCE (USER: "刷怪太频繁了，加个血月事件才这么频繁吧"):
+       one 1s tick, gated by time of day —
+         day   (dayT 0.06-0.48): 8% chance/tick  (~1 spawn / 12.5s)
+         night (dayT 0.52-0.98): 25%            (~1 / 4s)
+         BLOOD MOON (a whole random night every ~2-3 nights): 55%,
+         bugCap x1.6, red sky wash + HUD banner.
+       Blood moon is decided at dusk (dayT crosses 0.5): 40% chance,
+       never two nights in a row. */
+    this.bloodMoon = false;
+    this._lastNightEnd = 0;                     /* night index of last BM */
     this.time.addEvent({
-      delay: 700, loop: true, callback: function () { spawnBug(S); }
+      delay: 1000, loop: true, callback: function () {
+        var t = dayT;
+        var night = t > 0.5 && t < 0.99;
+        /* dusk transition: decide tonight's moon */
+        if (night && !this._wasNight) {
+          var nightIdx = Math.floor(dayT + (dayT < 0.5 ? 0 : 0));
+          this.bloodMoon = Math.random() < 0.40 &&
+            (this._bmNight || -9) !== Math.floor(dayT * 1000);
+          if (this.bloodMoon) { this._bmNight = Math.floor(dayT * 1000); }
+        }
+        this._wasNight = night;
+        var cap = diff().bugCap * (this.bloodMoon && night ? 1.6 : 1);
+        if (this.bugs.getLength() >= cap) { return; }
+        var chance = !night ? 0.08
+          : (this.bloodMoon ? 0.55 : 0.25);
+        if (Math.random() < chance) { spawnBug(S); }
+      }
     });
     /* AI brain tick: ground bugs WALK toward the player (with small
        hop over walls); bats make swooping dives when in range. Turns
@@ -778,7 +806,11 @@
     var depth0 = Math.floor(p.y / TILE) - world.surfaceY[
       Math.max(0, Math.min(WORLD_W - 1, Math.floor(p.x / TILE)))];
     var cave = depth0 > 10;                   /* cave tier now 10 tiles deep */
-    var off = cave ? 300 + Math.random() * 120 : 380 + Math.random() * 180;
+    /* spawn DISTANCE (USER: "刷怪地点请离玩家远一点"): surface 700-950px
+       (offscreen-ish on a 918px canvas — mobs walk in from beyond the
+       edge), cave 560-760px. Despawn radius below is widened to match,
+       so far mobs walk TO you instead of vanishing mid-approach. */
+    var off = cave ? 560 + Math.random() * 200 : 700 + Math.random() * 250;
     var bx = p.x + side * off;
     bx = Math.max(64, Math.min(WORLD_W * TILE - 64, bx));
     /* species by depth: deeper = more eldritch; NIGHT lets wraiths
@@ -819,8 +851,8 @@
          "spawned but never seen" (caves looked empty). Ground kinds
          additionally require a solid floor tile beneath. */
       var found = false;
-      for (var ring = 3; ring <= 7 && !found; ring++) {
-        var rad = ring * 2;                       /* 6..14 tiles out */
+      for (var ring = 6; ring <= 12 && !found; ring++) {
+        var rad = ring * 2;                       /* 12..24 tiles out */
         for (var ang = 0; ang < 16 && !found; ang++) {
           var th = ang / 16 * Math.PI * 2 + ring * 0.37;
           var cxT = Math.floor(p.x / TILE) + Math.round(Math.cos(th) * rad);
@@ -1079,6 +1111,29 @@
     bar.innerHTML = '▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬'.slice(0, Math.ceil(frac * 20)) +
       '▫'.repeat(20 - Math.ceil(frac * 20)) + ' ' + Math.ceil(frac * 100) + '%';
     bar.style.opacity = 1;
+    /* KRAKEN SHOT (USER: "克拉肯请增加发射子弹的能力"): all phases
+       lob purple ink bolts at the player, rate/fan scaling with phase
+       (1: single every ~1.4s, 2: pair ~1s, 3: triple ~0.7s) */
+    if (Math.random() < 0.010 * phase + 0.004) {
+      var inkN = phase;                        /* 1..3 bolts */
+      for (var ki = 0; ki < inkN; ki++) {
+        var kdx = p.x - b.x + (ki - (inkN - 1) / 2) * 60,
+            kdy = (p.y - 40) - b.y;
+        var klen = Math.hypot(kdx, kdy) || 1;
+        var pr = S.bullets.create(b.x, b.y - 20, 'bolt');
+        pr.setDepth(45);
+        pr.setBlendMode(Phaser.BlendModes.ADD);
+        pr.hostile = true;
+        pr.setTint(0x9a6cff);                  /* kraken purple ink */
+        pr.setScale(1.5);
+        pr.setRotation(Math.atan2(kdy, kdx));
+        pr.body.setAllowGravity(false);
+        pr.body.setSize(12, 12);
+        pr.setVelocity((kdx / klen) * 300, (kdy / klen) * 300);
+        burst(S, b.x, b.y - 20, 0x9a6cff, 4);
+      }
+      tone(160, 0.14, 'sawtooth', 0.05, 90);
+    }
     /* phase 2+: spits homing eyelets (spawn small eye minions) */
     if (phase >= 2 && Math.random() < 0.012 * phase) {
       var mx = b.x + (Math.random() - 0.5) * 40;
@@ -1175,8 +1230,135 @@
     }
   }
 
-  function spawnShard(S, x, y, ttl) {
-    ensureShardTexture(S);
+  /* bug HP bar (USER: "怪物血条"): a tiny 30x4 red-on-dark bar hovering
+     above the bug, only visible after the first hit and fading out 1.5s
+     after the last hit. Destroyed with the bug. */
+  function updateBugHpBar(bg) {
+    var scn = bg.scene;
+    if (!scn) { return; }
+    if (!bg.hpBar) {
+      bg.hpBar = scn.add.container(bg.x, bg.y - 34).setDepth(44);
+      var bgRect = scn.add.rectangle(0, 0, 32, 5, 0x1a1410).setStrokeStyle(1, 0x000000);
+      var fill = scn.add.rectangle(-15, 0, 30, 3, 0xe23b3b).setOrigin(0, 0.5);
+      bg.hpBar.add([bgRect, fill]);
+      bg.hpBar._fill = fill;
+      bg.hpBar.setAlpha(0);
+    }
+    bg.hpBar.setPosition(bg.x, bg.y - 34);
+    bg.hpBar._fill.width = Math.max(0, 30 * bg.hp / bg.maxHp);
+    bg.hpBar.setAlpha(1);
+    scn.tweens.killTweensOf(bg.hpBar);
+    scn.time.delayedCall(1500, function () {
+      if (bg.hpBar && bg.hpBar.active) {
+        scn.tweens.add({ targets: bg.hpBar, alpha: 0, duration: 400 });
+      }
+    });
+  }
+
+  /* heal orb: red heart pickup (USER: "怪物和宝箱要掉落回血道具").
+     Same physics pipeline as shards (bouncy, world collider, ADD blend,
+     despawn timer) but restores 1 heart on pickup. At full HP it still
+     pops with a golden sparkle so the drop never feels wasted. */
+  function spawnHealOrb(S, x, y) {
+    if (!S.textures.exists('healOrb')) {
+      var hc = document.createElement('canvas');
+      hc.width = 20; hc.height = 20;
+      var hx = hc.getContext('2d');
+      hx.fillStyle = '#ff5a6e';
+      /* pixel heart: two 8px lobes + 12px lower wedge */
+      hx.fillRect(3, 4, 6, 6); hx.fillRect(11, 4, 6, 6);
+      hx.fillRect(2, 7, 16, 5);
+      hx.fillRect(4, 12, 12, 3);
+      hx.fillRect(7, 15, 6, 2);
+      hx.fillStyle = '#ffd3d9';
+      hx.fillRect(5, 5, 2, 2);                 /* highlight */
+      S.textures.addCanvas('healOrb', hc);
+    }
+    if (!S.healOrbs) {
+      S.healOrbs = S.physics.add.group();
+      S.physics.add.overlap(S.player, S.healOrbs, function (pl, ob) {
+        if (!ob.active) { return; }
+        ob.destroy();
+        if (S.hp < MAX_HP) {
+          hpChange(S, 1);
+          SFX.crystal();
+          burst(S, pl.x, pl.y - 40, 0xff8a97, 10);
+        } else {
+          /* full HP: golden pity sparkle, nothing consumed */
+          SFX.crystal();
+          burst(S, pl.x, pl.y - 40, 0xffd54a, 12);
+        }
+      });
+      if (!S.healOrbsCollider) {
+        S.healOrbsCollider = S.physics.add.collider(S.healOrbs, S.solids);
+      }
+    }
+    var ob = S.healOrbs.create(x, y, 'healOrb');
+    ob.setDepth(45).setScale(1.3);
+    ob.setBlendMode(Phaser.BlendModes.NORMAL); /* opaque under light */
+    ob.body.setBounce(0.5);
+    ob.body.setVelocity((Math.random() - 0.5) * 120, -160 - Math.random() * 80);
+    S.time.delayedCall(12000, function () {
+      if (ob && ob.active) {
+        /* blink last 2.5s then despawn */
+        S.tweens.add({ targets: ob, alpha: 0.2, duration: 120,
+          yoyo: true, repeat: 9,
+          onComplete: function () { if (ob.active) { ob.destroy(); } } });
+      }
+    });
+  }
+
+  /* weapon core: golden gear pickup (USER: "增加武器升级道具"). Each
+     core raises S.weaponTier by 1 (max 3): bullets grow bigger, faster
+     and deal +25% per tier (one-shot bugs stay one-shot early, tankier
+     species and the boss scale down visibly faster). */
+  function spawnWeaponCore(S, x, y) {
+    if (!S.textures.exists('wcore')) {
+      var wc = document.createElement('canvas');
+      wc.width = 20; wc.height = 20;
+      var wx = wc.getContext('2d');
+      wx.fillStyle = '#ffd54a';
+      wx.beginPath(); wx.arc(10, 10, 8, 0, Math.PI * 2); wx.fill();
+      wx.fillStyle = '#8a5a1a';
+      wx.beginPath(); wx.arc(10, 10, 3.5, 0, Math.PI * 2); wx.fill();
+      for (var a = 0; a < 8; a++) {
+        var th = a / 8 * Math.PI * 2;
+        wx.fillRect(10 + Math.cos(th) * 8 - 1.5,
+          10 + Math.sin(th) * 8 - 1.5, 3, 3);
+      }
+      S.textures.addCanvas('wcore', wc);
+    }
+    if (!S.wcores) {
+      S.wcores = S.physics.add.group();
+      S.physics.add.overlap(S.player, S.wcores, function (pl, ob) {
+        if (!ob.active) { return; }
+        ob.destroy();
+        S.weaponTier = Math.min(3, (S.weaponTier || 0) + 1);
+        SFX.crystal();
+        burst(S, pl.x, pl.y - 40, 0xffd54a, 14);
+        var tip = document.getElementById('tut');
+        if (tip) {
+          tip.textContent = '武器升级 Lv' + S.weaponTier +
+            '（伤害 +25%/级）';
+          tip.style.opacity = 1;
+          S.time.delayedCall(2200, function () { tip.style.opacity = 0.85; });
+        }
+      });
+      if (!S.wcoresCollider) {
+        S.wcoresCollider = S.physics.add.collider(S.wcores, S.solids);
+      }
+    }
+    var ob = S.wcores.create(x, y, 'wcore');
+    ob.setDepth(45).setScale(1.2);
+    ob.setBlendMode(Phaser.BlendModes.NORMAL); /* opaque under light */
+    ob.body.setBounce(0.5);
+    ob.body.setVelocity((Math.random() - 0.5) * 100, -150);
+    S.time.delayedCall(15000, function () {
+      if (ob && ob.active) { ob.destroy(); }
+    });
+  }
+
+  function spawnShard(S, x, y, ttl) {    ensureShardTexture(S);
     if (!S.shards) {
       S.shards = S.physics.add.group();
       S.physics.add.overlap(S.player, S.shards, function (pl, sh) {
@@ -1191,7 +1373,7 @@
     var sh = S.shards.create(x, y, 'shard');
     if (ttl) { sh.ttl = ttl; }
     sh.setDepth(45).setScale(1.4);
-    sh.setBlendMode(Phaser.BlendModes.ADD);
+    sh.setBlendMode(Phaser.BlendModes.NORMAL); /* opaque under light (USER) */
     sh.body.setBounce(0.55);
     sh.body.setVelocity((Math.random() - 0.5) * 140, -180 - Math.random() * 90);
     sh.setTint(0xd9b3ff);
@@ -1223,7 +1405,7 @@
          in a corner 100 tiles away). Terraria rule: anything 1000px+
          from the player is gone; the cap recycles and fresh spawns
          appear where the player actually is. Bosses exempt. */
-      if (!b.isBoss && (dx * dx + dy * dy) > 1000000) {
+      if (!b.isBoss && (dx * dx + dy * dy) > 1960000) {
         if (b.glow && b.glow.active) { b.glow.destroy(); }
         b.destroy();
         return;
@@ -1446,6 +1628,26 @@
     if (tx < 0 || ty < 0 || tx >= WORLD_W || ty >= WORLD_H) { return; }
     var i = ty * WORLD_W + tx;
     var sel = inventory[hotbarSel];
+    /* USE ITEMS (USER: "回血道具增加一个药瓶，需要在物品栏右键使用"):
+       id 203 heal potion = +3 hearts; id 202 multishot clip = +1 bullet
+       (max 3). Consumed from the hotbar, no world placement. */
+    if (sel && sel.id === 203) {
+      takeItem(203, 1);
+      hpChange(S, 3);
+      SFX.crystal();
+      burst(S, S.player.x, S.player.y - 40, 0xff8a97, 14);
+      drawHotbar(S);
+      return;
+    }
+    if (sel && sel.id === 202) {
+      if ((S.multishot || 0) >= 3) { return; }   /* already maxed */
+      takeItem(202, 1);
+      S.multishot = (S.multishot || 0) + 1;
+      SFX.crystal();
+      burst(S, S.player.x, S.player.y - 40, 0xffd54a, 12);
+      drawHotbar(S);
+      return;
+    }
     if (!sel || world.tile[i] !== 0) { return; }
     /* adjacency rule */
     var nb = (isSolid(tx - 1, ty) || isSolid(tx + 1, ty) || isSolid(tx, ty - 1) ||
@@ -1491,23 +1693,66 @@
     ctx.fillRect(8, 4, 12, 4);           /* hot core streak */
     S.textures.addCanvas('bolt', cv);
   }
+  /* nearest lockable enemy for J-homing: bugs group + boss, within one
+     screen of the camera, line-of-sight clear (no solid tile on the
+     straight segment), closest wins. Returns {x,y} or null. */
+  function findNearestEnemy(S) {
+    var p = S.player;
+    var cam = S.cameras.main;
+    var minX = cam.scrollX - 200, maxX = cam.scrollX + cam.width + 200;
+    var best = null, bestD = 520 * 520;
+    function consider(ex, ey) {
+      if (ex < minX || ex > maxX) { return; }
+      var dx = ex - p.x, dy = ey - (p.y - 52);
+      var d2 = dx * dx + dy * dy;
+      if (d2 >= bestD) { return; }
+      /* line of sight: sample the segment every 16px for solids */
+      var len = Math.sqrt(d2), steps = Math.ceil(len / 16) || 1;
+      for (var s2 = 1; s2 < steps; s2++) {
+        var sx = p.x + dx * (s2 / steps);
+        var sy = p.y - 52 + dy * (s2 / steps);
+        if (isSolid(Math.floor(sx / TILE), Math.floor(sy / TILE))) {
+          return;                                   /* wall blocks */
+        }
+      }
+      bestD = d2; best = { x: ex, y: ey };
+    }
+    if (S.bugs) {
+      S.bugs.getChildren().forEach(function (b) {
+        if (b.active) { consider(b.x, b.y - 20); }
+      });
+    }
+    if (S.boss && S.boss.active) { consider(S.boss.x, S.boss.y - 40); }
+    return best;
+  }
+
   function shoot(S) {
     if (!running || over) { return; }
     if (S.time.now - lastShot < SHOOT_CD) { return; }
     lastShot = S.time.now;
     SFX.shoot();
     ensureBulletTexture(S);
-    /* aim: at the pointer if it is inside the window, else facing */
+    /* aim: J key = auto-lock the nearest visible enemy; else at the
+       pointer if it is inside the window, else facing */
+    var tier = S.weaponTier || 0;
+    var dmg = 1 + tier * 0.25;
     var aimX = 1, aimY = 0;
-    var ap = S.input.activePointer;
-    if (ap && (ap.x !== 0 || ap.y !== 0)) {
-      var wp2 = S.cameras.main.getWorldPoint(ap.x, ap.y);
-      var ddx = wp2.x - S.player.x, ddy = wp2.y - (S.player.y - 52);
-      var len = Math.hypot(ddx, ddy);
-      if (len > 24) { aimX = ddx / len; aimY = ddy / len; }
-      else { aimX = S.player.flipX ? -1 : 1; }
+    var lock = (S.keysJ && S.keysJ.isDown) ? findNearestEnemy(S) : null;
+    if (lock) {
+      var ldx = lock.x - S.player.x, ldy = lock.y - (S.player.y - 52);
+      var llen = Math.hypot(ldx, ldy);
+      if (llen > 4) { aimX = ldx / llen; aimY = ldy / llen; }
     } else {
-      aimX = S.player.flipX ? -1 : 1;
+      var ap = S.input.activePointer;
+      if (ap && (ap.x !== 0 || ap.y !== 0)) {
+        var wp2 = S.cameras.main.getWorldPoint(ap.x, ap.y);
+        var ddx = wp2.x - S.player.x, ddy = wp2.y - (S.player.y - 52);
+        var len = Math.hypot(ddx, ddy);
+        if (len > 24) { aimX = ddx / len; aimY = ddy / len; }
+        else { aimX = S.player.flipX ? -1 : 1; }
+      } else {
+        aimX = S.player.flipX ? -1 : 1;
+      }
     }
     /* muzzle: clear of the body; if it's inside a solid tile, step the
        spawn out along the aim line so shots never die at birth */
@@ -1528,7 +1773,31 @@
     b.setRotation(Math.atan2(aimY, aimX));
     b.body.setAllowGravity(false);
     b.body.setSize(14, 6);
-    b.setVelocity(aimX * BULLET_V, aimY * BULLET_V);
+    /* weapon tier scaling (USER: "增加武器升级道具"): +25% damage per
+       tier carried on the bullet; +8% speed and a slightly bigger body
+       so higher tiers visibly hit harder */
+    b.dmg = dmg;
+    b.setScale(1 + tier * 0.18);
+    b.setVelocity(aimX * BULLET_V * (1 + tier * 0.08),
+      aimY * BULLET_V * (1 + tier * 0.08));
+    /* MULTISHOT (USER: "增加 子弹数量，最多三发"): clip-consumed fan of
+       extra bolts at ±10° per extra shot, same damage/tier */
+    var extra = Math.min(2, S.multishot || 0);
+    for (var mi = 1; mi <= extra; mi++) {
+      var fan = mi * 0.175 * (mi % 2 ? 1 : -1);   /* +10°, -10°, +20° */
+      var ca = Math.cos(fan), sa = Math.sin(fan);
+      var faX = aimX * ca - aimY * sa, faY = aimX * sa + aimY * ca;
+      var mb = S.bullets.create(mx, my, 'bolt');
+      mb.setDepth(45);
+      mb.setBlendMode(Phaser.BlendModes.ADD);
+      mb.setRotation(Math.atan2(faY, faX));
+      mb.body.setAllowGravity(false);
+      mb.body.setSize(14, 6);
+      mb.dmg = dmg;
+      mb.setScale(1 + tier * 0.18);
+      mb.setVelocity(faX * BULLET_V * (1 + tier * 0.08),
+        faY * BULLET_V * (1 + tier * 0.08));
+    }
     /* muzzle flash */
     burst(S, mx, my, 0x5ab4ff, 3);
   }
@@ -2350,6 +2619,26 @@
       }
     }
 
+    /* BLOOD MOON wash: during a blood-moon night the sky goes deep
+       red and the moon disc tints blood-red (Terraria signature) */
+    if (S.bloodMoon && dayT > 0.5 && dayT < 0.99) {
+      ctx.fillStyle = 'rgba(140,20,24,0.30)';
+      ctx.fillRect(0, 0, w, h);
+      ctx.font = 'bold 15px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.lineWidth = 3; ctx.strokeStyle = '#000';
+      ctx.fillStyle = '#ff6b5e';
+      ctx.strokeText('☂ 血 月 之 夜', w / 2, 30);
+      ctx.fillText('☂ 血 月 之 夜', w / 2, 30);
+      ctx.textAlign = 'left';
+      {
+        ctx.fillStyle = 'rgba(255,60,50,0.35)';
+        ctx.beginPath();
+        ctx.arc(cxS, cyS, 26, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
     /* stars fade in as the sun sets */
     if (sky.dayness < 0.45) {
       var sa = Math.min(1, (0.45 - sky.dayness) / 0.3);
@@ -2478,6 +2767,36 @@
         ts._fx = d.fx; ts._srcW = img ? img.width : 1280;
         ts._srcH = srcH;
         if (d.n === 'clouds') { S.cloudsBand = ts; }  /* wind drift hook */
+        /* GREEN EXTENSION: every ground layer gets a solid green skirt
+           welded to its bottom edge (USER: "远景的草地需要往下延生一点
+           绿的，不然有间隙"). The art's bottom rows are semi-transparent
+           and the terrain below varies, so bright sky / cave wall could
+           peek through the fringe. The skirt uses the band art's own
+           bottom-row green (forest_2 #3f8d4c sampled), extends 5 tiles
+           down with a 3-tile alpha fade to 0 — hands off invisibly to
+           the textured caveFill behind. Same transform as its parent
+           band: scrollFactor 1, one tile deeper, so it can never
+           detach. */
+        if (d.top == null) {
+          var skTex = 'bkd_green_ext';
+          if (!S.textures.exists(skTex)) {
+            var gc = document.createElement('canvas');
+            gc.width = 8; gc.height = 8;
+            var gx2 = gc.getContext('2d');
+            gx2.fillStyle = '#3f8d4c';
+            gx2.fillRect(0, 0, 8, 8);
+            S.textures.addCanvas(skTex, gc);
+          }
+          var ext = S.add.tileSprite(
+            0, surfPx2 + 32, (WORLD_W * 32) / sc, 160, skTex)
+            .setOrigin(0, 0)
+            .setScale(sc)
+            .setScrollFactor(1)
+            .setDepth(-3.9)                 /* behind ALL bands */
+            .setAlpha(0.9);
+          ext._parent = ts;
+          ts._greenExt = ext;
+        }
         layers.push(ts);
         /* layers arrive ASYNC (image onload) — the create-time
            refitBackdrop() ran before any layer existed; rebuild
@@ -2721,18 +3040,21 @@
         ctx.fillText(String(it.n), x + slot - 4, y0 + slot - 5);
       }
     }
-    /* hearts, top-right */
-    ctx.font = '20px sans-serif';
+    /* hearts, top-right — 10 hearts at full spacing would run ~240px;
+       tighten the pitch and use a 2-row layout (5+5) so the row stays
+       inside the HUD (USER: "血量提升为10格") */
+    ctx.font = '17px sans-serif';
     ctx.textAlign = 'right';
     ctx.lineWidth = 3;
     ctx.strokeStyle = '#000';
     ctx.fillStyle = '#ff5a5a';
-    var hp = S.hp || 0, hx = w - 14;
+    var hp = S.hp || 0, hx = w - 14, hy = 26;
     for (var hh = 0; hh < MAX_HP; hh++) {
       ctx.globalAlpha = hh < hp ? 1 : 0.22;
-      ctx.strokeText('♥', hx, 34);
-      ctx.fillText('♥', hx, 34);
-      hx -= 24;
+      ctx.strokeText('♥', hx, hy);
+      ctx.fillText('♥', hx, hy);
+      hx -= 21;
+      if (hh === 4) { hx = w - 14; hy += 22; }   /* second row of 5 */
     }
     ctx.globalAlpha = 1;
 
@@ -3137,6 +3459,20 @@
     if (this.cloudsBand) {
       this.cloudsBand.tilePositionX += dt * 6;   /* ~6px/s breeze */
     }
+
+    /* green extension fade: full strength at the surface, gone by the
+       time the camera is ~6 tiles underground (cave depth), so caves
+       never show a green smear under the tree line */
+    if (this.backdrop && this.backdrop.length) {
+      var camDepth = cam.scrollY + this.scale.height * 0.5
+        - (PLAYER_SURFACE_Y || 96 * 32);
+      var gAlpha = Math.max(0, Math.min(0.9,
+        0.9 * (1 - camDepth / (6 * 32))));
+      for (var gbi = 0; gbi < this.backdrop.length; gbi++) {
+        var gb = this.backdrop[gbi];
+        if (gb._greenExt) { gb._greenExt.setAlpha(gAlpha); }
+      }
+    }
     /* BACKDROP: map-bound world objects (scrollFactor 1) — they ride
        the SAME camera transform as the terrain tiles, so nothing to
        drive per-frame: no tilePositionX scrolling (that would move the
@@ -3237,13 +3573,32 @@
           hitBug = true;
           burst(S, bg.x, bg.y, 0xf87171, 12);
           burst(S, bg.x, bg.y, 0xfbbf24, 6);
-          /* 30% drop: a crystal SHARD worth 1/3 pickaxe-progress-free
-             crystal? No — shards count toward the goal at 1 each but cap
-             at the requirement; keeps combat rewarding without removing
-             the mining goal. Simple v1: 30% chance the kill drops a
-             collectible shard entity (bouncy purple gem). */
-          if (Math.random() < 0.3) { spawnShard(S, bg.x, bg.y); }
+          /* per-species HP (USER: "不同怪物血量要不一样"): one-shot is
+             over — bug 1, bat 1 (fragile), slime 4 (tanky), eyelet 2,
+             arachni 3, spitter 2, bugW 3. Boss has its own path. */
+          if (bg.maxHp === undefined) {
+            var hpTable = { bug: 1, bat: 1, slime: 4, eyelet: 2,
+              arachni: 3, spitter: 2, spitterF: 2, bugW: 3, batF: 2 };
+            bg.bugKind = bg.bugKind ||
+              (bg.texture && bg.texture.key) || 'bug';
+            bg.maxHp = hpTable[bg.bugKind] || 2;
+            bg.hp = bg.maxHp;
+          }
+          bg.hp -= (bl.dmg || 1);
+          updateBugHpBar(bg);
+          if (bg.hp > 0) {
+            noise(0.04, 0.05, 400);          /* hit grunt — survives */
+            bl.destroy();
+            return;
+          }
+          /* death drops — RARE (USER: "道具掉落概率太高了"):
+             heal 6% / weapon core 4%. Independent-ish roll, most kills
+             drop nothing at all. */
+          var droll = Math.random();
+          if (droll < 0.06) { spawnHealOrb(S, bg.x, bg.y); }
+          else if (droll < 0.10) { spawnWeaponCore(S, bg.x, bg.y); }
           if (bg.glow && bg.glow.active) { bg.glow.destroy(); }
+          if (bg.hpBar && bg.hpBar.active) { bg.hpBar.destroy(); }
           bg.destroy();
           stats.kills = (stats.kills || 0) + 1;
           noise(0.08, 0.1, 700); tone(500, 0.08, 'square', 0.05, 220);
@@ -3384,10 +3739,16 @@
           world.tile[i] = 15;
           stats.chests += 1;
           var roll = Math.random();
-          if (roll < 0.25) { giveItem(42, 1); crystalsGot += 1; drawHotbar(this); burst(this, cx, cy, 0xb48cff, 10); }
-          else if (roll < 0.55) { giveItem(12, 15); }
-          else if (roll < 0.8) { giveItem(7, 20); }
+          /* NO amethyst from chests (USER: "怪物不能掉落紫水晶，必须挖矿")
+             — the goal is mining-locked. Chest loot: torches, planks,
+             gold/diamond, and a guaranteed weapon core every other chest */
+          if ((S.multishot || 0) < 3 && roll < 0.18) { giveItem(202, 1); }
+          else if (roll < 0.45) { giveItem(12, 15); }
+          else if (roll < 0.75) { giveItem(7, 20); }
           else { giveItem(10, 5); giveItem(11, 3); }
+          if (stats.chests % 3 === 0) { spawnWeaponCore(this, cx, cy - 10); }
+          /* chests ALWAYS drop a heal orb (USER: "宝箱要掉落回血道具") */
+          spawnHealOrb(this, cx, cy - 10);
           refreshStrip(this, c[0]);
           SFX.chest();
           /* victory wave (pet sheet row 3, one-shot) — grounded only so

@@ -730,6 +730,41 @@
       }
     }
 
+    /* ---- 6.9 spawn monument (USER: "类似祭坛，弄个特殊结构就行了") ----
+       NOT a building (the earlier fort attempt scattered floating bricks
+       and fought the terrain). A symmetric ALTAR-STYLE monument welded
+       to the spawn column: carved-sandstone twin pillars (2 wide, 5
+       high) with marble-brick capitals, a rune floor of sandstone
+       tiles under the spawn point, an eternal torch at the heart, and
+       crystal shards (TILE 42) as the crest — echoing the Kraken altar
+       look. Pillars stand ON the terrain surface (each column uses its
+       own surfaceY), so nothing floats and nothing boxes the player
+       in — both sides stay walkable. */
+    (function buildSpawnMonument() {
+      var kx = 32;
+      var pil = TILE.SANDSTONE_CARVED, cap = TILE.MARBLE_BRICKS,
+          floor = TILE.SANDSTONE_TILES, crest = 42;
+      [-5, -4, 4, 5].forEach(function (off) {
+        var px2 = kx + off;
+        var gy = surfaceY[px2];               /* own column ground */
+        for (var dy = 0; dy < 5; dy++) {
+          tile[(gy - 1 - dy) * W + px2] = pil;
+        }
+        tile[(gy - 6) * W + px2] = cap;       /* capital on top */
+      });
+      /* rune floor under the spawn point (3 wide) */
+      for (var fx = kx - 1; fx <= kx + 1; fx++) {
+        tile[surfaceY[fx] * W + fx] = floor;
+      }
+      /* eternal torch at the monument heart */
+      tile[(surfaceY[kx] - 1) * W + kx] = 12;
+      /* crystal crests atop each capital */
+      [-5, 5].forEach(function (off) {
+        var px2 = kx + off;
+        tile[(surfaceY[px2] - 7) * W + px2] = crest;
+      });
+    })();
+
     /* ---- 7. spawn / flag ----------------------------------------------- */
     var spawn = [32, surfaceY[32] - 2];
     var flagX = W - 40;
