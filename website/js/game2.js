@@ -1489,22 +1489,23 @@
         } else {
           sr = TORCH_R; sg = TORCH_G; sb = TORCH_B * 1.3;
         }
-        /* dim decorative glows get a BOOSTED seed so their pools read
-           clearly in dark caves (x1.25; the earlier x0.82 hierarchy
-         cut left them nearly invisible). Real emitters keep 1.0 -
-           torch/lava/diamond pools are already at full strength. */
-        var lumSeed = lum < 0.35 ? Math.min(1, lum * 1.25) : lum;
+        /* ORE beacons: gold(10) / diamond(11) / amethyst(42) light at
+           FULL torch strength in their own color - the deep-cave
+           amethyst objective must glow across a cave like a placed
+           torch, not a faint 0.35 tint. Everything else keeps the
+           meta strength (decorative glows x1.25 boost below). */
+        var oreGlow = (t === 10 || t === 11 || t === 42);
+        var lumSeed = oreGlow ? 1
+          : (lum < 0.35 ? Math.min(1, lum * 1.25) : lum);
         torchR[i] = Math.round(sr * lumSeed);
         torchG[i] = Math.round(sg * lumSeed);
         torchB[i] = Math.round(sb * lumSeed);
-        torchField[i] = Math.round(255 * lum);
+        torchField[i] = Math.round(255 * lumSeed);
         /* emissive self-illumination only for REAL light emitters
-           (>= 0.35: lava 0.4, diamond 0.55, amethyst 0.35 + torches).
-           Everything below - gold ore 0.3, mushroom 0.2, coral 0.15,
-           ice 0.05 - is DECORATIVE glow: keep the tinted light pool
-           but never light the tile's own cell, or each decorative
-           block reads as one bright pixel in a dark cave. */
-        if (lum >= 0.35) {
+           (lumSeed >= 0.35: torches, ores, lava, diamond, amethyst).
+           Decorative glows (coral, ice, mushroom) keep their tinted
+           pool but never light their own cell. */
+        if (lumSeed >= 0.35) {
           emisR[i] = sr; emisG[i] = sg; emisB[i] = sb;
           emisKind[i] = 2;
         }
