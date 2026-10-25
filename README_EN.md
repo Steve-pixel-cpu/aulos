@@ -35,6 +35,7 @@ parallelism, automated evals, and session save/resume.
 - [Desktop build & release](#desktop-build--release)
 - [Tests](#tests)
 - [Further reading](#further-reading)
+- [Easter egg mini-game: Aulos Dig](#easter-egg-mini-game-aulos-dig)
 - [Acknowledgements](#acknowledgements)
 - [Disclaimer](#disclaimer)
 - [License](#license)
@@ -331,6 +332,45 @@ real browser).
 
 - [guides/](guides/): 13 implementation notes, one per module (a
   source-reading companion)
+
+## Easter egg mini-game: Aulos Dig
+
+The promo site (`website/`, fully static) hides a 2D pixel-art mining
+mini-game: open `website/index.html#egg-run` to jump straight in, or
+double-click the Phoebe desktop pet on the page. It runs on a locally
+vendored Phaser 3 (MIT, `website/js/vendor/phaser.min.js`); all game code
+lives in `website/js/game2.js` with zero network dependencies — playable
+offline. Dig for crystals, survive day/night cycles and blood moons, fight
+underground monsters that get more eldritch with depth, loot chests and
+upgrade weapons, double-jump; the ⚙ button in the title bar opens a
+13-parameter config panel (max HP / crystal goal / day length / blood-moon
+chance …), ⛶ toggles fullscreen.
+
+### Art assets & attribution
+
+- **Tile atlas** `assets/mc/tiles.png`: hand-drawn shapes kept from CC0
+  source packs, colors remapped to a Terraria-style palette by
+  `website/tools/build_terraria_tiles.py` (global LUT + per-tile
+  overrides); torch/chest/lava/gravel/bedrock/wall tiles are drawn
+  procedurally. The CC0 source zips (`assets/mc/src/blocks_2021.zip` /
+  `blocks_2023.zip`) carry no author metadata — original authors
+  untraceable; the art itself is public domain
+- **Phoebe** `assets/feibi/`: fan-made chibi desktop-pet art of the
+  character Phoebe from *Wuthering Waves*; no original author/license is
+  recorded in-repo — shown as a non-commercial Easter egg only
+- **Large monsters** `assets/big/`: bevouliin "Land Monster" (CC0) and
+  Redshrike "Ars Notoria" (CC-BY 3.0, attribution required); source
+  archives kept in `assets/big/src/` as license provenance
+- **Parallax backdrops** `assets/scenery/bg/`: parallax background packs
+  by Admurin (snowy mountains / plains / caves …, **CC-BY 4.0, attribution
+  required**), recolored to a Terraria daylight palette; source archive
+  kept in `assets/scenery/adm.zip`
+- **Small monsters** `assets/tiny/`: "Tiny Creatures" by Clint Bellanger
+  (CC0, an expansion of Kenney's Tiny Dungeon / Tiny Town),
+  opengameart.org/content/tiny-creatures; source archive in
+  `assets/tiny/src/`
+- **Misc sprites** (top level of `assets/scenery/`: bug / bat / flag …):
+  slime is by Kenney (CC0); the rest have no recorded provenance
 
 ## Acknowledgements
 

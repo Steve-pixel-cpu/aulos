@@ -173,6 +173,8 @@ code, pre { font-family: var(--font-mono); }
    window) — hide it on the marketing page, show it only in egg-mode */
 .demo-fs-btn { display: none; }
 .hero-demo.egg-mode .demo-fs-btn { display: inline-flex; }
+#demoCfg.demo-fs-btn { font-size: 13px; }
+#demoFs.demo-fs-btn { margin-left: 2px; }
 .demo-fs-btn { border: 0; background: transparent; color: var(--text-3);
   font-size: 15px; line-height: 1; cursor: pointer; padding: 2px 6px;
   border-radius: 6px; margin-left: auto; }

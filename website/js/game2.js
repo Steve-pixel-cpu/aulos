@@ -26,9 +26,39 @@
   var WORLD_W = 512, WORLD_H = 256;
   /* average surface line (world px), set by create() from worldgen data */
   var PLAYER_SURFACE_Y = 96 * 32;
-  var MAX_HP = 10;                     /* hearts (was 3 — "血量提升为10格");
-                                          HUD heart row + hpChange follow
-                                          this constant automatically */
+  /* ---- GAME CONFIG (USER: "弄个配置页") ----
+     Every tunable lives in CFG; the config UI (cog button in the demo
+     titlebar) edits window.AulosDigCFG, persisted to localStorage and
+     merged over DEFAULTS at boot. Code reads CFG.* — never literals. */
+  var CFG_DEFAULTS = {
+    maxHp: 10,            /* hearts */
+    crystalGoal: 30,      /* amethysts to finish */
+    dayLen: 120,          /* seconds per full day */
+    bugCap: 10,           /* base spawn cap (day 1; scales per loop) */
+    spawnRangeMin: 700,   /* surface spawn distance (px) */
+    spawnRangeMax: 950,
+    caveSpawnMin: 12,     /* cave spawn ring (tiles) */
+    caveSpawnMax: 24,
+    bloodMoonChance: 40,  /* % per night */
+    bulletSpeed: 780,
+    shootCd: 170,         /* ms between shots */
+    digRange: 6,          /* tiles */
+    jumpVel: 700          /* upward jump velocity; 2nd jump ≈ 74% of this */
+  };
+  var CFG = (function () {
+    try {
+      var saved = JSON.parse(localStorage.getItem('aulosDigCFG') || '{}');
+      var out = {};
+      for (var k in CFG_DEFAULTS) {
+        var v = parseFloat(saved[k]);
+        out[k] = isNaN(v) ? CFG_DEFAULTS[k] : v;
+      }
+      return out;
+    } catch (e) { return Object.assign({}, CFG_DEFAULTS); }
+  })();
+
+  var MAX_HP = CFG.maxHp;              /* hearts; HUD + hpChange follow */
+  var JUMP_V = CFG.jumpVel;            /* jump velocity; rebound by applyCFG */
 
   var game = null;                     /* Phaser.Game */
   var scene = null;
@@ -46,10 +76,10 @@
   var loopLevel = 0;                         /* wins so far this session */
   var runStartT = 0;                         /* for the win-screen timer */
   var DIFF = [
-    { need: 30, bugCap: 10, torchLife: 150000, label: '第一夜' },
-    { need: 30, bugCap: 13, torchLife: 120000, label: '第二夜' },
-    { need: 30, bugCap: 16, torchLife: 100000, label: '第三夜' },
-    { need: 30, bugCap: 20, torchLife: 80000,  label: '深 渊' }
+    { need: CFG.crystalGoal, bugCap: CFG.bugCap, torchLife: 150000, label: '第一夜' },
+    { need: CFG.crystalGoal, bugCap: Math.round(CFG.bugCap * 1.3), torchLife: 120000, label: '第二夜' },
+    { need: CFG.crystalGoal, bugCap: Math.round(CFG.bugCap * 1.6), torchLife: 100000, label: '第三夜' },
+    { need: CFG.crystalGoal, bugCap: CFG.bugCap * 2, torchLife: 80000,  label: '深 渊' }
   ];
   function diff() { return DIFF[Math.min(loopLevel, DIFF.length - 1)]; }
   /* TORCH FUEL: placed torches burn TORCH_LIFE ms then gutter out.
@@ -511,24 +541,33 @@
          bugCap x1.6, red sky wash + HUD banner.
        Blood moon is decided at dusk (dayT crosses 0.5): 40% chance,
        never two nights in a row. */
-    this.bloodMoon = false;
+    this.bloodMoon = false;   /* decided at dusk by the spawn tick */
     this._lastNightEnd = 0;                     /* night index of last BM */
     this.time.addEvent({
       delay: 1000, loop: true, callback: function () {
+        /* capture S in closure — `this` here is the SCENE, and after a
+           leave();enter() restart (or game.destroy teardown order) the
+           old scene's group refs are already nulled while its timers
+           fire one last step: `this.bugs` was undefined =>
+           "Cannot read properties of undefined (reading 'getLength')".
+           The shutdown guard below skips dead ticks entirely. */
+        if (!S.bugs || !S.scene || !S.scene.isActive()) { return; }
         var t = dayT;
         var night = t > 0.5 && t < 0.99;
         /* dusk transition: decide tonight's moon */
-        if (night && !this._wasNight) {
-          var nightIdx = Math.floor(dayT + (dayT < 0.5 ? 0 : 0));
-          this.bloodMoon = Math.random() < 0.40 &&
-            (this._bmNight || -9) !== Math.floor(dayT * 1000);
-          if (this.bloodMoon) { this._bmNight = Math.floor(dayT * 1000); }
+        if (night && !S._wasNight) {
+          /* dusk: a new night begins — advance the moon phase counter
+             (8 phases over 8 days, drives drawSky's moon art) */
+          dayCount = (dayCount || 0) + 1;
+          S.bloodMoon = Math.random() < CFG.bloodMoonChance / 100 &&
+            (S._bmNight || -9) !== Math.floor(dayT * 1000);
+          if (S.bloodMoon) { S._bmNight = Math.floor(dayT * 1000); }
         }
-        this._wasNight = night;
-        var cap = diff().bugCap * (this.bloodMoon && night ? 1.6 : 1);
-        if (this.bugs.getLength() >= cap) { return; }
+        S._wasNight = night;
+        var cap = diff().bugCap * (S.bloodMoon && night ? 1.6 : 1);
+        if (S.bugs.getLength() >= cap) { return; }
         var chance = !night ? 0.08
-          : (this.bloodMoon ? 0.55 : 0.25);
+          : (S.bloodMoon ? 0.55 : 0.25);
         if (Math.random() < chance) { spawnBug(S); }
       }
     });
@@ -810,7 +849,8 @@
        (offscreen-ish on a 918px canvas — mobs walk in from beyond the
        edge), cave 560-760px. Despawn radius below is widened to match,
        so far mobs walk TO you instead of vanishing mid-approach. */
-    var off = cave ? 560 + Math.random() * 200 : 700 + Math.random() * 250;
+    var off = cave ? CFG.caveSpawnMin * 32 + Math.random() * (CFG.caveSpawnMax - CFG.caveSpawnMin) * 32
+      : CFG.spawnRangeMin + Math.random() * (CFG.spawnRangeMax - CFG.spawnRangeMin);
     var bx = p.x + side * off;
     bx = Math.max(64, Math.min(WORLD_W * TILE - 64, bx));
     /* species by depth: deeper = more eldritch; NIGHT lets wraiths
@@ -851,8 +891,8 @@
          "spawned but never seen" (caves looked empty). Ground kinds
          additionally require a solid floor tile beneath. */
       var found = false;
-      for (var ring = 6; ring <= 12 && !found; ring++) {
-        var rad = ring * 2;                       /* 12..24 tiles out */
+      for (var ring = CFG.caveSpawnMin / 2; ring <= CFG.caveSpawnMax / 2 && !found; ring++) {
+        var rad = ring * 2;                       /* CFG.caveSpawnMin..Max tiles */
         for (var ang = 0; ang < 16 && !found; ang++) {
           var th = ang / 16 * Math.PI * 2 + ring * 0.37;
           var cxT = Math.floor(p.x / TILE) + Math.round(Math.cos(th) * rad);
@@ -1606,7 +1646,7 @@
     }
   }
 
-  var DIG_RANGE = 6;   /* tiles from player center (old game.js parity) */
+  var DIG_RANGE = CFG.digRange;   /* tiles from player center (configurable) */
   function digAt(S, p) {
     var wp = S.cameras.main.getWorldPoint(p.x, p.y);
     var tx = Math.floor(wp.x / TILE), ty = Math.floor(wp.y / TILE);
@@ -1676,7 +1716,7 @@
     }
   }
   /* ---- shooting (ported from old game.js: K fires a bolt, bugs die) ---- */
-  var BULLET_V = 780, SHOOT_CD = 170, lastShot = 0;
+  var BULLET_V = CFG.bulletSpeed, SHOOT_CD = CFG.shootCd, lastShot = 0;
   /* one-time generated glowing-blue bullet texture (radial gradient) */
   function ensureBulletTexture(S) {
     if (S.textures.exists('bolt')) { return; }
@@ -1838,8 +1878,9 @@
      HUD overlay every few frames. dayT loops 0..1 over DAY_LEN seconds:
      0=dawn, 0.25=noon, 0.5=dusk, 0.75=midnight. World light scales with
      sun height so caves stay dark while the surface dims at night. */
-  var DAY_LEN = 120;              /* seconds per full day */
+  var DAY_LEN = CFG.dayLen;       /* seconds per full day (configurable) */
   var dayT = -1;                  /* set from hash in startGame(); 0.06 dawn */
+var dayCount = 0;               /* nights elapsed — drives moon phase (8-day cycle) */
   var SKY_STOPS = [               /* [t, top, bottom] colors */
     [0.00, 0x1a2440, 0x3a3a5c],   /* pre-dawn */
     [0.08, 0x7a9ec9, 0xd9b98a],   /* sunrise */
@@ -2611,11 +2652,32 @@
       ctx.arc(cxS, cyS, isDay ? 17 : 12, 0, Math.PI * 2);
       ctx.fill();
       ctx.shadowBlur = 0;
-      if (!isDay) {   /* moon crater bite */
-        ctx.fillStyle = cssColor(sky.top);
-        ctx.beginPath();
-        ctx.arc(cxS + 7, cyS - 4, 10, 0, Math.PI * 2);
-        ctx.fill();
+      if (!isDay) {   /* MOON PHASES (USER: "月亮弄个月相变化") — an
+         8-phase cycle over 8 days (dayCount increments at each dusk,
+         maintained by the spawn tick). Terminator = an offset sky-color
+         circle "bite": its x-offset sweeps right→center→left across
+         new→crescent→quarter→gibbous→full→…; at new moon (phase 0) no
+         bite is drawn but the disc itself is dimmed to a faint sliver. */
+        var phase = dayCount % 8;
+        if (phase === 0) {
+          /* new moon: barely-there sliver */
+          ctx.globalAlpha = 0.25;
+          ctx.beginPath();
+          ctx.arc(cxS, cyS, 12, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.globalAlpha = 1;
+        } else {
+          /* bite offsets/radii per phase:
+             1 waxing-crescent, 2 first-quarter, 3 waxing-gibbous,
+             4 FULL (no bite), 5 waning-gibbous, 6 last-quarter,
+             7 waning-crescent */
+          var biteX = [0, 13, 11, -6, 0, 6, -11, -13][phase];
+          var biteR = [0, 12.5, 11, 8, 0, 8, 11, 12.5][phase];
+          ctx.fillStyle = cssColor(sky.top);
+          ctx.beginPath();
+          ctx.arc(cxS + biteX, cyS - 4, biteR, 0, Math.PI * 2);
+          ctx.fill();
+        }
       }
     }
 
@@ -3360,7 +3422,7 @@
     this.player.setVelocityX(mv * spd);
     if (mv) { this.player.setFlipX(mv < 0); }
     /* ---- jump: coyote time + jump buffer + double jump (old game.js) ----
-       K/W/Up/Space; grounded→JUMP_V, air→JUMP_V2 once, then buffer */
+       K/W/Up/Space; grounded→JUMP_V, air→0.74×JUMP_V once, then buffer */
     var jumpKeysDown = this.keysK.isDown || this.keysA.W.isDown ||
       this.cursors.up.isDown || this.keysSpace.isDown;
     if (this.player.body.blocked.down) {
@@ -3376,8 +3438,8 @@
     if (jumpJustDown) {
       var canGround = this.player.body.blocked.down || this.coyoteT < 0.09;
       if (canGround) {
-        /* gravity here is 1500 (old engine differed); -620 ≈ 4.3-tile hop */
-        this.player.setVelocityY(-620);
+        /* gravity is 1500 (old engine differed); -700 ≈ 5.1-tile hop */
+        this.player.setVelocityY(-JUMP_V);
         this.jumps = 1;
         this.jumpPose = true;      /* pose is JUMP-KEYED, not airborne-
                                       keyed: stepping off a ledge or
@@ -3387,7 +3449,7 @@
         SFX.jump();
         this.coyoteT = 9999;
       } else if (this.jumps < 2) {
-        this.player.setVelocityY(-520);   /* second jump ≈ +3 tiles */
+        this.player.setVelocityY(-Math.round(JUMP_V * 0.74));  /* ≈ +3 tiles */
         this.jumps = 2;
         this.jumpPose = true;
         burst(this, this.player.x, this.player.y + 56, 0xececf1, 9);
@@ -3418,7 +3480,7 @@
     } else if (this.jumpBufT > 0) {
       this.jumpBufT -= dt;
       if (this.player.body.blocked.down) {
-        this.player.setVelocityY(-620);
+        this.player.setVelocityY(-JUMP_V);
         this.jumps = 1;
         this.jumpPose = true;
         this.jumpBufT = 0;
@@ -3848,11 +3910,131 @@
     }
   });
   /* pet hook (see js/pet.js dblclick handler) */
+  /* ---- CONFIG UI (USER: "弄个配置页") -------------------------------
+     Cog button in the demo titlebar opens a settings panel inside
+     demoWindow. Fields edit a draft; 保存 writes localStorage +
+     updates live CFG values; game restarts ONLY on 提示的按钮. */
+  var CFG_FIELDS = [
+    { k: 'maxHp',           label: '血量（格）',        min: 1,  max: 20, step: 1 },
+    { k: 'crystalGoal',     label: '通关紫水晶数',      min: 3,  max: 99, step: 1 },
+    { k: 'dayLen',          label: '一昼夜（秒）',      min: 30, max: 600, step: 10 },
+    { k: 'bugCap',          label: '基础怪量上限',      min: 2,  max: 40, step: 1 },
+    { k: 'spawnRangeMin',   label: '地表刷怪近距(px)',  min: 300, max: 1200, step: 50 },
+    { k: 'spawnRangeMax',   label: '地表刷怪远距(px)',  min: 500, max: 1600, step: 50 },
+    { k: 'caveSpawnMin',    label: '洞穴刷怪近距(格)',  min: 6,  max: 30, step: 2 },
+    { k: 'caveSpawnMax',    label: '洞穴刷怪远距(格)',  min: 10, max: 40, step: 2 },
+    { k: 'bloodMoonChance', label: '血月概率(%)',       min: 0,  max: 100, step: 5 },
+    { k: 'bulletSpeed',     label: '子弹速度',          min: 300, max: 1400, step: 20 },
+    { k: 'shootCd',         label: '射击间隔(ms)',      min: 80, max: 600, step: 10 },
+    { k: 'digRange',        label: '挖掘距离(格)',      min: 3,  max: 12, step: 1 },
+    { k: 'jumpVel',         label: '跳跃力度',          min: 400, max: 1000, step: 20 }
+  ];
+  function applyCFG(saved) {
+    for (var k in CFG_DEFAULTS) {
+      if (typeof saved[k] === 'number' && !isNaN(saved[k])) { CFG[k] = saved[k]; }
+    }
+    /* rebind constants that captured values at load */
+    MAX_HP = CFG.maxHp;
+    DAY_LEN = CFG.dayLen;
+    BULLET_V = CFG.bulletSpeed;
+    SHOOT_CD = CFG.shootCd;
+    DIG_RANGE = CFG.digRange;
+    JUMP_V = CFG.jumpVel;
+    DIFF[0].need = DIFF[1].need = DIFF[2].need = DIFF[3].need = CFG.crystalGoal;
+    DIFF[0].bugCap = CFG.bugCap;
+    DIFF[1].bugCap = Math.round(CFG.bugCap * 1.3);
+    DIFF[2].bugCap = Math.round(CFG.bugCap * 1.6);
+    DIFF[3].bugCap = CFG.bugCap * 2;
+  }
+  function saveCFG() {
+    try { localStorage.setItem('aulosDigCFG', JSON.stringify(CFG)); } catch (e) {}
+  }
+  function toggleCfgPanel() {
+    var host = document.getElementById('demoWindow');
+    var old = document.getElementById('eggCfg');
+    if (old) { old.parentNode.removeChild(old); return; }   /* toggle */
+    var el = document.createElement('div');
+    el.id = 'eggCfg';
+    /* compact centered modal styled after the site's own design tokens
+       (style.css :root vars cascade into #demoWindow, so the card picks
+       up surface/border/radius/shadow and follows light/dark theme) */
+    el.style.cssText = 'position:absolute;left:0;right:0;top:33px;bottom:0;z-index:60;' +
+      'display:flex;align-items:center;justify-content:center;' +
+      'background:var(--overlay,rgba(12,12,16,.6));' +
+      'backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);';
+    var openT = Date.now();
+    el.addEventListener('click', function (ev) {
+      if (ev.target !== el) { return; }        /* backdrop = close */
+      if (Date.now() - openT < 250) { return; } /* ignore the gear's opening click */
+      el.parentNode.removeChild(el);
+    });
+    var card = document.createElement('div');
+    card.id = 'eggCfgCard';
+    card.style.cssText = 'background:var(--surface,#1e1e23);' +
+      'border:1px solid var(--border,#2b2b31);border-radius:var(--r-md,12px);' +
+      'box-shadow:var(--shadow-pop,0 12px 40px rgba(0,0,0,.42));' +
+      'padding:14px 16px;width:min(430px,calc(100% - 28px));' +
+      'max-height:calc(100% - 28px);overflow:auto;color:var(--text,#ececf1);' +
+      'font:12.5px/1.5 -apple-system,"SF Pro Text","Segoe UI","Microsoft YaHei",sans-serif;';
+    var html = '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--border,#2b2b31)">' +
+      '<b style="font-size:13.5px">⚙ 游戏设置</b>' +
+      '<span style="color:var(--text-3,#85868f);font-size:11px">改动即时保存 · 重进游戏生效</span></div>';
+    CFG_FIELDS.forEach(function (f) {
+      html += '<label style="display:flex;align-items:center;gap:8px;margin:3px 0">' +
+        '<span style="flex:0 0 108px;font-size:12px;color:var(--text-2,#a0a1ab)">' + f.label + '</span>' +
+        '<input type="range" min="' + f.min + '" max="' + f.max + '" step="' + f.step +
+        '" value="' + (CFG[f.k] || 0) + '" data-k="' + f.k +
+        '" style="flex:1;height:14px;min-width:0">' +
+        '<span data-v="' + f.k + '" style="flex:0 0 40px;text-align:right;color:var(--ok,#4ade80)">' +
+        (CFG[f.k] || 0) + '</span></label>';
+    });
+    html += '<div style="margin-top:12px;display:flex;justify-content:flex-end;gap:8px">' +
+      '<button id="cfgReset" style="padding:6px 14px;font:12.5px sans-serif;background:transparent;color:var(--text-2,#a0a1ab);border:1px solid var(--border-strong,#3b3b43);border-radius:8px;cursor:pointer">恢复默认</button>' +
+      '<button id="cfgClose" style="padding:6px 14px;font:12.5px sans-serif;background:transparent;color:var(--text-2,#a0a1ab);border:1px solid var(--border-strong,#3b3b43);border-radius:8px;cursor:pointer">关闭</button>' +
+      '<button id="cfgSave" style="padding:6px 18px;font:12.5px sans-serif;font-weight:600;background:var(--text,#ececf1);color:var(--bg,#18181c);border:none;border-radius:8px;cursor:pointer">保存</button></div>' +
+      '<div id="cfgMsg" style="margin-top:8px;color:var(--ok,#4ade80);opacity:0;transition:opacity .3s;font-size:11px;text-align:right">已保存 ✓ 退出并重进游戏后完全生效</div>';
+    card.innerHTML = html;
+    el.appendChild(card);
+    host.appendChild(el);
+    el.querySelectorAll('input[type=range]').forEach(function (inp) {
+      inp.addEventListener('input', function () {
+        CFG[inp.dataset.k] = parseFloat(inp.value);
+        var lab = el.querySelector('[data-v="' + inp.dataset.k + '"]');
+        if (lab) { lab.textContent = inp.value; }
+        applyCFG(CFG);                    /* live preview */
+        saveCFG();
+      });
+    });
+    el.querySelector('#cfgSave').onclick = function () {
+      saveCFG();
+      var m = el.querySelector('#cfgMsg');
+      m.style.opacity = 1;
+      setTimeout(function () { m.style.opacity = 0; }, 1800);
+    };
+    el.querySelector('#cfgReset').onclick = function () {
+      CFG = Object.assign({}, CFG_DEFAULTS);
+      applyCFG(CFG);
+      saveCFG();
+      var old2 = document.getElementById('eggCfg');
+      if (old2) { old2.parentNode.removeChild(old2); }
+      toggleCfgPanel();                   /* rerender with defaults */
+    };
+    el.querySelector('#cfgClose').onclick = function () {
+      var o = document.getElementById('eggCfg');
+      if (o) { o.parentNode.removeChild(o); }
+    };
+  }
+  (function () {
+    var btn = document.getElementById('demoCfg');
+    if (btn) { btn.addEventListener('click', toggleCfgPanel); }
+  })();
+
   window.AulosDig = {
     toggle: toggle,
     enter: enter,
     leave: leave,
     running: function () { return running; },
+    cfg: function () { return CFG; },
     /* dev probe: live scene handles for console diagnostics */
     scene: function () { return game ? game.scene.getScene('main') : null; },
     world: function () { return world; }
