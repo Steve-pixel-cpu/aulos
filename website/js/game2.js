@@ -654,36 +654,52 @@
       kind = roll < 0.6 ? 'bug' : roll < 0.9 ? 'bat' : 'spitter';
       fly = kind !== 'bug';
     }
-    var by = fly ? p.y - 120 - Math.random() * 80 : surfacePx(S, bx) - 20;
-    /* underground: spawn at the player's depth so cave fights happen
-       where the player actually digs, not on the far-away surface */
-    if (!fly && depth > 24) {
-      by = p.y + (Math.random() - 0.5) * 120;
-      by = Math.max(TILE * 4, Math.min(WORLD_H * TILE - 64, by));
-    }
-    /* FLYING enemies must also start in AIR: caves are cramped, and
-       "player - 120px" is usually INSIDE the cave ceiling rock. The
-       solids collider then pins the embedded body forever - it never
-       moves, never shows, never shoots (the "spawned but invisible"
-       bug). Scan a spiral of candidate offsets for the first air
-       pocket big enough for the whole body. */
-    if (fly) {
-      var ok = false;
-      for (var ring = 0; ring < 8 && !ok; ring++) {
-        var radT = 2 + ring * 2;                       /* tile radius */
-        for (var ang = 0; ang < 12 && !ok; ang++) {
-          var th = ang / 12 * Math.PI * 2 + ring * 0.5;
-          var cxT = Math.floor(bx / TILE) + Math.round(Math.cos(th) * radT);
-          var cyT = Math.floor(by / TILE) + Math.round(Math.sin(th) * radT);
-          if (cxT < 1 || cxT >= WORLD_W - 1 || cyT < 1 || cyT >= WORLD_H - 1) { continue; }
+    var by;
+    if (cave) {
+      /* CAVE SPAWNS: scan around the PLAYER for an air pocket 6-14
+         tiles out — BOTH fly and ground kinds. The old fixed offsets
+         put fly anchors in the ceiling rock (player-120px) and ground
+         spawns in the tunnel WALL (±60px at 300-420px sideways): the
+         solids collider pinned those bodies inside stone forever —
+         "spawned but never seen" (caves looked empty). Ground kinds
+         additionally require a solid floor tile beneath. */
+      var found = false;
+      for (var ring = 3; ring <= 7 && !found; ring++) {
+        var rad = ring * 2;                       /* 6..14 tiles out */
+        for (var ang = 0; ang < 16 && !found; ang++) {
+          var th = ang / 16 * Math.PI * 2 + ring * 0.37;
+          var cxT = Math.floor(p.x / TILE) + Math.round(Math.cos(th) * rad);
+          var cyT = Math.floor(p.y / TILE) + Math.round(Math.sin(th) * rad);
+          if (cxT < 2 || cxT >= WORLD_W - 2 || cyT < 2 || cyT >= WORLD_H - 2) { continue; }
           if (world.tile[cyT * WORLD_W + cxT] !== 0) { continue; }
+          /* 1x1 sealed pocket can't fit a body: need a second open side */
           if (world.tile[(cyT + 1) * WORLD_W + cxT] !== 0 &&
-              world.tile[(cyT - 1) * WORLD_W + cxT] !== 0) { continue; }
+              world.tile[(cyT - 1) * WORLD_W + cxT] !== 0 &&
+              world.tile[cyT * WORLD_W + cxT + 1] !== 0 &&
+              world.tile[cyT * WORLD_W + cxT - 1] !== 0) { continue; }
+          if (!fly && world.tile[(cyT + 1) * WORLD_W + cxT] === 0) { continue; }
           bx = cxT * TILE + 16; by = cyT * TILE + 16;
-          ok = true;
+          found = true;
         }
       }
-      if (!ok) { return; }   /* no air pocket found this roll: skip */
+      if (!found) { return; }   /* solid rock all around: skip this roll */
+    } else {
+      by = fly ? p.y - 120 - Math.random() * 80 : surfacePx(S, bx) - 20;
+      /* FLYING surface spawns: keep clear of tree canopies — scan a
+         small spiral for open air like the cave path. */
+      if (fly) {
+        for (var ring2 = 0; ring2 < 6; ring2++) {
+          var rad2 = 1 + ring2 * 2;
+          var ok2 = true;
+          var tx2 = Math.floor(bx / TILE) + Math.round(Math.cos(ring2 * 1.1) * rad2);
+          var ty2 = Math.floor(by / TILE) + Math.round(Math.sin(ring2 * 1.1) * rad2);
+          if (tx2 < 1 || tx2 >= WORLD_W - 1 || ty2 < 1) { continue; }
+          if (world.tile[ty2 * WORLD_W + tx2] === 0) {
+            bx = tx2 * TILE + 16; by = ty2 * TILE + 16;
+            break;
+          }
+        }
+      }
     }
     var b = S.bugs.create(bx, by, kind).setScale(1.3);
     b.kind = kind;
