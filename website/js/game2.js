@@ -135,6 +135,13 @@
     this.load.image('wraith1', 'assets/tiny/wraith1.png?v=' + ASSET_REV);
     this.load.image('kraken', 'assets/tiny/kraken0.png?v=' + ASSET_REV);   /* kraken: lava-depth apex */
     this.load.image('kraken1', 'assets/tiny/kraken1.png?v=' + ASSET_REV);
+    /* FLYING SHOOTERS: willowisp (cave tier) + flameskull (lava tier).
+       Both keep distance and spit slow projectiles at the player —
+       they make torch-lit caves feel hunted, not just dark. */
+    this.load.image('spitter', 'assets/tiny/willowisp0.png?v=' + ASSET_REV);
+    this.load.image('spitter1', 'assets/tiny/willowisp1.png?v=' + ASSET_REV);
+    this.load.image('spitterF', 'assets/tiny/flameskull0.png?v=' + ASSET_REV);
+    this.load.image('spitterF1', 'assets/tiny/flameskull1.png?v=' + ASSET_REV);
     /* THE BOSS: 64px kraken-lord composite (head 2.5x + central eye +
        6 radial tentacles), procedurally assembled from the same CC0
        parts. Guards the altar when the player arrives with crystals. */
@@ -630,19 +637,20 @@
        Tiny pixel roster — bug, bat, slime, winged bug, fire bat, plus
        eyelet/arachni cave natives. The Kraken Lord boss remains. */
     if (depth > 150) {
-      /* lava tier: fire bats + bugs */
-      kind = roll < 0.55 ? 'batF' : 'bug';
+      /* lava tier: fire bats, bugs + flameskull shooters */
+      kind = roll < 0.40 ? 'batF' : roll < 0.60 ? 'spitterF' : 'bug';
     } else if (depth > 24) {
-      /* cave tier: slimes, winged bugs, small eyes, spiders */
-      kind = roll < 0.25 ? 'slime' : roll < 0.45 ? 'eyelet'
-        : roll < 0.65 ? 'arachni' : roll < 0.85 ? 'bugW' : 'bug';
+      /* cave tier: slimes, eyes, spiders + willowisp shooters */
+      kind = roll < 0.18 ? 'slime' : roll < 0.33 ? 'eyelet'
+        : roll < 0.48 ? 'arachni' : roll < 0.60 ? 'spitter'
+        : roll < 0.82 ? 'bugW' : 'bug';
     } else if (dayT > 0.5) {
-      /* NIGHT surface: bats join, eyelets scout */
-      kind = roll < 0.45 ? 'bug' : roll < 0.75 ? 'bat' : 'eyelet';
-      fly = kind === 'bat' || kind === 'eyelet';
+      /* NIGHT surface: bats join, eyelets scout, wisps haunt */
+      kind = roll < 0.35 ? 'bug' : roll < 0.60 ? 'bat' : roll < 0.80 ? 'eyelet' : 'spitter';
+      fly = kind === 'bat' || kind === 'eyelet' || kind === 'spitter';
     } else {
-      kind = roll < 0.6 ? 'bug' : 'bat';
-      fly = roll >= 0.6;
+      kind = roll < 0.6 ? 'bug' : roll < 0.9 ? 'bat' : 'spitter';
+      fly = kind !== 'bug';
     }
     var by = fly ? p.y - 120 - Math.random() * 80 : surfacePx(S, bx) - 20;
     /* underground: spawn at the player's depth so cave fights happen
@@ -1097,6 +1105,32 @@
         if (Math.random() < 0.06) {
           burst(S, b.x, b.y, 0xff8844, 2);   /* ember trail */
         }
+      } else if (k === 'spitter' || k === 'spitterF') {
+        /* FLYING SHOOTER: hovers at a stand-off band (180-320px),
+           strafing sideways; spits a slow aimed projectile every
+           ~1.6s when the player is in sight range. Killable by one
+           bolt like every small mob - the threat is the projectile,
+           not the body. */
+        b.body.setAllowGravity(false);
+        var isF = k === 'spitterF';
+        var band = dist < 180 ? -1 : (dist > 320 ? 1 : 0);   /* approach/hold/back off */
+        var spSp = isF ? 95 : 75;
+        var vx = (dx / (dist || 1)) * spSp * band;
+        var vy = (dy / (dist || 1)) * spSp * band
+                 + Math.sin(S.time.now / 500 + b.x) * 28;    /* gentle bob */
+        /* strafe: circle the player while holding the band */
+        if (band === 0) {
+          var side2 = b.x < p.x ? 1 : -1;
+          vx = side2 * spSp * 0.8;
+          vy = Math.sin(S.time.now / 500 + b.x) * 34;
+        }
+        b.setVelocity(vx, vy);
+        /* fire cycle: spaced salvos while the player is in range */
+        if (!b.spitLast) { b.spitLast = S.time.now; }
+        if (S.time.now - b.spitLast > (isF ? 1300 : 1700) && dist < 460) {
+          b.spitLast = S.time.now;
+          spitShot(S, b, isF);
+        }
       } else if (b.fly) {
         /* bat: within 320px, dive at the player; otherwise hover-wander */
         if (dist < 320) {
@@ -1283,6 +1317,30 @@
     b.setVelocity(aimX * BULLET_V, aimY * BULLET_V);
     /* muzzle flash */
     burst(S, mx, my, 0x5ab4ff, 3);
+  }
+
+  /* enemy projectile: slow glowing orb from a spitter. Reuses the
+     bolt group (same collider vs world solids, same cleanup) but is
+     tinted + flagged hostile so it can hurt the PLAYER and can NEVER
+     hurt other enemies. Speed 240 px/s - dodgeable at walking pace. */
+  function spitShot(S, b, isF) {
+    ensureBulletTexture(S);
+    var p = S.player;
+    var dx = p.x - b.x, dy = (p.y - 30) - b.y;
+    var len = Math.hypot(dx, dy) || 1;
+    var sp = isF ? 280 : 240;
+    var pr = S.bullets.create(b.x, b.y, 'bolt');
+    pr.setDepth(45);
+    pr.setBlendMode(Phaser.BlendModes.ADD);
+    pr.hostile = true;                       /* hurts player, not bugs */
+    pr.setTint(isF ? 0xff8a3d : 0x9ff5b3);   /* ember orange / wisp green */
+    pr.setScale(0.85);
+    pr.setRotation(Math.atan2(dy, dx));
+    pr.body.setAllowGravity(false);
+    pr.body.setSize(12, 12);
+    pr.setVelocity((dx / len) * sp, (dy / len) * sp);
+    SFX.spit ? SFX.spit() : 0;
+    burst(S, b.x, b.y, isF ? 0xff8a3d : 0x9ff5b3, 3);
   }
 
   function isSolid(x, y) {
@@ -2254,6 +2312,7 @@
     chest: function () { tone(523, 0.09, 'square', 0.06); setTimeout(function(){tone(659,0.09,'square',0.06);},80); setTimeout(function(){tone(784,0.15,'square',0.06);},160); },
     hurt: function () { tone(180, 0.22, 'sawtooth', 0.12, 60); },
     shoot: function () { tone(920, 0.07, 'square', 0.05, 320); },
+    spit: function () { tone(340, 0.12, 'sawtooth', 0.06, 160); },
     jump: function () { tone(300, 0.12, 'sine', 0.06, 600); },
     win: function () {
       var seq = [523, 659, 784, 1047, 1319];
@@ -2738,11 +2797,40 @@
     /* auto-fire at the pointer while the left button is held (mouseFire
        is only set when the press did NOT start a dig). */
     if (this.mouseFire) { shoot(this); }
-    /* bullets: fly; solid tile → burst+die; bug overlap → kill+burst */
+    /* bullets: fly; solid tile → burst+die; bug overlap → kill+burst;
+       HOSTILE projectiles (spitter spit) instead hurt the PLAYER */
     var S = this;
     this.bullets.children.each(function (bl) {
       if (!bl.active) { return; }
       var bx = bl.x, by = bl.y;
+      /* hostile spit: check the player, never the bugs */
+      if (bl.hostile) {
+        var pl = S.player;
+        if (pl && pl.active && Math.abs(pl.x - bx) < 20 && Math.abs(pl.y - 30 - by) < 34) {
+          if (!pl.invT || pl.invT <= 0) {
+            pl.invT = 1.0;
+            hpChange(S, -1);
+            SFX.hurt();
+            var awayS = pl.x < bx ? -1 : 1;
+            pl.setVelocity(awayS * 220, -240);
+            S.cameras.main.shake(140, 0.008);
+            S.tweens.add({ targets: pl, tint: 0xff5555, duration: 70,
+              yoyo: true, repeat: 3, onComplete: function () { pl.clearTint(); } });
+          }
+          burst(S, bx, by, 0xff8a3d, 6);
+          bl.destroy();
+          return;
+        }
+        /* spit also dies on walls/outside view */
+        var camS = S.cameras.main;
+        var hitWallS = isSolid(Math.floor(bx / TILE), Math.floor(by / TILE));
+        if (hitWallS || bx < camS.scrollX - 200 || bx > camS.scrollX + S.scale.width + 200 ||
+            by < camS.scrollY - 200 || by > camS.scrollY + S.scale.height + 200) {
+          burst(S, bx, by, 0x9ff5b3, 4);
+          bl.destroy();
+        }
+        return;
+      }
       var hitWall = isSolid(Math.floor(bx / TILE), Math.floor(by / TILE));
       var hitBug = false;
       S.bugs.children.each(function (bg) {
