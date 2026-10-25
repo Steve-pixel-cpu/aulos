@@ -491,12 +491,67 @@
     });
     this.physics.add.collider(this.bugs, this.solids);
 
-    /* ---- flag & chests ---- */
+    /* ---- altar & chests ---- */
+    /* ALTAR STRUCTURE: the bare flag read as "a random pole in the
+       dirt". Build a proper shrine around it at boot (writes the real
+       tilemap, so digging/collision/lighting all behave):
+         - 7-wide obsidian platform (unbreakable-feel, dark slab)
+         - marble-brick pillars 3 high at both ends, amethyst crowns
+           (light 0.35 purple beacons, visible across the biome)
+         - carved sandstone rune row inlaid in the platform front
+       The flag stays the ritual core at the center. */
+    var ax = world.flag[0], ay = world.flag[1];       /* flag tile */
+    var put = function (tx2, ty2, id2) {
+      var i2 = ty2 * WORLD_W + tx2;
+      if (tx2 < 1 || tx2 >= WORLD_W - 1 || ty2 < 1 || ty2 >= WORLD_H - 1) { return; }
+      world.tile[i2] = id2;
+      var m2 = TILEMETA[id2];
+      if (m2) { this.tiles.putTileAt(m2.atlasIndex, tx2, ty2); }
+    }.bind(this);
+    for (var px2 = ax - 3; px2 <= ax + 3; px2++) {
+      put(px2, ay + 1, 20);                            /* obsidian slab */
+      put(px2, ay, px2 === ax ? 0 : 44);               /* keep center open for the flag, cobble elsewhere */
+    }
+    [[ax - 3, 0], [ax + 3, 0]].forEach(function (cx2) {
+      var bx2 = cx2[0];
+      put(bx2, ay - 1, 58);                            /* marble brick pillar */
+      put(bx2, ay - 2, 58);
+      put(bx2, ay - 3, 42);                            /* amethyst crown */
+      /* support under the pillar base */
+      put(bx2, ay + 1, 20);
+    });
+    put(ax - 2, ay, 68);                               /* carved sandstone runes */
+    put(ax + 2, ay, 68);
+    put(ax - 1, ay, 69);
+    put(ax + 1, ay, 69);
+    /* rebuild collision + relight for the changed tiles */
+    for (var rc = ax - 3; rc <= ax + 3; rc++) { rebuildSolids(this, rc); }
+    relight(this);
     this.flagSpr = this.add.image(
-      world.flag[0] * TILE + 16, world.flag[1] * TILE + 32, 'flag')
+      ax * TILE + 16, ay * TILE + 32, 'flag')
       .setOrigin(0.5, 1).setScale(1.4).setDepth(9);
-    /* flag is not a Light2D target — keep it unlit so the goal stays
-       visible from a distance, like a landmark */
+    /* ritual pillar of light above the flag: ADD-blend gradient beam,
+       slowly pulsing — reads as "something sleeps here" from any cave
+       mouth in the biome. Depth 8 = under the lightmap (40) so beam
+       brightness still scales with cave darkness; ADD blend keeps it
+       visible without a halo sticker. */
+    var beamCv = document.createElement('canvas');
+    beamCv.width = 16; beamCv.height = 96;
+    var bctx = beamCv.getContext('2d');
+    var bg2 = bctx.createLinearGradient(0, 96, 0, 0);
+    bg2.addColorStop(0, 'rgba(186,120,255,0.55)');
+    bg2.addColorStop(0.5, 'rgba(150,90,255,0.22)');
+    bg2.addColorStop(1, 'rgba(120,60,255,0)');
+    bctx.fillStyle = bg2;
+    bctx.fillRect(0, 0, 16, 96);
+    var beamTex = this.textures.addCanvas('altarBeam', beamCv);
+    this.beamSpr = this.add.image(ax * TILE + 16, ay * TILE + 16, 'altarBeam')
+      .setOrigin(0.5, 1).setDepth(8)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    this.tweens.add({
+      targets: this.beamSpr, alpha: { from: 0.55, to: 1 },
+      duration: 1600, yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+    });
 
     /* clouds behind the terrain, light parallax like the old game */
     for (var cl = 0; cl < 7; cl++) {
@@ -3002,8 +3057,31 @@
     if (!flagHit && !this.boss && Math.abs(this.player.x - (world.flag[0] * TILE + 16)) < 26 &&
         Math.abs(this.player.y - (world.flag[1] * TILE)) < 64) {
       if (crystalsGot >= CRYSTALS_NEED) {
+        /* SUMMON RITUAL: three-beat cinematic before the boss rises —
+           ground shockwaves, a rising beam flare, then the spawn burst.
+           (A single 26-particle burst read as "a bug died", not "an
+           ancient guardian tore through the floor".) */
+        var S3 = this, ax3 = world.flag[0] * TILE + 16, ay3 = world.flag[1] * TILE + 16;
+        S3.cameras.main.shake(420, 0.010);
+        tone(70, 0.5, 'sawtooth', 0.14, 35);
+        [0, 260, 520].forEach(function (d, i3) {
+          S3.time.delayedCall(d, function () {
+            S3.cameras.main.shake(300, 0.008 + i3 * 0.004);
+            tone(60 + i3 * 25, 0.4, 'sawtooth', 0.12, 30);
+            /* expanding shockwave ring on the altar floor */
+            for (var rr = 0; rr < 14; rr++) {
+              (function (ang) {
+                burst(S3, ax3 + Math.cos(ang) * (16 + i3 * 14),
+                      ay3 + Math.sin(ang) * (10 + i3 * 8), 0xb48cff, 3);
+              })(rr / 14 * Math.PI * 2);
+            }
+          });
+        });
+        S3.time.delayedCall(780, function () {
+          burst(S3, ax3, ay3 - 40, 0x9a6cff, 30);
+          burst(S3, ax3, ay3 - 40, 0xf2e07e, 12);
+        });
         bossSpawn(this);
-        burst(this, world.flag[0] * TILE + 16, world.flag[1] * TILE, 0x9a6cff, 26);
       } else if (!this.altarHintT || this.time.now - this.altarHintT > 4000) {
         this.altarHintT = this.time.now;
         tone(220, 0.18, 'sine', 0.07, 180);
