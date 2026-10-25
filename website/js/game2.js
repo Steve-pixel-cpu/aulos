@@ -1048,8 +1048,8 @@
            gets close — pure creepy, only contacts you when you dig */
         b.body.setAllowGravity(false);
         if (dist < 90 && Math.random() < 0.05) {
-          b.x = p.x + (Math.random() < 0.5 ? -1 : 1) * (500 + Math.random() * 200);
-          b.y = p.y + (Math.random() - 0.5) * 160;
+          b.x = px + (Math.random() < 0.5 ? -1 : 1) * (500 + Math.random() * 200);
+          b.y = py + (Math.random() - 0.5) * 160;
           burst(S, b.x, b.y, 0xd9a6ff, 4);     /* blink-out puff */
         }
         if (dist < 260) {
@@ -1120,7 +1120,7 @@
                  + Math.sin(S.time.now / 500 + b.x) * 28;    /* gentle bob */
         /* strafe: circle the player while holding the band */
         if (band === 0) {
-          var side2 = b.x < p.x ? 1 : -1;
+          var side2 = b.x < px ? 1 : -1;
           vx = side2 * spSp * 0.8;
           vy = Math.sin(S.time.now / 500 + b.x) * 34;
         }
