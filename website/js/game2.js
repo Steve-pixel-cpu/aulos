@@ -40,6 +40,8 @@
     caveSpawnMin: 12,     /* cave spawn ring (tiles) */
     caveSpawnMax: 24,
     bloodMoonChance: 40,  /* % per night */
+    brightness: 42,       /* % night brightness floor (USER: 夜晚太黑可调亮) */
+    caveBright: 100,      /* % cave ambient tint scale (USER: 洞穴太黑可调亮) */
     bulletSpeed: 780,
     shootCd: 170,         /* ms between shots */
     digRange: 6,          /* tiles */
@@ -2276,16 +2278,23 @@ var dayCount = 0;               /* nights elapsed — drives moon phase (8-day c
       surf = lerp3(night, golden, f2);
     }
     /* scale the tint so peak brightness never exceeds noon white:
-       lerp3 the COLOR, then multiply by the day brightness curve */
-    var bright = 0.42 + 0.58 * day;            /* 0.42 night .. 1 noon */
+       lerp3 the COLOR, then multiply by the day brightness curve.
+       CFG.brightness (USER: "把游戏亮度也弄成配置") moves the night
+       FLOOR in % — 42 is the old default; 100 makes nights noon-bright. */
+    var bMin = CFG.brightness / 100;
+    var bright = bMin + (1 - bMin) * day;      /* night floor .. 1 noon */
     var sR = Math.round(surf[0] * bright),
         sG = Math.round(surf[1] * bright),
         sB = Math.round(surf[2] * bright);
     /* cave floor: WARM dim brown (not near-black cool gray) — the old
        30/32/40 base read as "black blocks" at cave mouths even in
        daylight. 62/54/44 keeps the underground clearly darker than the
-       surface while soil texture and wall tiles stay visible. */
-    var cR = 62, cG = 54, cB = 44;
+       surface while soil texture and wall tiles stay visible.
+       CFG.caveBright (USER: "还有洞穴亮度") scales this base in % —
+       only the s=0 end of the compose lerp moves, so surface lighting,
+       torches and emissive tiles stay untouched. */
+    var cf = CFG.caveBright / 100;
+    var cR = Math.round(62 * cf), cG = Math.round(54 * cf), cB = Math.round(44 * cf);
 
     var W = WORLD_W, H = WORLD_H;
     if (zone === 'view') {
@@ -3931,6 +3940,8 @@ var dayCount = 0;               /* nights elapsed — drives moon phase (8-day c
     { k: 'caveSpawnMin',    label: '洞穴刷怪近距(格)',  min: 6,  max: 30, step: 2 },
     { k: 'caveSpawnMax',    label: '洞穴刷怪远距(格)',  min: 10, max: 40, step: 2 },
     { k: 'bloodMoonChance', label: '血月概率(%)',       min: 0,  max: 100, step: 5 },
+    { k: 'brightness',      label: '夜晚亮度(%)',       min: 20, max: 100, step: 2 },
+    { k: 'caveBright',      label: '洞穴亮度(%)',       min: 40, max: 200, step: 5 },
     { k: 'bulletSpeed',     label: '子弹速度',          min: 300, max: 1400, step: 20 },
     { k: 'shootCd',         label: '射击间隔(ms)',      min: 80, max: 600, step: 10 },
     { k: 'digRange',        label: '挖掘距离(格)',      min: 3,  max: 12, step: 1 },
