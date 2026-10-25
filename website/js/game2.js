@@ -1489,10 +1489,11 @@
         } else {
           sr = TORCH_R; sg = TORCH_G; sb = TORCH_B * 1.3;
         }
-        /* faint glows seed slightly dimmer so their pools read BELOW a
-           torch's after the shared TORCH_LUT lift - one curve, but the
-           hierarchy (torch > lava > crystal > coral) survives it. */
-        var lumSeed = lum < 0.35 ? lum * 0.82 : lum;
+        /* dim decorative glows get a BOOSTED seed so their pools read
+           clearly in dark caves (x1.25; the earlier x0.82 hierarchy
+         cut left them nearly invisible). Real emitters keep 1.0 -
+           torch/lava/diamond pools are already at full strength. */
+        var lumSeed = lum < 0.35 ? Math.min(1, lum * 1.25) : lum;
         torchR[i] = Math.round(sr * lumSeed);
         torchG[i] = Math.round(sg * lumSeed);
         torchB[i] = Math.round(sb * lumSeed);
