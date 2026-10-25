@@ -2303,9 +2303,9 @@ var dayCount = 0;               /* nights elapsed — drives moon phase (8-day c
       for (var x = x0; x <= x1; x++) {
         var b = isSolid(x, y) ? 1 : 0;
         for (var sy = 0; sy < SC; sy++) {
-          var row2 = (y * SC + sy) * W2;
+          var rowOff = (y * SC + sy) * W2;
           for (var sx = 0; sx < SC; sx++) {
-            row2[x * SC + sx] = b;
+            solidBits2[rowOff + x * SC + sx] = b;
           }
         }
       }
