@@ -560,8 +560,8 @@
              (8 phases over 8 days, drives drawSky's moon art) */
           dayCount = (dayCount || 0) + 1;
           S.bloodMoon = Math.random() < CFG.bloodMoonChance / 100 &&
-            (S._bmNight || -9) !== Math.floor(dayT * 1000);
-          if (S.bloodMoon) { S._bmNight = Math.floor(dayT * 1000); }
+            (S._bmNight || -9) !== dayCount - 1;
+          if (S.bloodMoon) { S._bmNight = dayCount; }
         }
         S._wasNight = night;
         var cap = diff().bugCap * (S.bloodMoon && night ? 1.6 : 1);
@@ -3801,6 +3801,7 @@ var dayCount = 0;               /* nights elapsed — drives moon phase (8-day c
           world.tile[i] = 15;
           stats.chests += 1;
           var roll = Math.random();
+          var roll2 = Math.random();
           /* NO amethyst from chests (USER: "怪物不能掉落紫水晶，必须挖矿")
              — the goal is mining-locked. Chest loot: torches, planks,
              gold/diamond, and a guaranteed weapon core every other chest */
@@ -3808,6 +3809,9 @@ var dayCount = 0;               /* nights elapsed — drives moon phase (8-day c
           else if (roll < 0.45) { giveItem(12, 15); }
           else if (roll < 0.75) { giveItem(7, 20); }
           else { giveItem(10, 5); giveItem(11, 3); }
+          /* healing potion (independent roll so it can stack with the
+             four-way loot above — USER: potions currently unreachable) */
+          if (roll2 < 0.3) { giveItem(203, 1); }
           if (stats.chests % 3 === 0) { spawnWeaponCore(this, cx, cy - 10); }
           /* chests ALWAYS drop a heal orb (USER: "宝箱要掉落回血道具") */
           spawnHealOrb(this, cx, cy - 10);
