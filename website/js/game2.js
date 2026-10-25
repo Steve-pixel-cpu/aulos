@@ -659,6 +659,30 @@
       by = p.y + (Math.random() - 0.5) * 120;
       by = Math.max(TILE * 4, Math.min(WORLD_H * TILE - 64, by));
     }
+    /* FLYING enemies must also start in AIR: caves are cramped, and
+       "player - 120px" is usually INSIDE the cave ceiling rock. The
+       solids collider then pins the embedded body forever - it never
+       moves, never shows, never shoots (the "spawned but invisible"
+       bug). Scan a spiral of candidate offsets for the first air
+       pocket big enough for the whole body. */
+    if (fly) {
+      var ok = false;
+      for (var ring = 0; ring < 8 && !ok; ring++) {
+        var radT = 2 + ring * 2;                       /* tile radius */
+        for (var ang = 0; ang < 12 && !ok; ang++) {
+          var th = ang / 12 * Math.PI * 2 + ring * 0.5;
+          var cxT = Math.floor(bx / TILE) + Math.round(Math.cos(th) * radT);
+          var cyT = Math.floor(by / TILE) + Math.round(Math.sin(th) * radT);
+          if (cxT < 1 || cxT >= WORLD_W - 1 || cyT < 1 || cyT >= WORLD_H - 1) { continue; }
+          if (world.tile[cyT * WORLD_W + cxT] !== 0) { continue; }
+          if (world.tile[(cyT + 1) * WORLD_W + cxT] !== 0 &&
+              world.tile[(cyT - 1) * WORLD_W + cxT] !== 0) { continue; }
+          bx = cxT * TILE + 16; by = cyT * TILE + 16;
+          ok = true;
+        }
+      }
+      if (!ok) { return; }   /* no air pocket found this roll: skip */
+    }
     var b = S.bugs.create(bx, by, kind).setScale(1.3);
     b.kind = kind;
     b.fly = fly;
@@ -749,6 +773,8 @@
     if (kind === 'eye') { b.tint = 0xd9a6ff; }    /* purple gaze */
     if (kind === 'wraith' || kind === 'banshee') { b.tint = 0xb8c8ff; b.setAlpha(0.75); }
     if (kind === 'krtentacle') { b.tint = 0x6fa3d9; }
+    if (kind === 'spitter') { b.tint = 0x9fe8ff; }      /* wisp: bright cyan-white */
+    if (kind === 'spitterF') { b.tint = 0xffa04d; }     /* skull: bright ember */
     if (kind === 'willowisp' || kind === 'flameskull') { b.tint = 0xffc86b; } /* ember glow */
     if (kind === 'maneater') { b.tint = 0x9fe06a; } /* hungry green */
     if (kind === 'purpleworm') { b.tint = 0xd98fd9; } /* worm purple */
