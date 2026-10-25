@@ -3104,7 +3104,10 @@
     toggle: toggle,
     enter: enter,
     leave: leave,
-    running: function () { return running; }
+    running: function () { return running; },
+    /* dev probe: live scene handles for console diagnostics */
+    scene: function () { return game ? game.scene.getScene('main') : null; },
+    world: function () { return world; }
   };
   if ((location.hash || '').indexOf('egg-run') >= 0) {
     window.addEventListener('load', function () { setTimeout(enter, 300); });
