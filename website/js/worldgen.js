@@ -272,13 +272,13 @@
       if (depth < 100) { return [TILE.IRON, TILE.GOLD, TILE.GOLD, TILE.DIAMOND, TILE.CORAL_PORE]; }
       return [TILE.GOLD, TILE.DIAMOND, TILE.DIAMOND, TILE.DIAMOND, TILE.CORAL_BRAIN];
     }
-    var ORE_VEINS = 160;
+    var ORE_VEINS = 320;
     for (var v = 0; v < ORE_VEINS; v++) {
       var vx = 2 + Math.floor(rand() * (W - 4));
       var vy = surfaceY[vx] + 8 + Math.floor(rand() * (H - surfaceY[vx] - 20));
       var pool = oreWeight(vy - surfaceY[vx]);
       var kind = pool[Math.floor(rand() * pool.length)];
-      var size = 3 + Math.floor(rand() * 6);        /* 3-8 cells */
+      var size = 4 + Math.floor(rand() * 11);       /* 4-14 cells */
       var cx2 = vx, cy2 = vy;
       for (var c = 0; c < size; c++) {
         var vi = cy2 * W + cx2;
@@ -303,7 +303,7 @@
       TILE.CORAL_BRAIN_BLEACHED, TILE.CORAL_CAULIFLOWER_BLEACHED,
       TILE.CORAL_PORE_BLEACHED, TILE.CORAL_STAR_BLEACHED,
       TILE.ICE_ICICLES, TILE.BASALT_FLOW];
-    for (var rv = 0; rv < 120; rv++) {
+    for (var rv = 0; rv < 240; rv++) {
       var rx = 2 + Math.floor(rand() * (W - 4));
       var ry = dirtBottom[rx] + 4 + Math.floor(rand() * Math.max(1, H - dirtBottom[rx] - 16));
       if (ry >= H - 4) { continue; }
@@ -443,12 +443,13 @@
       TILE.GRASS_DENSE, TILE.GRASS_FLOWERING, TILE.PLANT_FERN, TILE.FERN2];
     var CAVE_DECO = [TILE.PLANT_BROWN_MUSHROOM, TILE.SPIDERWEB,
       TILE.P_CORAL_PORE, TILE.P_CORAL_STAR, TILE.P_STROMATOLITE,
-      TILE.P_CORAL_BRAIN_BLEACHED, TILE.P_CORAL_CAULIFLOWER_BLEACHED];
+      TILE.P_CORAL_BRAIN_BLEACHED, TILE.P_CORAL_CAULIFLOWER_BLEACHED,
+      TILE.PLANT_RED_MUSHROOM, TILE.PLANT_RED_MUSHROOM, TILE.PLANT_RED_MUSHROOM];
     for (var px5 = 2; px5 < W - 2; px5++) {
       var b = biomeOf[px5];
       var cap5 = tile[surfaceY[px5] * W + px5];
       /* surface: on grass, 35% chance; snowy → nothing on top */
-      if (b === 0 && cap5 === TILE.GRASS && rand() < 0.35 && surfaceY[px5] > 1) {
+      if (b === 0 && cap5 === TILE.GRASS && rand() < 0.5 && surfaceY[px5] > 1) {
         var r6 = rand();
         tile[(surfaceY[px5] - 1) * W + px5] = r6 < 0.45
           ? MEADOW[Math.floor(rand() * MEADOW.length)]
@@ -465,12 +466,12 @@
       for (var cy5 = surfaceY[px5] + 4; cy5 < H - 4; cy5++) {
         var ii = cy5 * W + px5;
         if (tile[ii] === TILE.AIR && tile[ii + W] !== TILE.AIR &&
-            PASSABLE[tile[ii + W]] === undefined && rand() < 0.02) {
+            PASSABLE[tile[ii + W]] === undefined && rand() < 0.06) {
           tile[ii] = CAVE_DECO[Math.floor(rand() * CAVE_DECO.length)];
         }
       }
       /* amethyst crystals sparkle deep down */
-      if (rand() < 0.02) {
+      if (rand() < 0.05) {
         for (var cy6 = dirtBottom[px5] + 60; cy6 < H - 4; cy6++) {
           var jj = cy6 * W + px5;
           if (tile[jj] === TILE.AIR && tile[jj + W] !== TILE.AIR) {
