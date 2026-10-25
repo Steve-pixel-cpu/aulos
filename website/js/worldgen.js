@@ -226,8 +226,9 @@
         tile[(sy + 3) * W + x2] = TILE.CLAY;
       }
       tile[(H - 1) * W + x2] = TILE.BEDROCK;
-      /* walls below surface+4 */
-      for (var y2 = sy + 4; y2 < H; y2++) {
+      /* Terraria-style: ALL cells below the surface line get a wall so
+         every dug tunnel/cave shows dirt/stone backdrop, never sky */
+      for (var y2 = sy + 1; y2 < H; y2++) {
         wall[y2 * W + x2] = y2 <= db ? WALL.WALL_DIRT : WALL.WALL_STONE;
       }
     }
@@ -361,13 +362,20 @@
           tile[ty * W + tx] = treeSpecies.wood;
         }
         tile[surfaceY[tx] * W + tx] = treeSpecies.wood;   /* root sits in the grass cell */
-        /* leaf diamond 5 wide, 4 tall */
-        for (var ly = top - 3; ly <= top; ly++) {
-          var half = Math.abs(ly - top + 1);
-          for (var lx = -2 + half; lx <= 2 - half; lx++) {
-            var lxx = tx + lx;
-            if (lxx > 0 && lxx < W - 1 && tile[ly * W + lxx] === TILE.AIR) {
-              tile[ly * W + lxx] = treeSpecies.leaf;
+        /* Terraria-style canopy: one big CIRCLE (r=3.2 tiles) centered
+           above the trunk tip, with ragged rim (edge cells drop randomly).
+           Reads as the round puffy crowns from the trailer, not a diamond. */
+        var ccx = tx + 0.5, ccy = top - 1.5, r = 3.2;
+        for (var ly2 = Math.floor(ccy - r); ly2 <= Math.ceil(ccy + r); ly2++) {
+          if (ly2 <= 1) { continue; }
+          for (var lx2 = Math.floor(ccx - r); lx2 <= Math.ceil(ccx + r); lx2++) {
+            if (lx2 <= 0 || lx2 >= W - 1) { continue; }
+            var dx2 = lx2 + 0.5 - ccx, dy2 = ly2 + 0.5 - ccy;
+            var dist = Math.sqrt(dx2 * dx2 + dy2 * dy2);
+            if (dist <= r - 0.7 || (dist <= r && rand() < 0.62)) {
+              if (tile[ly2 * W + lx2] === TILE.AIR) {
+                tile[ly2 * W + lx2] = treeSpecies.leaf;
+              }
             }
           }
         }

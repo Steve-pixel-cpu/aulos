@@ -24,6 +24,8 @@
 
   var TILE = 32;                       /* on-screen tile size (16px source x2) */
   var WORLD_W = 512, WORLD_H = 256;
+  /* average surface line (world px), set by create() from worldgen data */
+  var PLAYER_SURFACE_Y = 96 * 32;
   var MAX_HP = 3;
 
   var game = null;                     /* Phaser.Game */
@@ -206,6 +208,12 @@
 
     /* regenerate world */
     world = worldgen.generate((Date.now() % 4294967296) | 0, WORLD_W, WORLD_H);
+    /* backdrop band anchor: mean surface row -> world px */
+    (function () {
+      var sum = 0;
+      for (var i = 0; i < world.surfaceY.length; i++) { sum += world.surfaceY[i]; }
+      PLAYER_SURFACE_Y = (sum / world.surfaceY.length) * TILE;
+    })();
     /* seal sky leaks: any air cell BELOW its column's surface that has no
        wall would show the sky gradient through the cave (pale rectangles).
        These are enclosed pockets — give them the stone back-wall. */
@@ -245,6 +253,78 @@
     }
 
     this.tiles = map.createBlankLayer('tiles', tileset).setDepth(-1);
+    /* Terraria underground backdrop under the wall layer with its top
+       edge EXACTLY tracking each column's surfaceY. TEXTURED now: the
+       old flat 0x241d16 fill read as a "black block" at cave mouths —
+       we stamp the tileset's own DIRT WALL texture (atlasIndex 200,
+       see wallTex in tiles.meta.js) instead, Terraria-style.
+       Still baked once into a texture (zero per-frame cost,
+       world-attached, never jitters, never peeks above terrain). */
+    (function () {
+      /* bake at 1/4 world resolution (4096x2048 = 32MB) then scale x4:
+         quantization step 8px is invisible under 32px tiles/walls.
+         Drawn with the NATIVE canvas 2D API (Phaser Graphics has no
+         pattern fill): tile the dirt-wall atlas tex at 8px so after
+         the 4x scale-up each texture block lands at ~32px = one tile,
+         then a 45% black veil sinks it behind the playable walls. */
+      var Q = 4;                        /* texel = 8 world px */
+      var tw = Math.ceil(WORLD_W * TILE / Q);
+      var th = Math.ceil(WORLD_H * TILE / Q);
+      var mcSrc = this.textures.get('mc').getSourceImage();
+      var wcv = document.createElement('canvas');
+      wcv.width = 8; wcv.height = 8;    /* 16px art -> 8px bake texel */
+      var wctx = wcv.getContext('2d');
+      /* wallTex values (200/201) are TILEMETA ids, NOT atlas indexes —
+         resolving them directly as (200%16)*16,(200/16)*16 pointed OUT
+         of the 256x160 sheet (y=192 > 160) and drawImage silently
+         painted nothing → the whole caveFill went transparent and the
+         underground backdrop vanished. Resolve through TILEMETA like
+         the walls layer does: META.wallTex[1] → TILEMETA[200] → its
+         atlasIndex → real sheet coords. */
+      var wWallTex = (META.wallTex || {})[1] || 1;
+      var wMeta = TILEMETA[wWallTex];
+      var wIdx = wMeta ? wMeta.atlasIndex : 3;   /* dirt tile fallback */
+      var wax = (wIdx % 16) * 16, way = ((wIdx / 16) | 0) * 16;
+      wctx.drawImage(mcSrc, wax, way, 16, 16, 0, 0, 8, 8);
+      var cv = document.createElement('canvas');
+      cv.width = tw; cv.height = th;
+      var ctx = cv.getContext('2d');
+      var pat = ctx.createPattern(wcv, 'repeat');
+      /* Fill top edge: normally each column's own surfaceY, BUT never
+         below the backdrop bands' bottom edge (mean surface + 1 tile).
+         In valleys the terrain sits far under the mean line — a bare
+         per-column top left a haze-colored AIR GAP between the band
+         fringe and the grass steps ("地表线以下都要填充"). Clamping the
+         top to min(surfaceY, mean+1tile) fills every valley from the
+         band bottom down, while hills keep their own (higher) top. */
+      var meanRow = Math.round(
+        ((typeof PLAYER_SURFACE_Y === 'number'
+          ? PLAYER_SURFACE_Y : 96 * 32) + TILE) / TILE);
+      for (var fx = 0; fx < WORLD_W; fx++) {
+        var topRow = Math.min(world.surfaceY[fx], meanRow);
+        var syW = topRow * TILE;
+        var bx = Math.round(fx * TILE / Q);
+        var bw = Math.round(TILE / Q);
+        var by = Math.round(syW / Q);
+        var bh = Math.round((WORLD_H * TILE - syW) / Q);
+        if (pat) {
+          ctx.fillStyle = pat;          /* canvas-aligned tiling: all
+                                           columns share one grid */
+          ctx.fillRect(bx, by, bw, bh);
+          ctx.fillStyle = 'rgba(0,0,0,0.45)';
+          ctx.fillRect(bx, by, bw, bh);
+        } else {
+          ctx.fillStyle = '#241d16';
+          ctx.fillRect(bx, by, bw, bh);
+        }
+      }
+      if (this.textures.exists('caveFill')) {
+        this.textures.remove('caveFill');
+      }
+      this.textures.addCanvas('caveFill', cv);
+      this.add.image(0, 0, 'caveFill').setOrigin(0, 0)
+        .setScale(Q, Q).setDepth(-2.5);
+    }).call(this);
     this.walls = map.createBlankLayer('walls', tileset).setDepth(-2).setAlpha(0.55);
 
     for (var y = 0; y < WORLD_H; y++) {
@@ -383,9 +463,21 @@
 
     /* ---- camera ---- */
     this.cameras.main.setBounds(0, 0, WORLD_W * TILE, WORLD_H * TILE);
-    this.cameras.main.startFollow(this.player, true, 0.25, 0.25,
-      0, H0(this) * 0.1);
-    this.cameras.main.setDeadzone(160, 120);
+    /* NO deadzone (removed): with a +10% follow offset a player standing
+       on the mean surface rests at exactly 60% screen height, and the
+       backdrop ground line is pinned to that same 60% — the two horizon
+       lines coincide. A deadzone let the camera rest at arbitrary
+       offsets, breaking that coincidence.
+       followOffset is WORLD PIXELS, not a ratio (Phaser docs) — a value
+       computed once at create time goes stale when the canvas resizes
+       (window/fullscreen). setFollowOffsetY() re-pins it on every resize
+       path; the backdrop refit uses the same 0.10/0.60 pair, so the
+       coincidence holds at ANY window size. */
+    this.cameras.main.startFollow(this.player, true, 0.25, 0.25, 0, 0);
+    this.setFollowOffsetY = function () {
+      this.cameras.main.setFollowOffset(0, this.scale.height * 0.10);
+    };
+    this.setFollowOffsetY();
     this.physics.world.setBounds(0, 0, WORLD_W * TILE, WORLD_H * TILE);
 
     /* ---- static collision: merge solid tiles into VERTICAL runs per
@@ -471,12 +563,17 @@
     /* flag is not a Light2D target — keep it unlit so the goal stays
        visible from a distance, like a landmark */
 
-    /* clouds behind the terrain, light parallax like the old game */
-    for (var cl = 0; cl < 7; cl++) {
-      this.add.image(300 + cl * 1500, 110 + ((cl * 97) % 190), 'cloud')
-        .setScrollFactor(0.25).setDepth(-3).setAlpha(0.9)
-        .setScale(1 + (cl % 3) * 0.4);
-    }
+    /* clouds are WORLD scenery now: the 'clouds' band in BK_DEFS is a
+       map-bound TileSprite (scrollFactor 1) like every other backdrop
+       layer — the old individually-parallaxed cloud sprites are gone
+       (they moved on jumps/resizes, which is what we're eliminating). */
+
+    /* Terraria-style backdrop lives in the DOM sky overlay (drawSky),
+       NOT as Phaser objects: the world-space lightmap (depth 40 MULTIPLY)
+       would multiply screen-fixed sprites by the CAVE light under the
+       camera — painting mountains near-black and making them strobe as
+       you move. drawSkyBackdrop() draws them into eggSkyOverlay, which
+       sits UNDER the game canvas and is never light-multiplied. */
 
     /* ---- DOM overlays: sky (bottom) + HUD (top). No darkness mask —
        caves are dark simply because no light reaches them; ALL light
@@ -498,6 +595,31 @@
     }
     this.hudCtx = document.getElementById('eggHudOverlay').getContext('2d');
     this.skyCtx = document.getElementById('eggSkyOverlay').getContext('2d');
+    /* ---- BACKDROP AS PHASER OBJECTS (framework-native parallax) -----
+       7 TileSprites, one per layer, each setScrollFactor(fx, 0):
+         • horizontal: engine-native parallax — camera movement drives
+           the scroll, window/fullscreen resize repositions for free.
+         • vertical fy=0: the band is SCREEN-anchored. Jumps (any
+           height, any window size) cannot move it — no freeze logic,
+           no crop line, no anchor math to drift.
+         • underground: terrain tiles (depth -1) simply OVERDRAW the
+           band — descending mineshafts slides it away naturally, like
+           Terraria's real walls occluding the backdrop.
+       Layers are baked (blur+haze) once at load, same as before. */
+    this.backdrop = buildPhaserBackdrop(this);
+    /* UNDERGROUND FILL: the world already has caveFill (opaque earth
+       texture below each column's surface line, depth -2.5). The
+       backdrop bands only occupy the SKY area of the screen — but when
+       the camera looks up during a jump, the fixed band may end above
+       the screen bottom and expose raw sky below it. A screen-anchored
+       ground skirt (scrollFactor 0, same tone as caveFill, depth just
+       under the bands) fills from each band's bottom to the canvas
+       floor: terrain can still overdraw it, but no raw sky can ever
+       appear under the horizon. */
+    refitBackdrop(this);   /* legacy hook: backdrop needs no refit */
+
+    /* sun & moon are sky-canvas UI again (original scheme) — no world
+       objects, no textures. See drawSky(). */
     this.mcImg = this.textures.get('mc').getSourceImage();
     /* NO ambient lamp around the player — light comes only from a held
        torch (hotbar slot selected) or placed torches. Darkness is NOT
@@ -505,7 +627,9 @@
     this.digG = this.add.graphics().setDepth(50);
     drawHotbar(this);
     this.scale.on('resize', function () {
+      S.setFollowOffsetY();
       sizeOverlays(S);
+      refitBackdrop(S);
       drawSky(S);
       drawHotbar(S);
     });
@@ -516,7 +640,9 @@
     document.addEventListener('fullscreenchange', function () {
       var refit = function () {
         S.scale.refresh();
+        S.setFollowOffsetY();
         sizeOverlays(S);
+        refitBackdrop(S);
         drawSky(S);
         drawHotbar(S);
       };
@@ -526,7 +652,9 @@
     /* catch ALL size sources (fullscreen, devtools, window drag-resize) */
     if (window.ResizeObserver) {
       new ResizeObserver(function () {
+        S.setFollowOffsetY();
         sizeOverlays(S);
+        refitBackdrop(S);
         drawSky(S);
         drawHotbar(S);
       }).observe(chat);
@@ -534,7 +662,9 @@
     /* the chat box may still be settling when create() runs (egg CSS just
        flipped display modes) — re-size once the layout is final */
     this.time.delayedCall(350, function () {
+      S.setFollowOffsetY();
       sizeOverlays(S);
+      refitBackdrop(S);
       drawSky(S);
       drawHotbar(S);
     });
@@ -793,11 +923,6 @@
     S.textures.addCanvas('glow', cv);
   }
 
-  /* ===== BOSS: 克拉肯领主 (Kraken Lord) =====
-     Spawns when the player reaches the altar WITH enough crystals —
-     it rises from the depths to guard the win condition. 64px sprite,
-     3 phases by HP, physics body (bullet-hittable), glow halo, big
-     screen presence. Killing it = the real victory. */
   var BOSS_MAX = 40;                          /* bullet hits */
   function bossSpawn(S) {
     if (S.boss) { return; }
@@ -1018,7 +1143,7 @@
            gets close — pure creepy, only contacts you when you dig */
         b.body.setAllowGravity(false);
         if (dist < 90 && Math.random() < 0.05) {
-          b.x = p.x + (Math.random() < 0.5 ? -1 : 1) * (500 + Math.random() * 200);
+          b.x = px + (Math.random() < 0.5 ? -1 : 1) * (500 + Math.random() * 200);
           b.y = p.y + (Math.random() - 0.5) * 160;
           burst(S, b.x, b.y, 0xd9a6ff, 4);     /* blink-out puff */
         }
@@ -1438,10 +1563,18 @@
         torchR[i] = TORCH_R; torchG[i] = TORCH_G; torchB[i] = TORCH_B;
         torchField[i] = 255;
       } else if (lum > 0) {
-        /* data-driven glow: crystal/coral/lava/amethyst etc. */
-        torchR[i] = Math.round(TORCH_R * lum);
-        torchG[i] = Math.round(TORCH_G * lum);
-        torchB[i] = Math.round(TORCH_B * lum * 1.3);
+        /* data-driven glow: crystal/coral/lava/mushroom etc. Terraria-style
+           COLORED light: meta may carry lightColor:[r,g,b]; without one,
+           fall back to the warm torch tint (scaled), same as before. */
+        var sr, sg, sb;
+        if (m.lightColor && m.lightColor.length === 3) {
+          sr = m.lightColor[0]; sg = m.lightColor[1]; sb = m.lightColor[2];
+        } else {
+          sr = TORCH_R; sg = TORCH_G; sb = TORCH_B * 1.3;
+        }
+        torchR[i] = Math.round(sr * lum);
+        torchG[i] = Math.round(sg * lum);
+        torchB[i] = Math.round(sb * lum);
         torchField[i] = Math.round(255 * lum);
       }
     }
@@ -1500,7 +1633,13 @@
   function computeSkyLight() {
     skyLight = skyLight || new Uint8Array(WORLD_W * WORLD_H);
     skyLight.fill(0);
-    /* seed: cells with a clear column to the sky = full light */
+    /* seed ONLY: cells with a clear column to the sky = full light.
+       USER REMOVED the cave-mouth skylight BLEED (the old sweepScalar
+       relaxation spread sky light sideways into caves, painting a
+       gradient at every dug opening). Now sky light stops at the first
+       solid tile per column; caves and tunnels keep ONE uniform cave
+       tint (see paintLight's cave floor color) and readability comes
+       from torches, not daylight leaking through holes. */
     for (var x = 0; x < WORLD_W; x++) {
       for (var y = 0; y < WORLD_H; y++) {
         var i = y * WORLD_W + x;
@@ -1509,13 +1648,6 @@
         skyLight[i] = 255;
       }
     }
-    /* BLEED: relax the sky field sideways through air, exactly like
-       the torch field. Replaces the old per-column 4-step staircase
-       (190/73/46/32 -> 0), which painted a hard horizontal "fog line"
-       ~4 tiles under every surface and inside every pit - the visible
-       light/dark boundary. Now cave mouths and pit walls get a smooth
-       exponential falloff instead. */
-    sweepScalar(skyLight, 0, 0, WORLD_W - 1, WORLD_H - 1, 0.74, 0.40);
   }
 
   /* scalar variant of the four-sweep relaxation (see sweepRGB): each
@@ -1575,9 +1707,11 @@
     var sR = Math.round(surf[0] * bright),
         sG = Math.round(surf[1] * bright),
         sB = Math.round(surf[2] * bright);
-    /* cave floor: dim cool blue-gray (deep shadow, not pure black -
-       pure black MULTIPLY crushes all tile detail) */
-    var cR = 30, cG = 32, cB = 40;
+    /* cave floor: WARM dim brown (not near-black cool gray) — the old
+       30/32/40 base read as "black blocks" at cave mouths even in
+       daylight. 62/54/44 keeps the underground clearly darker than the
+       surface while soil texture and wall tiles stay visible. */
+    var cR = 62, cG = 54, cB = 44;
 
     var ctx = S.lightCv.getContext('2d');
     var img = ctx.createImageData(WORLD_W, WORLD_H);
@@ -1761,30 +1895,89 @@
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, w, h);
 
-    /* sun / moon arc across the top of the window */
-    var ang, isDay = dayT < 0.5;
-    if (isDay) { ang = (dayT / 0.5) * Math.PI; }
-    else { ang = ((dayT - 0.5) / 0.5) * Math.PI; }
-    var cx = w * (0.08 + 0.84 * (ang / Math.PI));
-    var cy = h * 0.30 - Math.sin(ang) * h * 0.24;
-    ctx.beginPath();
-    if (isDay) {
-      ctx.fillStyle = '#ffe9a8';
-      ctx.shadowColor = 'rgba(255,220,120,.9)';
-      ctx.shadowBlur = 26;
-    } else {
-      ctx.fillStyle = '#e8ecf5';
-      ctx.shadowColor = 'rgba(210,225,255,.7)';
-      ctx.shadowBlur = 18;
+    /* BELOW-HORIZON FALLBACK = cave wall, anchored to the BANDS' live
+       screen position (USER: "山的背面…删掉"). The first version started
+       at a FIXED 63% screen line: the mountain art has transparent gaps
+       between peaks, and the wall's top-edge seam showed through them
+       as a floating dark strip. Now the fill starts exactly at the
+       bands' bottom edge (world line meanSurface+1tile converted to
+       screen y each frame): peaks' gaps show pure sky gradient, and
+       the wall only appears behind/below the tree line where it
+       belongs. Deep underground the line goes off-screen negative and
+       the whole canvas fills — correct cave backdrop. */
+    var mcSrc = S.mcImg
+      ? S.mcImg : S.textures.get('mc').getSourceImage();
+    if (mcSrc) {
+      var camS = S.cameras ? S.cameras.main : null;
+      var scrollY = camS ? camS.scrollY : 0;
+      var meanPx = (typeof PLAYER_SURFACE_Y === 'number'
+        ? PLAYER_SURFACE_Y : 96 * 32) + 32;
+      var hzY = Math.round(meanPx - scrollY);
+      var wWallTex = (META && META.wallTex ? META.wallTex[1] : null);
+      var wMeta = wWallTex ? TILEMETA[wWallTex] : null;
+      var wIdx = wMeta ? wMeta.atlasIndex : 3;
+      var tile = 24;                       /* wall block size on screen */
+      var ox = 0, oy = (hzY % tile) - tile;
+      for (var yy = hzY - tile; yy < h + tile; yy += tile) {
+        for (var xx = -tile; xx < w + tile; xx += tile) {
+          /* grid position drives a tiny per-cell variation so the
+             fill reads as a wall, not one repeated stamp */
+          var gx = Math.floor((xx - ox) / tile),
+              gy = Math.floor((yy - oy) / tile);
+          var sh = 0.55 + 0.10 * (((gx * 7 + gy * 13) % 5) / 5);
+          ctx.globalAlpha = 1;
+          ctx.drawImage(mcSrc,
+            (wIdx % 16) * 16, ((wIdx / 16) | 0) * 16, 16, 16,
+            xx, yy, tile, tile);
+          ctx.fillStyle = 'rgba(10,6,3,' + sh + ')';
+          ctx.fillRect(xx, yy, tile, tile);
+        }
+      }
+      /* soft blend from the sky gradient into the wall right at the
+         bands' bottom edge (40px, subtle — no hard seam) */
+      var fg = ctx.createLinearGradient(0, hzY - 30, 0, hzY + 20);
+      fg.addColorStop(0, cssColor(sky.bot));
+      fg.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = fg;
+      ctx.fillRect(0, hzY - 30, w, 50);
+      /* day/night dimming over the whole wall area */
+      var nightDim = 1 - Math.min(1, sky.dayness) * 0.55;
+      if (nightDim < 1) {
+        ctx.fillStyle = 'rgba(8,8,14,' + (1 - nightDim) + ')';
+        ctx.fillRect(0, hzY, w, Math.max(0, h - hzY));
+      }
+      ctx.globalAlpha = 1;
     }
-    ctx.arc(cx, cy, isDay ? 17 : 12, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.shadowBlur = 0;
-    if (!isDay) {   /* moon crater bite */
-      ctx.fillStyle = cssColor(sky.top);
+
+    /* SUN & MOON — the ORIGINAL UI scheme: glowing discs drawn straight
+       into the sky canvas at a fixed screen arc driven by dayT (the
+       world-object/texture experiments kept sliding with the camera —
+       a celestial body in this game is sky-painted UI). */
+    {
+      var ang, isDay = dayT < 0.5;
+      if (isDay) { ang = (dayT / 0.5) * Math.PI; }
+      else { ang = ((dayT - 0.5) / 0.5) * Math.PI; }
+      var cxS = w * (0.08 + 0.84 * (ang / Math.PI));
+      var cyS = h * 0.30 - Math.sin(ang) * h * 0.24;
       ctx.beginPath();
-      ctx.arc(cx + 7, cy - 4, 10, 0, Math.PI * 2);
+      if (isDay) {
+        ctx.fillStyle = '#ffe9a8';
+        ctx.shadowColor = 'rgba(255,220,120,.9)';
+        ctx.shadowBlur = 26;
+      } else {
+        ctx.fillStyle = '#e8ecf5';
+        ctx.shadowColor = 'rgba(210,225,255,.7)';
+        ctx.shadowBlur = 18;
+      }
+      ctx.arc(cxS, cyS, isDay ? 17 : 12, 0, Math.PI * 2);
       ctx.fill();
+      ctx.shadowBlur = 0;
+      if (!isDay) {   /* moon crater bite */
+        ctx.fillStyle = cssColor(sky.top);
+        ctx.beginPath();
+        ctx.arc(cxS + 7, cyS - 4, 10, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
 
     /* stars fade in as the sun sets */
@@ -1799,9 +1992,278 @@
       }
       ctx.globalAlpha = 1;
     }
+
+    /* ---- Backdrop note: the 7 parallax layers are now PHASER objects
+       (buildPhaserBackdrop, TileSprite + setScrollFactor(fx, 0)), drawn
+       on the game canvas UNDER the terrain (depth -4..-3). This sky
+       canvas only carries the day/night gradient, sun/moon and stars. */
     return sky;
   }
 
+  /* ---- Terraria-style backdrop: hand-painted CC0 layers by MatiasVME
+     (opengameart.org/content/parallax-background-forest-pixel-art).
+     8 seamless 1280x360 layers blitted with per-layer parallax into the
+     DOM sky canvas (never touched by the world lightmap). ---- */
+  var _bkTex = null;
+  var _bkLoaded = false;
+  var _bkGround = null;
+  var _bkDbg = false;
+  /* depth treatment baked per layer at LOAD time (blur + aerial haze with
+     'source-atop', so the wash only tints THIS layer, never the canvas):
+       far mountains = softest + most washed, near trees = crisp.
+     The pack's own sky/sun layers are NOT used: drawSky already renders a
+     day/night gradient + sun/moon + stars. */
+  var BK_HAZE = '#cdd8dd';   /* aerial haze: bright desaturated gray-blue */
+  /* Admurin snowy-mountains set (CC-BY 4.0, recolored to Terraria daylight
+     slate) + brightened plains forests. Files live in assets/scenery/bg/. */
+  var BK_DEFS = [
+    { n: 'clouds',       blur: 0, haze: 0.12, fx: 0.06,  top: 0.05 },
+    { n: 'ridge',        blur: 0, haze: 0.52, fx: 0.14 },
+    { n: 'peaks',        blur: 0, haze: 0.34, fx: 0.22 },
+    { n: 'rocks_gray',   blur: 0, haze: 0.18, fx: 0.34 },
+    { n: 'forest_3',     blur: 0, haze: 0.06, fx: 0.48 },
+    { n: 'forest_2',     blur: 0, haze: 0,    fx: 0.64 },
+    { n: 'trees_near',   blur: 0, haze: 0,    fx: 0.82 }
+  ];
+  /* ---- Phaser-native backdrop ------------------------------------------
+     Builds 7 TileSprites with per-layer scroll factors. Textures are
+     the SAME baked canvases (blur + aerial haze) the old canvas-2D
+     renderer produced, uploaded to Phaser once via canvas texture. */
+  function buildPhaserBackdrop(S) {
+    var layers = [];
+    var surfPx = (typeof PLAYER_SURFACE_Y === 'number'
+      ? PLAYER_SURFACE_Y : 96 * 32);
+    BK_DEFS.forEach(function (d) {
+      var texKey = 'bkd_' + d.n;
+      var make = function (img) {
+        if (!img || !S.textures.exists(texKey)) {
+          /* bake into a canvas then add as a Phaser canvas texture */
+          var c = document.createElement('canvas');
+          c.width = img ? img.width : 8; c.height = img ? img.height : 8;
+          var x2 = c.getContext('2d');
+          if (img) {
+            if (d.blur) { x2.filter = 'blur(' + d.blur + 'px)'; }
+            x2.drawImage(img, 0, 0);
+            x2.filter = 'none';
+            if (d.haze) {
+              x2.globalCompositeOperation = 'source-atop';
+              x2.globalAlpha = d.haze;
+              x2.fillStyle = BK_HAZE;
+              x2.fillRect(0, 0, c.width, c.height);
+              x2.globalCompositeOperation = 'source-over';
+              x2.globalAlpha = 1;
+            }
+          }
+          if (S.textures.exists(texKey)) { S.textures.remove(texKey); }
+          S.textures.addCanvas(texKey, c);
+        }
+        /* MAP-BOUND BACKDROP: the layer is a WORLD object, exactly like
+           the terrain tiles. scrollFactor(1,1) = the default camera
+           transform, so it moves 1:1 with the map — jumps, camera pans,
+           window resizes, zoom: all identical to the ground. No
+           screen-space math anywhere, nothing can drift or detach.
+           Anchors:
+             • bottom edge = PLAYER_SURFACE_Y (mean surface, world px)
+               — every ground layer grows UP from the same world line,
+               so the backdrop horizon is one straight line welded to
+               the terrain's average surface;
+             • clouds float at their design top as a fixed WORLD band
+               (they scroll with the map too — they are scenery IN the
+               world, not UI);
+             • width = the whole world, texture tiles inside.
+           Below the surface the existing caveFill walls (opaque earth
+           behind every underground cell) already cover the screen. */
+        var surfPx2 = (typeof PLAYER_SURFACE_Y === 'number'
+          ? PLAYER_SURFACE_Y : 96 * 32);
+        var srcH = img ? img.height : 360;
+        var sc = 1.4;                       /* art scale: TileSprite
+                                              textures tile at NATIVE
+                                              pixel size — without
+                                              setScale the 432px art
+                                              sat 1:1 in its window and
+                                              only the bottommost
+                                              solid band (~20px) peeked
+                                              above the surface line
+                                              ("only mountain tips").
+                                              1.4x lifts the peak art
+                                              ~600 world px above the
+                                              welded ground line. */
+        var lh = srcH * sc;                 /* VISUAL layer height */
+        var sy0 = d.top != null
+          ? surfPx2 - 600 + d.top * 400     /* clouds: fixed world band */
+          : surfPx2 + 32 - lh;              /* ground: bottom ONE TILE
+                                              below the mean surface —
+                                              the grass row slightly
+                                              overlaps the backdrop's
+                                              base, like Terraria's
+                                              background walls sitting
+                                              under the topsoil */
+        var ts = S.add.tileSprite(
+          0, sy0, (WORLD_W * 32) / sc, srcH, texKey)
+          .setOrigin(0, 0)
+          .setScale(sc)                     /* → WORLD_W*32 × srcH*sc */
+          .setScrollFactor(1)
+          .setDepth(-4 + BK_DEFS.indexOf(d) * 0.01)
+          .setAlpha(1);
+        ts._fx = d.fx; ts._srcW = img ? img.width : 1280;
+        ts._srcH = srcH;
+        if (d.n === 'clouds') { S.cloudsBand = ts; }  /* wind drift hook */
+        layers.push(ts);
+        /* layers arrive ASYNC (image onload) — the create-time
+           refitBackdrop() ran before any layer existed; rebuild
+           positioning whenever a layer lands */
+        refitBackdrop(S);
+      };
+      var cached = _bkTex && _bkTex.img ? _bkTex.img[d.n] : null;
+      if (cached && bkReady(cached)) { make(cached); }
+      else {
+        /* load, bake, build when it arrives */
+        var im = new Image();
+        im.onload = function () {
+          _bkTex = _bkTex || { img: {} };
+          _bkTex.img[d.n] = im;
+          make(im);
+        };
+        im.src = 'assets/scenery/bg/' + d.n + '.png';
+      }
+    });
+    return layers;
+  }
+  /* Map-bound backdrop needs NO resize logic: layers are world objects
+     (scrollFactor 1) exactly like terrain — the camera transform maps
+     them to the screen for free at any window size. Only the valley
+     skirt needs redrawing on resize (world-space rect, repaint cost is
+     trivial). Kept as a stub so existing resize call sites stay valid. */
+  function refitBackdrop(S) {
+    /* no-op: the map-bound backdrop + textured caveFill need no refit.
+       The old green groundSkirt Graphics is GONE: textured caveFill
+       (dirt-wall pattern, depth -2.5) backs the bands' semi-transparent
+       bottom rows AND fills everything below each column's surfaceY —
+       no sky gap, no color band. */
+  }
+  function drawGroundSkirt(S) {
+    /* legacy no-op (old resize call sites) */
+  }
+  function loadBackdropLayers() {
+    if (_bkLoaded || typeof Image === 'undefined') { return; }
+    _bkLoaded = true;
+    _bkTex = { img: {} };
+    BK_DEFS.forEach(function (d) {
+      var im = new Image();
+      im.onload = function () {
+        if (!d.blur && !d.haze) { _bkTex.img[d.n] = im; return; }
+        /* bake: blur, then haze tinted ONLY onto this layer's pixels */
+        var c = document.createElement('canvas');
+        c.width = im.width; c.height = im.height;
+        var x2 = c.getContext('2d');
+        if (d.blur) { x2.filter = 'blur(' + d.blur + 'px)'; }
+        x2.drawImage(im, 0, 0);
+        x2.filter = 'none';
+        if (d.haze) {
+          x2.globalCompositeOperation = 'source-atop';
+          x2.globalAlpha = d.haze;
+          x2.fillStyle = BK_HAZE;
+          x2.fillRect(0, 0, c.width, c.height);
+          x2.globalCompositeOperation = 'source-over';
+          x2.globalAlpha = 1;
+        }
+        _bkTex.img[d.n] = c;
+        /* remember the NEAREST layer's bottom-edge color: used to extend
+           the backdrop to the canvas bottom when jumps expose it */
+        if (d.n === 'trees_near') {
+          var p2 = c.getContext('2d').getImageData(6, c.height - 2, 1, 1).data;
+          _bkGround = 'rgb(' + p2[0] + ',' + p2[1] + ',' + p2[2] + ')';
+        }
+      };
+      im.src = 'assets/scenery/bg/' + d.n + '.png';
+      _bkTex.img[d.n] = im;          /* shown until the bake lands */
+    });
+  }
+  /* readiness: baked layers are CANVASES which have NO .complete —
+     checking .complete alone made T permanently null after the bake
+     (the "backdrop never appears" bug). Canvas => ready by definition. */
+  function bkReady(im) {
+    if (!im) { return false; }
+    if (im.tagName === 'CANVAS') { return true; }
+    /* broken (404) images: complete=true but naturalWidth=0 */
+    return im.complete && im.naturalWidth > 0;
+  }
+  function drawBackdrop(S, ctx, w, h, sky) {
+    /* RETIRED in favor of buildPhaserBackdrop (TileSprite layers inside
+       the Phaser world). No-op stub: the sky canvas now only draws the
+       day/night gradient, sun/moon and stars. */
+    return;
+    loadBackdropLayers();
+    var T = _bkTex && _bkTex.img && bkReady(_bkTex.img.clouds)
+      ? _bkTex : null;
+    var cam = S && S.cameras ? S.cameras.main : null;
+    if (!cam) { return; }
+    var scroll = cam.scrollX;
+    if (!T) { return; }
+    var sc = w / 1280;
+    var dw = 1280 * sc, dh = 360 * sc;
+    var NW = 768, NH = 432;          /* Admurin layers native 2x size */
+    /* RETIRED BODY — kept below unreachable for reference; the entire
+       canvas-2D backdrop pipeline (anchor math, freeze, horizon crop)
+       was replaced by Phaser TileSprites with setScrollFactor(fx, 0). */
+    var surfWorldY = (typeof PLAYER_SURFACE_Y === 'number'
+      ? PLAYER_SURFACE_Y : 96 * 32);
+    var BK_LIFT = 10 * 32;
+    var slack = 6 * 32;
+    var sy = (S && typeof S._skySY === 'number') ? S._skySY : cam.scrollY;
+    var deep = sy + h * 0.5 - (surfWorldY + slack * 2);
+    var t = Math.max(0, Math.min(1, deep / (6 * 32)));
+    var ease = t * t * (3 - 2 * t);
+    var restSy = surfWorldY - h * 0.54;
+    var surfScreen = (surfWorldY - restSy);
+    var yBase = surfScreen - dh * 0.78 - ease * (surfScreen + dh);
+    var lum = 0.34 + 0.66 * sky.dayness;
+    for (var bi = 0; bi < BK_DEFS.length; bi++) {
+      var d = BK_DEFS[bi];
+      var im = T.img[d.n];
+      if (!bkReady(im)) { continue; }
+      ctx.globalAlpha = lum;
+      var y = d.top != null ? h * d.top : yBase;
+      var is768 = im.width === NW;
+      var lw = is768 ? NW * sc : dw;
+      var lh = is768 ? NH * sc : dh;
+      var yy = is768 ? yBase + (dh - lh) : y;
+      var off = -((scroll * d.fx) % lw);
+      for (var xx = off; xx < w; xx += lw) {
+        ctx.drawImage(im, Math.round(xx), Math.round(yy),
+          Math.ceil(lw) + 1, Math.ceil(lh));
+        var bot = yy + lh;
+        if (bot < h) {
+          var bandH = Math.min(8, im.height);
+          ctx.drawImage(im, 0, im.height - bandH, im.width, bandH,
+            Math.round(xx), Math.round(bot) - 1,
+            Math.ceil(lw) + 1, Math.ceil(h - bot) + 2);
+        }
+      }
+    }
+    var yBot = yBase + dh;
+    if (yBot < h && _bkGround) {
+      ctx.globalAlpha = lum;
+      ctx.fillStyle = _bkGround;
+      ctx.fillRect(0, Math.round(yBot) - 1, w, Math.ceil(h - yBot) + 2);
+    }
+    if (world && world.surfaceY) {
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.fillStyle = 'rgba(0,0,0,1)';
+      var step = 4;
+      for (var sx = 0; sx < w; sx += step) {
+        var wx = Math.floor((cam.scrollX + sx) / 32);
+        if (wx < 0) { wx = 0; }
+        if (wx >= WORLD_W) { wx = WORLD_W - 1; }
+        var syW = world.surfaceY[wx] * 32 - sy;
+        if (syW >= h) { continue; }
+        var top = Math.max(0, Math.round(syW));
+        ctx.fillRect(sx, top, step, h - top);
+      }
+      ctx.globalCompositeOperation = 'source-over';
+    }
+    ctx.globalAlpha = 1;
+  }
   /* ---- SFX: WebAudio synth (zero audio files) --------------------------
      Tiny helper: every call creates osc/gain, schedules envelope, done.
      Lazy AudioContext on first user gesture (autoplay policy). */
@@ -2192,7 +2654,7 @@
     var dt = delta / 1000;
     dayT = (dayT + dt / DAY_LEN) % 1;
     var spd = 190;
-    var mv = (this.keysA.D.isDown || this.cursors.right.isDown ? 1 : 0) -
+    var mv = (window.__digAutoWalk || this.keysA.D.isDown || this.cursors.right.isDown ? 1 : 0) -
              (this.keysA.A.isDown || this.cursors.left.isDown ? 1 : 0);
     this.player.setVelocityX(mv * spd);
     if (mv) { this.player.setFlipX(mv < 0); }
@@ -2279,8 +2741,27 @@
     }
     /* day/night clock advances continuously; ambient + sky follow it */
     this.lightT = (this.lightT || 0) + dt;
-    /* sky + HUD redraw at ~20 Hz */
+    var cam = this.cameras.main;
+
+    /* sun/moon live in the sky canvas (drawSky) — nothing to drive */
+
+    /* cloud drift: the map-bound clouds band slowly scrolls its
+       texture inside the fixed world rect — wind, not camera motion */
+    if (this.cloudsBand) {
+      this.cloudsBand.tilePositionX += dt * 6;   /* ~6px/s breeze */
+    }
+    /* BACKDROP: map-bound world objects (scrollFactor 1) — they ride
+       the SAME camera transform as the terrain tiles, so nothing to
+       drive per-frame: no tilePositionX scrolling (that would move the
+       art TWICE), no alpha fades. Parallax depth comes from the layer
+       art itself; going underground, terrain + caveFill simply overdraw
+       the bands. */
+    /* sky + HUD redraw at ~20 Hz while the camera moves. */
+    var camMoving = Math.abs(cam.scrollX - (this._camSX || 0)) > 0.05
+      || Math.abs(cam.scrollY - (this._camSY || 0)) > 0.05;
+    this._camSX = cam.scrollX; this._camSY = cam.scrollY;
     this.hudT = (this.hudT || 0) + dt;
+    if (camMoving) { drawSky(this); }
     if (this.hudT > 0.05 || this.hudDirty) {
       this.hudT = 0; this.hudDirty = false;
       drawSky(this);
@@ -2489,6 +2970,9 @@
     window.__digNoLight = noLight;
     window.__digStartT = h.indexOf('noon') >= 0 ? 0.25
       : h.indexOf('night') >= 0 ? 0.75 : 0.06;
+    /* dev backdoor: #walk holds "right" so parallax can be smoke-tested
+       headlessly (screenshots + band cross-correlation, no keyboard) */
+    window.__digAutoWalk = h.indexOf('walk') >= 0;
     dayT = window.__digStartT;   /* dayT is declared later but assigned here */
     game = new Phaser.Game({
       type: forceCanvas ? Phaser.CANVAS : Phaser.AUTO,
