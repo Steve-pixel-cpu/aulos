@@ -226,8 +226,9 @@
         tile[(sy + 3) * W + x2] = TILE.CLAY;
       }
       tile[(H - 1) * W + x2] = TILE.BEDROCK;
-      /* walls below surface+4 */
-      for (var y2 = sy + 4; y2 < H; y2++) {
+      /* Terraria-style: ALL cells below the surface line get a wall so
+         every dug tunnel/cave shows dirt/stone backdrop, never sky */
+      for (var y2 = sy + 1; y2 < H; y2++) {
         wall[y2 * W + x2] = y2 <= db ? WALL.WALL_DIRT : WALL.WALL_STONE;
       }
     }
@@ -240,7 +241,8 @@
           var xx = cx + dx, yy = cy + dy;
           if (xx < 1 || xx >= W - 1 || yy < 1 || yy >= H - 1) { continue; }
           /* Reachability repair reuses carve after chest placement.
-             Preserve the chest tile as well as its registry entry. */
+             Preserve the chest tile as well as its registry entry.
+             (main #5: preserve generated chests) */
           if (dx * dx + dy * dy <= r2 && tile[yy * W + xx] !== TILE.CHEST) {
             tile[yy * W + xx] = TILE.AIR;
           }
@@ -275,13 +277,13 @@
       if (depth < 100) { return [TILE.IRON, TILE.GOLD, TILE.GOLD, TILE.DIAMOND, TILE.CORAL_PORE]; }
       return [TILE.GOLD, TILE.DIAMOND, TILE.DIAMOND, TILE.DIAMOND, TILE.CORAL_BRAIN];
     }
-    var ORE_VEINS = 160;
+    var ORE_VEINS = 320;
     for (var v = 0; v < ORE_VEINS; v++) {
       var vx = 2 + Math.floor(rand() * (W - 4));
       var vy = surfaceY[vx] + 8 + Math.floor(rand() * (H - surfaceY[vx] - 20));
       var pool = oreWeight(vy - surfaceY[vx]);
       var kind = pool[Math.floor(rand() * pool.length)];
-      var size = 3 + Math.floor(rand() * 6);        /* 3-8 cells */
+      var size = 4 + Math.floor(rand() * 11);       /* 4-14 cells */
       var cx2 = vx, cy2 = vy;
       for (var c = 0; c < size; c++) {
         var vi = cy2 * W + cx2;
@@ -306,7 +308,7 @@
       TILE.CORAL_BRAIN_BLEACHED, TILE.CORAL_CAULIFLOWER_BLEACHED,
       TILE.CORAL_PORE_BLEACHED, TILE.CORAL_STAR_BLEACHED,
       TILE.ICE_ICICLES, TILE.BASALT_FLOW];
-    for (var rv = 0; rv < 120; rv++) {
+    for (var rv = 0; rv < 240; rv++) {
       var rx = 2 + Math.floor(rand() * (W - 4));
       var ry = dirtBottom[rx] + 4 + Math.floor(rand() * Math.max(1, H - dirtBottom[rx] - 16));
       if (ry >= H - 4) { continue; }
@@ -365,13 +367,20 @@
           tile[ty * W + tx] = treeSpecies.wood;
         }
         tile[surfaceY[tx] * W + tx] = treeSpecies.wood;   /* root sits in the grass cell */
-        /* leaf diamond 5 wide, 4 tall */
-        for (var ly = top - 3; ly <= top; ly++) {
-          var half = Math.abs(ly - top + 1);
-          for (var lx = -2 + half; lx <= 2 - half; lx++) {
-            var lxx = tx + lx;
-            if (lxx > 0 && lxx < W - 1 && tile[ly * W + lxx] === TILE.AIR) {
-              tile[ly * W + lxx] = treeSpecies.leaf;
+        /* Terraria-style canopy: one big CIRCLE (r=3.2 tiles) centered
+           above the trunk tip, with ragged rim (edge cells drop randomly).
+           Reads as the round puffy crowns from the trailer, not a diamond. */
+        var ccx = tx + 0.5, ccy = top - 1.5, r = 3.2;
+        for (var ly2 = Math.floor(ccy - r); ly2 <= Math.ceil(ccy + r); ly2++) {
+          if (ly2 <= 1) { continue; }
+          for (var lx2 = Math.floor(ccx - r); lx2 <= Math.ceil(ccx + r); lx2++) {
+            if (lx2 <= 0 || lx2 >= W - 1) { continue; }
+            var dx2 = lx2 + 0.5 - ccx, dy2 = ly2 + 0.5 - ccy;
+            var dist = Math.sqrt(dx2 * dx2 + dy2 * dy2);
+            if (dist <= r - 0.7 || (dist <= r && rand() < 0.62)) {
+              if (tile[ly2 * W + lx2] === TILE.AIR) {
+                tile[ly2 * W + lx2] = treeSpecies.leaf;
+              }
             }
           }
         }
@@ -439,12 +448,13 @@
       TILE.GRASS_DENSE, TILE.GRASS_FLOWERING, TILE.PLANT_FERN, TILE.FERN2];
     var CAVE_DECO = [TILE.PLANT_BROWN_MUSHROOM, TILE.SPIDERWEB,
       TILE.P_CORAL_PORE, TILE.P_CORAL_STAR, TILE.P_STROMATOLITE,
-      TILE.P_CORAL_BRAIN_BLEACHED, TILE.P_CORAL_CAULIFLOWER_BLEACHED];
+      TILE.P_CORAL_BRAIN_BLEACHED, TILE.P_CORAL_CAULIFLOWER_BLEACHED,
+      TILE.PLANT_RED_MUSHROOM, TILE.PLANT_RED_MUSHROOM, TILE.PLANT_RED_MUSHROOM];
     for (var px5 = 2; px5 < W - 2; px5++) {
       var b = biomeOf[px5];
       var cap5 = tile[surfaceY[px5] * W + px5];
       /* surface: on grass, 35% chance; snowy → nothing on top */
-      if (b === 0 && cap5 === TILE.GRASS && rand() < 0.35 && surfaceY[px5] > 1) {
+      if (b === 0 && cap5 === TILE.GRASS && rand() < 0.5 && surfaceY[px5] > 1) {
         var r6 = rand();
         tile[(surfaceY[px5] - 1) * W + px5] = r6 < 0.45
           ? MEADOW[Math.floor(rand() * MEADOW.length)]
@@ -461,12 +471,12 @@
       for (var cy5 = surfaceY[px5] + 4; cy5 < H - 4; cy5++) {
         var ii = cy5 * W + px5;
         if (tile[ii] === TILE.AIR && tile[ii + W] !== TILE.AIR &&
-            PASSABLE[tile[ii + W]] === undefined && rand() < 0.02) {
+            PASSABLE[tile[ii + W]] === undefined && rand() < 0.06) {
           tile[ii] = CAVE_DECO[Math.floor(rand() * CAVE_DECO.length)];
         }
       }
       /* amethyst crystals sparkle deep down */
-      if (rand() < 0.02) {
+      if (rand() < 0.05) {
         for (var cy6 = dirtBottom[px5] + 60; cy6 < H - 4; cy6++) {
           var jj = cy6 * W + px5;
           if (tile[jj] === TILE.AIR && tile[jj + W] !== TILE.AIR) {
@@ -719,6 +729,41 @@
         tile[(surfaceY[gx2] - 1) * W + gx2] = CROPS_EARLY[Math.floor(rand() * CROPS_EARLY.length)];
       }
     }
+
+    /* ---- 6.9 spawn monument (USER: "类似祭坛，弄个特殊结构就行了") ----
+       NOT a building (the earlier fort attempt scattered floating bricks
+       and fought the terrain). A symmetric ALTAR-STYLE monument welded
+       to the spawn column: carved-sandstone twin pillars (2 wide, 5
+       high) with marble-brick capitals, a rune floor of sandstone
+       tiles under the spawn point, an eternal torch at the heart, and
+       crystal shards (TILE 42) as the crest — echoing the Kraken altar
+       look. Pillars stand ON the terrain surface (each column uses its
+       own surfaceY), so nothing floats and nothing boxes the player
+       in — both sides stay walkable. */
+    (function buildSpawnMonument() {
+      var kx = 32;
+      var pil = TILE.SANDSTONE_CARVED, cap = TILE.MARBLE_BRICKS,
+          floor = TILE.SANDSTONE_TILES, crest = 42;
+      [-5, -4, 4, 5].forEach(function (off) {
+        var px2 = kx + off;
+        var gy = surfaceY[px2];               /* own column ground */
+        for (var dy = 0; dy < 5; dy++) {
+          tile[(gy - 1 - dy) * W + px2] = pil;
+        }
+        tile[(gy - 6) * W + px2] = cap;       /* capital on top */
+      });
+      /* rune floor under the spawn point (3 wide) */
+      for (var fx = kx - 1; fx <= kx + 1; fx++) {
+        tile[surfaceY[fx] * W + fx] = floor;
+      }
+      /* eternal torch at the monument heart */
+      tile[(surfaceY[kx] - 1) * W + kx] = 12;
+      /* crystal crests atop each capital */
+      [-5, 5].forEach(function (off) {
+        var px2 = kx + off;
+        tile[(surfaceY[px2] - 7) * W + px2] = crest;
+      });
+    })();
 
     /* ---- 7. spawn / flag ----------------------------------------------- */
     var spawn = [32, surfaceY[32] - 2];

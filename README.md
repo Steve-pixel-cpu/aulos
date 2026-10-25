@@ -31,6 +31,7 @@
 - [桌面端打包与发版](#桌面端打包与发版)
 - [测试](#测试)
 - [深入阅读](#深入阅读)
+- [彩蛋小游戏：Aulos Dig](#彩蛋小游戏aulos-dig)
 - [项目来源与致谢](#项目来源与致谢)
 - [免责声明](#免责声明)
 - [License](#license)
@@ -309,6 +310,38 @@ uv run pytest          # 1070+ 用例；CI: .github/workflows/ci.yml
 ## 深入阅读
 
 - [guides/](guides/)：13 篇按模块拆解的实现笔记（读源码的伴侣文档）
+
+
+## 彩蛋小游戏：Aulos Dig
+
+宣传站（`website/`，纯静态页）里藏了一个 2D 像素风挖矿小游戏彩蛋：打开
+`website/index.html#egg-run` 直达，或在页面里双击桌宠菲比进入。引擎为
+本地打包的 Phaser 3（MIT，`website/js/vendor/phaser.min.js`），全部游戏
+代码在 `website/js/game2.js`，无任何网络依赖，离线可玩。玩法：挖矿收集
+水晶、昼夜循环与血月、越深越克苏鲁的地下怪物、宝箱战利品与武器升级、
+二段跳；标题栏 ⚙ 打开 13 项参数配置页（血量/水晶目标/昼夜时长/血月概率
+等），⛶ 一键全屏。
+
+### 美术素材出处
+
+- **方块图集** `assets/mc/tiles.png`：保留 CC0 来源像素包的手绘形状，经
+  `website/tools/build_terraria_tiles.py` 全局调色 + 逐 tile 覆盖，重映射
+  为 Terraria 风格配色；火把/宝箱/岩浆/砂砾/基岩/墙体贴图为程序化自绘。
+  CC0 来源包（`assets/mc/src/blocks_2021.zip` / `blocks_2023.zip`）内无
+  作者元数据，原始作者不可考，素材本身已进入公有领域
+- **角色菲比** `assets/feibi/`：《鸣潮》(Wuthering Waves) 角色「菲比」的
+  同人 chibi 桌宠素材；仓库内未记录原作者与授权信息，仅作非商业彩蛋展示
+- **大型怪物** `assets/big/`：bevouliin「Land Monster」（CC0）与
+  Redshrike「Ars Notoria」（CC-BY 3.0，须署名）；来源压缩包存于
+  `assets/big/src/` 作为授权凭证
+- **视差远景** `assets/scenery/bg/`：Admurin 的视差背景包（雪山/平原/
+  洞穴等，**CC-BY 4.0，须署名**），已重上色为 Terraria 白昼配色；来源包
+  存于 `assets/scenery/adm.zip`
+- **小型怪物** `assets/tiny/`：Clint Bellanger「Tiny Creatures」（CC0，
+  Kenney Tiny Dungeon / Tiny Town 的扩展包），
+  opengameart.org/content/tiny-creatures；来源包存于 `assets/tiny/src/`
+- **零散物件** `assets/scenery/` 顶层（bug / bat / flag 等）：slime 来自
+  Kenney（CC0）；其余未记录出处
 
 
 ## 项目来源与致谢
