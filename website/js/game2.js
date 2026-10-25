@@ -442,24 +442,14 @@
     this.time.addEvent({
       delay: 400, loop: true, callback: function () { bugBrain(S); }
     });
-    /* torch fuel sweep: gutter expired torches, puff smoke, relight */
+    /* torch fuel sweep: gutter expired torches, puff smoke, relight.
+       Runs at 3s as a BACKSTOP; the update() loop checks
+       nextTorchExpiry each frame so the actual gutter-out happens
+       within a frame of expiry (the 3s poll alone left dead torches
+       lit for up to 3s and out of sync with the fuel HUD). */
     this.time.addEvent({
       delay: 3000, loop: true, callback: function () {
-        var now = S.time.now, expired = false;
-        for (var k in torchLife) {
-          if (torchLife[k] < now) {
-            var ti = k | 0;
-            if (world.tile[ti] === 12) {
-              world.tile[ti] = 0;
-              refreshStrip(S, ti % WORLD_W);
-              burst(S, (ti % WORLD_W) * TILE + 16,
-                Math.floor(ti / WORLD_W) * TILE + 16, 0x555555, 6);
-            }
-            delete torchLife[k];
-            expired = true;
-          }
-        }
-        if (expired) { relight(S); }
+        gutterTorches(S);
       }
     });
     this.physics.add.overlap(this.player, this.bugs, function (pl, bug) {
@@ -1225,16 +1215,15 @@
     refreshStrip(S, tx);
     rebuildSolids(S, tx);     /* placed block must be solid to stand on */
     if (sel.id === 12 || (TILEMETA[sel.id] && TILEMETA[sel.id].light > 0)) {
-      addTorchLight(S);      /* any light-emitting block relights */
-      if (sel.id === 12) { torchLife[i] = S.time.now + diff().torchLife; }
+      /* torch/lava/crystal placed: refreshStrip already ran a windowed
+         relight over the area - the placed tile's seed is inside that
+         window, so no full relight needed (the old full relight here
+         was redundant work per placement) */
+      if (sel.id === 12) {
+        torchLife[i] = S.time.now + diff().torchLife;
+        if (torchLife[i] < nextTorchExpiry) { nextTorchExpiry = torchLife[i]; }
+      }
     }
-  }
-  function addTorchLight(S) {
-    /* torch tile placed: the colored lightmap handles EVERYTHING now
-       (occlusion-correct pool, warm hue falloff, smooth blur). No glow
-       sticker on top - the old ADD-blend lampGlow sprite double-lit
-       the world and ignored walls. */
-    relight(S);
   }
   /* ---- shooting (ported from old game.js: K fires a bolt, bugs die) ---- */
   var BULLET_V = 780, SHOOT_CD = 170, lastShot = 0;
@@ -1441,6 +1430,16 @@
     return t;
   })();
   var torchR = null, torchG = null, torchB = null;
+  /* emissive buffers: light-SOURCE tiles render at full intensity
+     (their own pixel in the lightmap = their lightColor). Without this,
+     a lava pool at the bottom of a dark cave multiplied down to its
+     0.4-strength seed and became invisible - the "light sources you
+     can't see" problem. emisKind: 0 = not a source, 1 = torch,
+     2 = strong glow (>=0.35), 3 = faint glow (<0.35); rebuilt by
+     seedTorches alongside the torch seeds so emissive and propagation
+     stay in lock-step. */
+  var emisR = null, emisG = null, emisB = null;
+  var emisKind = null;
   var torchField = null;   /* mono snapshot for held-torch window logic */
 
   function ensureTorchBufs() {
@@ -1450,26 +1449,37 @@
       torchG = new Uint8ClampedArray(n);
       torchB = new Uint8ClampedArray(n);
       torchField = new Uint8Array(n);
+      emisR = new Uint8Array(n);
+      emisG = new Uint8Array(n);
+      emisB = new Uint8Array(n);
+      emisKind = new Uint8Array(n);
     }
   }
 
   function resetTorchField() {
     ensureTorchBufs();
     torchR.fill(0); torchG.fill(0); torchB.fill(0); torchField.fill(0);
+    emisR.fill(0); emisG.fill(0); emisB.fill(0); emisKind.fill(0);
   }
 
-  function seedTorches(now) {
-    for (var i = 0; i < world.tile.length; i++) {
-      var t = world.tile[i];
-      var m = t ? TILEMETA[t] : null;
-      var lum = m && m.light ? m.light : 0;
-      if (t === 12) {              /* TORCH: warm full-strength */
+  function seedTorches(now, x0, y0, x1, y1) {
+    if (x0 === undefined) { x0 = 0; y0 = 0; x1 = WORLD_W - 1; y1 = WORLD_H - 1; }
+    for (var y = y0; y <= y1; y++) {
+      var row = y * WORLD_W;
+      for (var x = x0; x <= x1; x++) {
+        var i = row + x;
+        var t = world.tile[i];
+        var m = t ? TILEMETA[t] : null;
+        var lum = m && m.light ? m.light : 0;
+        if (t === 12) {              /* TORCH: warm full-strength */
         /* fuel check: worldgen torches (no registry entry) burn eternal;
            player-placed ones gutter out when their clock runs down */
         if (torchLife[i] && torchLife[i] < now) { continue; }
         torchR[i] = TORCH_R; torchG[i] = TORCH_G; torchB[i] = TORCH_B;
         torchField[i] = 255;
-      } else if (lum > 0) {
+        emisR[i] = TORCH_R; emisG[i] = TORCH_G; emisB[i] = TORCH_B;
+        emisKind[i] = 1;
+        } else if (lum > 0) {
         /* data-driven glow: crystal/coral/lava/mushroom etc. Terraria-style
            COLORED light: meta may carry lightColor:[r,g,b]; without one,
            fall back to the warm torch tint (scaled), same as before. */
@@ -1479,10 +1489,25 @@
         } else {
           sr = TORCH_R; sg = TORCH_G; sb = TORCH_B * 1.3;
         }
-        torchR[i] = Math.round(sr * lum);
-        torchG[i] = Math.round(sg * lum);
-        torchB[i] = Math.round(sb * lum);
+        /* faint glows seed slightly dimmer so their pools read BELOW a
+           torch's after the shared TORCH_LUT lift - one curve, but the
+           hierarchy (torch > lava > crystal > coral) survives it. */
+        var lumSeed = lum < 0.35 ? lum * 0.82 : lum;
+        torchR[i] = Math.round(sr * lumSeed);
+        torchG[i] = Math.round(sg * lumSeed);
+        torchB[i] = Math.round(sb * lumSeed);
         torchField[i] = Math.round(255 * lum);
+        /* emissive self-illumination only for REAL light emitters
+           (>= 0.3: torch-strength blocks, lava, diamond, crystal, gold).
+           Faint decorative glows (coral 0.15, ice 0.05, mushroom) keep
+           their subtle tinted POOL but the tile itself must NOT render
+           as a bright single cell - decorative blocks glowing one
+           bright pixel each looked wrong in dark caves. */
+        if (lum >= 0.3) {
+          emisR[i] = sr; emisG[i] = sg; emisB[i] = sb;
+          emisKind[i] = 2;
+        }
+      }
       }
     }
   }
@@ -1533,10 +1558,51 @@
     sweepRGB(torchR, torchG, torchB, 0, 0, WORLD_W - 1, WORLD_H - 1);
   }
 
+  /* gutter out expired torches: remove tile + smoke + windowed relight
+     (per torch, not per sweep) + track nextTorchExpiry so update()
+     can act on expiry within a frame (the 3s poll alone left dead
+     torches lit for up to 3s and out of sync with the fuel HUD) */
+  var nextTorchExpiry = Infinity;
+  function gutterTorches(S) {
+    if (!torchLife) { return; }
+    var now = S.time.now;
+    nextTorchExpiry = Infinity;
+    var dirty = false;
+    for (var k in torchLife) {
+      if (torchLife[k] < now) {
+        var ti = k | 0;
+        if (world.tile[ti] === 12) {
+          world.tile[ti] = 0;
+          refreshStrip(S, ti % WORLD_W);
+          burst(S, (ti % WORLD_W) * TILE + 16,
+            Math.floor(ti / WORLD_W) * TILE + 16, 0x555555, 6);
+          dirty = true;
+        }
+        delete torchLife[k];
+      } else if (torchLife[k] < nextTorchExpiry) {
+        nextTorchExpiry = torchLife[k];
+      }
+    }
+    return dirty;
+  }
+
   /* skyLight (Uint8/tile): 255 where open sky reaches a cell (air
      column down to the first solid tile), with a soft falloff into the
      first solid rows below the surface line. Static until geometry
      changes. */
+  /* solidBits: 1 per solid tile, 0 per air - the solid-aware blur's
+     occlusion mask. Rebuilt on every geometry change (relight /
+     windowRelight), reads world.tile via isSolid(). */
+  var solidBits = null;
+  function rebuildSolidBits(x0, y0, x1, y1) {
+    if (!solidBits) { solidBits = new Uint8Array(WORLD_W * WORLD_H); }
+    for (var y = y0; y <= y1; y++) {
+      for (var x = x0; x <= x1; x++) {
+        solidBits[y * WORLD_W + x] = isSolid(x, y) ? 1 : 0;
+    }
+    }
+  }
+
   function computeSkyLight() {
     skyLight = skyLight || new Uint8Array(WORLD_W * WORLD_H);
     skyLight.fill(0);
@@ -1554,8 +1620,12 @@
        (190/73/46/32 -> 0), which painted a hard horizontal "fog line"
        ~4 tiles under every surface and inside every pit - the visible
        light/dark boundary. Now cave mouths and pit walls get a smooth
-       exponential falloff instead. */
-    sweepScalar(skyLight, 0, 0, WORLD_W - 1, WORLD_H - 1, 0.74, 0.40);
+       exponential falloff instead.
+       airF matches AIR_F (torch air decay) so sky and torch pools
+       share ONE falloff feel at cave mouths - the old 0.74/0.40 pair
+       made the two sources transition differently across the same
+       opening ("split style" at the threshold). */
+    sweepScalar(skyLight, 0, 0, WORLD_W - 1, WORLD_H - 1, AIR_F, 0.40);
   }
 
   /* scalar variant of the four-sweep relaxation (see sweepRGB): each
@@ -1591,17 +1661,29 @@
   /* compose sky + torch into the lightmap canvas. BRIGHTNESS lives in
      RGB (alpha stays 255): Phaser MULTIPLY multiplies RGB and IGNORES
      alpha (alpha-encoded maps were a no-op - the "torches didn't glow"
-     bug). Composition per channel: out = max(surfaceTint, torchRGB),
-     then a gamma LUT lifts dim values so light pools read bright and
-     shadow edges stay soft instead of muddy. */
-  function paintLight(S) {
+     bug). Composition per channel: out = max(surfaceTint, torchRGB,
+     emissive), then a gamma LUT lifts dim values so light pools read
+     bright and shadow edges stay soft instead of muddy.
+
+     zone: null = full map (create / full relight); 'view' = camera
+     viewport only (the 20 Hz ambient tick - visible tiles are ~8% of
+     the map, so clipping cuts the CPU pixel pipeline ~12x); a tile
+     rect {x0,y0,x1,y1} = local window relights (dig/place/torch).
+     All buffers are persistent (no per-call 512KB allocations - the
+     old version allocated a scratch canvas + typed array every 50ms,
+     20 Hz GC pressure). lightComp always holds the LATEST composed
+     value of every pixel, so a zone blur can read correct unblurred
+     inputs just outside its border: no seams. */
+  var BLUR_R = 2;   /* box-blur radius in tiles */
+
+  function paintLight(S, zone) {
     var day = dayFactor(dayT);
     /* surface tint: neutral white at noon, warm gold at golden hour,
        cool moonlight blue at night. Lerp in RGB between keyed stops. */
     var noon   = [255, 250, 242];   /* high sun: near-neutral */
     var golden = [255, 216, 156];   /* sunrise / sunset */
     var night  = [104, 122, 158];   /* moonlight (cool, dim) */
-    var surf, cave;
+    var surf;
     if (day > 0.35) {
       var f = (day - 0.35) / 0.65;             /* 0..1 toward noon */
       surf = lerp3(golden, noon, f);
@@ -1619,79 +1701,122 @@
        pure black MULTIPLY crushes all tile detail) */
     var cR = 30, cG = 32, cB = 40;
 
+    var W = WORLD_W, H = WORLD_H;
+    if (zone === 'view') {
+      var vw = S.cameras.main.worldView;
+      zone = { x0: Math.floor(vw.x / TILE), y0: Math.floor(vw.y / TILE),
+               x1: Math.ceil((vw.x + vw.width) / TILE),
+               y1: Math.ceil((vw.y + vw.height) / TILE) };
+    }
+    /* zx/zy = the zone whose DISPLAY must be correct;
+       px/py = blur+put region (zone + BLUR_R halo, so the ring just
+       outside a window relight also gets re-blurred from fresh
+       inputs);  cx/cy = compose region (needs 2*BLUR_R reach for the
+       separable h+v kernels). */
+    var zx0 = 0, zy0 = 0, zx1 = W - 1, zy1 = H - 1;
+    if (zone) {
+      zx0 = Math.max(0, zone.x0); zy0 = Math.max(0, zone.y0);
+      zx1 = Math.min(W - 1, zone.x1); zy1 = Math.min(H - 1, zone.y1);
+    }
+    var px0 = Math.max(0, zx0 - BLUR_R), py0 = Math.max(0, zy0 - BLUR_R),
+        px1 = Math.min(W - 1, zx1 + BLUR_R), py1 = Math.min(H - 1, zy1 + BLUR_R);
+    var cx0 = Math.max(0, zx0 - 2 * BLUR_R), cy0 = Math.max(0, zy0 - 2 * BLUR_R),
+        cx1 = Math.min(W - 1, zx1 + 2 * BLUR_R), cy1 = Math.min(H - 1, zy1 + 2 * BLUR_R);
+
     var ctx = S.lightCv.getContext('2d');
-    var img = ctx.createImageData(WORLD_W, WORLD_H);
-    var px = img.data;
     if (!S.gammaLUT || S.gammaLUT.day !== day.toFixed(3)) {
       S.gammaLUT = makeGammaLUT(day);
     }
     var lut = S.gammaLUT.t;
-    for (var i = 0, p = 0; i < WORLD_W * WORLD_H; i++, p += 4) {
-      var s = skyLight[i] / 255;                /* 0..1 sky reach */
-      var baseR = cR + (sR - cR) * s,
-          baseG = cG + (sG - cG) * s,
-          baseB = cB + (sB - cB) * s;
-      /* per-channel max with the colored torch field; the TORCH side
-         uses its own brighter LUT (see TORCH_LUT) so pools stay vivid
-         while the ambient keeps the softer curve */
-      var tR = torchR[i], tG = torchG[i], tB = torchB[i];
-      var oR = baseR > tR ? lut[baseR | 0] : TORCH_LUT[tR],
-          oG = baseG > tG ? lut[baseG | 0] : TORCH_LUT[tG],
-          oB = baseB > tB ? lut[baseB | 0] : TORCH_LUT[tB];
-      px[p]     = oR;
-      px[p + 1] = oG;
-      px[p + 2] = oB;
-      px[p + 3] = 255;
+    /* persistent buffers:
+       lightComp - composed (pre-blur) RGBA for the WHOLE map
+       hOut      - horizontal blur scratch
+       lightImg  - final blur output ImageData (putImageData source)
+       All full-map, allocated once. */
+    if (!S.lightComp) { S.lightComp = new Uint8ClampedArray(W * H * 4); }
+    if (!S.hOut)      { S.hOut = new Uint8ClampedArray(W * H * 4); }
+    if (!S.lightImg)  { S.lightImg = ctx.createImageData(W, H); }
+    var comp = S.lightComp, hOut = S.hOut, out = S.lightImg.data;
+
+    /* 1. compose: ambient(sky-day tint) vs torch (own brighter LUT)
+       vs emissive (source tiles at display intensity) - per channel. */
+    for (var y = cy0; y <= cy1; y++) {
+      var row = y * W;
+      for (var x = cx0; x <= cx1; x++) {
+        var i = row + x, p4 = i * 4;
+        var s = skyLight[i] / 255;                /* 0..1 sky reach */
+        var baseR = cR + (sR - cR) * s,
+            baseG = cG + (sG - cG) * s,
+            baseB = cB + (sB - cB) * s;
+        var tR = TORCH_LUT[torchR[i]],
+            tG = TORCH_LUT[torchG[i]],
+            tB = TORCH_LUT[torchB[i]];
+        var oR = lut[baseR | 0], oG = lut[baseG | 0], oB = lut[baseB | 0];
+        if (tR > oR) { oR = tR; }
+        if (tG > oG) { oG = tG; }
+        if (tB > oB) { oB = tB; }
+        var eR = emisR[i], eG = emisG[i], eB = emisB[i];
+        if (eR > oR) { oR = eR; }
+        if (eG > oG) { oG = eG; }
+        if (eB > oB) { oB = eB; }
+        comp[p4] = oR; comp[p4 + 1] = oG; comp[p4 + 2] = oB; comp[p4 + 3] = 255;
+      }
     }
-    ctx.putImageData(img, 0, 0);
-    /* ---- smooth pass: light values still move per-tile, so a light
-       LINEAR-interpolated upscale would show soft diamond contours.
-       Two separable box-blur passes (h then v, radius 2) turn the steps
-       into a continuous gradient - Terraria-style smooth light. Runs on
-       the 512x256 canvas: a few ten-thousand px, cheap. */
-    var W = WORLD_W, H = WORLD_H;
-    if (!S.lightScratch) {
-      S.lightScratch = document.createElement('canvas');
-      S.lightScratch.width = W; S.lightScratch.height = H;
-    }
-    var sc = S.lightScratch.getContext('2d');
-    sc.clearRect(0, 0, W, H);
-    sc.drawImage(S.lightCv, 0, 0);
-    var src = sc.getImageData(0, 0, W, H);
-    var d = src.data;
-    var buf = new Uint8ClampedArray(d.length);
-    var R = 2;                                   /* blur radius in tiles */
-    /* horizontal pass - blur all three channels (torch light is
-       tinted; blurring only R would tear the hue at pool edges) */
-    for (var y3 = 0; y3 < H; y3++) {
-      var row = y3 * W;
-      for (var x3 = 0; x3 < W; x3++) {
+
+    /* 2. horizontal blur pass (solid-aware). A bright air cell no
+       longer averages in samples from across a wall - the old
+       isotropic blur smeared light THROUGH 1-2 tile walls (thin-wall
+       leak). Rule: AIR centers skip SOLID samples; SOLID centers
+       still sample air (a lit wall face may glow, but the far-side
+       air never samples across the wall). */
+    for (var y2 = cy0; y2 <= cy1; y2++) {
+      var row2 = y2 * W;
+      for (var x2 = px0; x2 <= px1; x2++) {
+        var c2 = row2 + x2, cs = solidBits[c2];
         var sumR = 0, sumG = 0, sumB = 0, n = 0;
-        for (var k = -R; k <= R; k++) {
-          var xi = x3 + k;
-          if (xi < 0 || xi >= W) { continue; }
-          var q = (row + xi) * 4;
-          sumR += d[q]; sumG += d[q + 1]; sumB += d[q + 2]; n++;
+        for (var k = -BLUR_R; k <= BLUR_R; k++) {
+          var xi = x2 + k;
+          if (xi < cx0 || xi > cx1) { continue; }
+          var si = row2 + xi;
+          if (cs === 0 && solidBits[si] !== 0) { continue; }
+          var q = si * 4;
+          sumR += comp[q]; sumG += comp[q + 1]; sumB += comp[q + 2]; n++;
         }
-        var o = (row + x3) * 4;
-        buf[o] = sumR / n; buf[o + 1] = sumG / n; buf[o + 2] = sumB / n;
+        var o2 = c2 * 4;
+        hOut[o2] = sumR / n; hOut[o2 + 1] = sumG / n; hOut[o2 + 2] = sumB / n;
+        hOut[o2 + 3] = 255;
       }
     }
-    /* vertical pass (reads the h-pass output) */
-    for (var y4 = 0; y4 < H; y4++) {
-      for (var x4 = 0; x4 < W; x4++) {
+
+    /* 3. vertical blur pass (same solid rule), then emissive re-max:
+       a source tile's own pixel must never average BELOW its glow. */
+    for (var y3 = py0; y3 <= py1; y3++) {
+      var row3 = y3 * W;
+      for (var x3 = px0; x3 <= px1; x3++) {
+        var c3 = row3 + x3, cs3 = solidBits[c3];
         var s2R = 0, s2G = 0, s2B = 0, n2 = 0;
-        for (var k2 = -R; k2 <= R; k2++) {
-          var yi = y4 + k2;
-          if (yi < 0 || yi >= H) { continue; }
-          var q2 = (yi * W + x4) * 4;
-          s2R += buf[q2]; s2G += buf[q2 + 1]; s2B += buf[q2 + 2]; n2++;
+        for (var k2 = -BLUR_R; k2 <= BLUR_R; k2++) {
+          var yi = y3 + k2;
+          if (yi < cy0 || yi > cy1) { continue; }
+          var si2 = yi * W + x3;
+          if (cs3 === 0 && solidBits[si2] !== 0) { continue; }
+          var q2 = si2 * 4;
+          s2R += hOut[q2]; s2G += hOut[q2 + 1]; s2B += hOut[q2 + 2]; n2++;
         }
-        var o2 = (y4 * W + x4) * 4;
-        d[o2] = s2R / n2; d[o2 + 1] = s2G / n2; d[o2 + 2] = s2B / n2;
+        var o3 = c3 * 4;
+        var vR = s2R / n2, vG = s2G / n2, vB = s2B / n2;
+        if (emisKind[c3]) {
+          if (emisR[c3] > vR) { vR = emisR[c3]; }
+          if (emisG[c3] > vG) { vG = emisG[c3]; }
+          if (emisB[c3] > vB) { vB = emisB[c3]; }
+        }
+        out[o3] = vR; out[o3 + 1] = vG; out[o3 + 2] = vB; out[o3 + 3] = 255;
       }
     }
-    ctx.putImageData(src, 0, 0);
+
+    /* 4. upload only the dirty rect */
+    ctx.putImageData(S.lightImg, 0, 0,
+                     px0, py0, px1 - px0 + 1, py1 - py0 + 1);
     S.lightTex.refresh();
   }
 
@@ -1775,16 +1900,79 @@
     var y0 = Math.max(0, ty - R2), y1 = Math.min(WORLD_H - 1, ty + R2);
     sweepRGB(torchR, torchG, torchB, x0, y0, x1, y1);
     S.heldTorchAt = [tx, ty];
-    paintLight(S);
+    /* compose only the held-torch window + blur halo (was full-map) */
+    paintLight(S, { x0: x0, y0: y0, x1: x1, y1: y1 });
   }
 
   function relight(S) {
+    rebuildSolidBits(0, 0, WORLD_W - 1, WORLD_H - 1);
     computeSkyLight();
     computeTorchField(S && S.time ? S.time.now : 0);
     /* geometry changed: any held-torch window is stale — drop it so
        the next frame rebuilds from the fresh field */
     S.heldTorchAt = null; S.heldSnap = null;
     paintLight(S);
+  }
+
+  /* ---- windowed local relight: dig/place/torch-expiry ---------------
+     A dig/place changes light in a radius = light reach (~22 tiles)
+     around the changed column. Full-world sweeps made rapid digging
+     relight the ENTIRE 512x256 field per block (the top perf hit).
+     Window approach (same trick as the held torch):
+       1. snapshot skyLight + torch RGB + emissive in a W_R box
+       2. re-seed the sky column seeds INSIDE the box only (open-sky
+          columns re-lit to 255 down to first solid), re-seed torch
+          tiles inside the box, then sweep INSIDE the box
+       3. sweep uses max() so borders blend into the untouched field
+       4. paintLight(zone) composites only the box + blur halo
+     Sky needs special handling: a dig that opens a shaft to the sky
+     lights the whole column; seeding per-column inside the box covers
+     exactly that. */
+  var W_R = 24;   /* window radius: > torch reach (21) + margin */
+
+  function windowRelight(S, cx, cy) {
+    ensureTorchBufs();
+    heldRestore(S);            /* undo held-torch window first: field
+                                  must be the persisted base */
+    var x0 = Math.max(0, cx - W_R), x1 = Math.min(WORLD_W - 1, cx + W_R);
+    var y0 = Math.max(0, cy - W_R), y1 = Math.min(WORLD_H - 1, cy + W_R);
+
+    /* geometry changed inside the window: refresh the blur mask there
+       BEFORE sky seeding reads it */
+    rebuildSolidBits(x0, y0, x1, y1);
+
+    /* 1. zero + re-seed INSIDE the window */
+    for (var y = y0; y <= y1; y++) {
+      var row = y * WORLD_W;
+      for (var x = x0; x <= x1; x++) {
+        var i = row + x;
+        skyLight[i] = 0;
+        torchR[i] = 0; torchG[i] = 0; torchB[i] = 0;
+        emisR[i] = 0; emisG[i] = 0; emisB[i] = 0; emisKind[i] = 0;
+      }
+    }
+    /* sky seeds: per column, scan from WORLD TOP to first solid (same
+       rule as computeSkyLight), then light the non-solid cells of that
+       column that fall INSIDE the window. A dig can only open a shaft
+       where it dug (inside the window), so above-window cells keep
+       their already-correct values. */
+    for (var x2 = x0; x2 <= x1; x2++) {
+      for (var y2 = 0; y2 <= y1; y2++) {
+        var i2 = y2 * WORLD_W + x2;
+        if (solidBits[i2]) { break; }        /* first solid ends the column */
+        if (y2 >= y0) { skyLight[i2] = 255; }
+      }
+    }
+    /* torch + emissive seeds inside the window (same rules as full) */
+    seedTorches(S.time ? S.time.now : 0, x0, y0, x1, y1);
+
+    /* 2. sweeps inside the window. Border cells keep their incoming
+       values from outside (max-only), so pools blend seamlessly. */
+    sweepScalar(skyLight, x0, y0, x1, y1, AIR_F, 0.40);
+    sweepRGB(torchR, torchG, torchB, x0, y0, x1, y1);
+
+    /* 3. compose just the window + halo */
+    paintLight(S, { x0: x0, y0: y0, x1: x1, y1: y1 });
   }
 
 
@@ -2280,9 +2468,11 @@
       if (wm) { wL.putTileAt(wm.atlasIndex, x, ly); }
       else { wL.removeTileAt(x, ly); }
     }
-    /* world geometry changed -> light paths changed. Full relight is a
-       BFS over 512x256 (a few ms); per-dig that is imperceptible. */
-    relight(S);
+    /* world geometry changed -> light paths changed. Windowed relight:
+       only the ~50x50 box around the changed column re-sweeps (the
+       full-world BFS per dig was the top perf hit during rapid
+       digging). Full relight stays for world create / torch sweep. */
+    windowRelight(S, x, Math.floor(S.player.y / TILE));
   }
 
   function hpChange(S, d) {
@@ -2493,9 +2683,17 @@
          when the player crosses a tile boundary) */
       heldTorchRelight(this);
     } else if (this.heldTorchAt) {
-      /* torch just unequipped: restore the field window */
+      /* torch just unequipped: restore the field window and recompose
+         just that window (was full-map repaint) */
+      var ha = this.heldTorchAt, hr = HELD_R + 1;
       heldRestore(this);
-      paintLight(this);
+      paintLight(this, { x0: ha[0] - hr, y0: ha[1] - hr,
+                         x1: ha[0] + hr, y1: ha[1] + hr });
+    }
+    /* torch fuel: frame-level expiry check so gutter-out lands within
+       one frame of the clock (3s backstop sweep stays for safety) */
+    if (nextTorchExpiry !== Infinity && this.time.now >= nextTorchExpiry) {
+      gutterTorches(this);
     }
     /* day/night clock advances continuously; ambient + sky follow it */
     this.lightT = (this.lightT || 0) + dt;
@@ -2505,8 +2703,10 @@
       this.hudT = 0; this.hudDirty = false;
       drawSky(this);
       drawHotbar(this);
-      /* ambient re-tint only (no BFS) — putImageData of 512x256 */
-      paintLight(this);
+      /* ambient re-tint only (no BFS) — composed for the camera
+         viewport only (~8% of the map; full-map putImageData was the
+         steady-state CPU cost every 50ms) */
+      paintLight(this, 'view');
     }
 
     /* dig highlight + damage fill */
