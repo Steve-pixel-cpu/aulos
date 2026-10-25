@@ -2686,12 +2686,15 @@ var dayCount = 0;               /* nights elapsed — drives moon phase (8-day c
     if (S.bloodMoon && dayT > 0.5 && dayT < 0.99) {
       ctx.fillStyle = 'rgba(140,20,24,0.30)';
       ctx.fillRect(0, 0, w, h);
+      /* blood-moon banner BELOW the crystal counter (which owns w/2,34 —
+         USER: "血月之夜和水晶计数的UI重叠了"); also dodges the moon disc,
+         which peaks at cyS≈h*0.06 + 26px glow. 62px is clear of both. */
       ctx.font = 'bold 15px sans-serif';
       ctx.textAlign = 'center';
       ctx.lineWidth = 3; ctx.strokeStyle = '#000';
       ctx.fillStyle = '#ff6b5e';
-      ctx.strokeText('☂ 血 月 之 夜', w / 2, 30);
-      ctx.fillText('☂ 血 月 之 夜', w / 2, 30);
+      ctx.strokeText('☂ 血 月 之 夜', w / 2, 62);
+      ctx.fillText('☂ 血 月 之 夜', w / 2, 62);
       ctx.textAlign = 'left';
       {
         ctx.fillStyle = 'rgba(255,60,50,0.35)';
