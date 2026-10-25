@@ -135,6 +135,13 @@
     this.load.image('wraith1', 'assets/tiny/wraith1.png?v=' + ASSET_REV);
     this.load.image('kraken', 'assets/tiny/kraken0.png?v=' + ASSET_REV);   /* kraken: lava-depth apex */
     this.load.image('kraken1', 'assets/tiny/kraken1.png?v=' + ASSET_REV);
+    /* FLYING SHOOTERS: willowisp (cave tier) + flameskull (lava tier).
+       Both keep distance and spit slow projectiles at the player —
+       they make torch-lit caves feel hunted, not just dark. */
+    this.load.image('spitter', 'assets/tiny/willowisp0.png?v=' + ASSET_REV);
+    this.load.image('spitter1', 'assets/tiny/willowisp1.png?v=' + ASSET_REV);
+    this.load.image('spitterF', 'assets/tiny/flameskull0.png?v=' + ASSET_REV);
+    this.load.image('spitterF1', 'assets/tiny/flameskull1.png?v=' + ASSET_REV);
     /* THE BOSS: 64px kraken-lord composite (head 2.5x + central eye +
        6 radial tentacles), procedurally assembled from the same CC0
        parts. Guards the altar when the player arrives with crystals. */
@@ -256,8 +263,8 @@
     /* Terraria underground backdrop under the wall layer with its top
        edge EXACTLY tracking each column's surfaceY. TEXTURED now: the
        old flat 0x241d16 fill read as a "black block" at cave mouths —
-       we stamp the tileset's own DIRT WALL texture (atlasIndex 200,
-       see wallTex in tiles.meta.js) instead, Terraria-style.
+       we stamp the tileset's own DIRT WALL texture (see wallTex in
+       tiles.meta.js) instead, Terraria-style.
        Still baked once into a texture (zero per-frame cost,
        world-attached, never jitters, never peeks above terrain). */
     (function () {
@@ -504,24 +511,14 @@
     this.time.addEvent({
       delay: 400, loop: true, callback: function () { bugBrain(S); }
     });
-    /* torch fuel sweep: gutter expired torches, puff smoke, relight */
+    /* torch fuel sweep: gutter expired torches, puff smoke, relight.
+       Runs at 3s as a BACKSTOP; the update() loop checks
+       nextTorchExpiry each frame so the actual gutter-out happens
+       within a frame of expiry (the 3s poll alone left dead torches
+       lit for up to 3s and out of sync with the fuel HUD). */
     this.time.addEvent({
       delay: 3000, loop: true, callback: function () {
-        var now = S.time.now, expired = false;
-        for (var k in torchLife) {
-          if (torchLife[k] < now) {
-            var ti = k | 0;
-            if (world.tile[ti] === 12) {
-              world.tile[ti] = 0;
-              refreshStrip(S, ti % WORLD_W);
-              burst(S, (ti % WORLD_W) * TILE + 16,
-                Math.floor(ti / WORLD_W) * TILE + 16, 0x555555, 6);
-            }
-            delete torchLife[k];
-            expired = true;
-          }
-        }
-        if (expired) { relight(S); }
+        gutterTorches(S);
       }
     });
     this.physics.add.overlap(this.player, this.bugs, function (pl, bug) {
@@ -556,17 +553,79 @@
     });
     this.physics.add.collider(this.bugs, this.solids);
 
-    /* ---- flag & chests ---- */
+    /* ---- altar & chests ---- */
+    /* ALTAR STRUCTURE: the bare flag read as "a random pole in the
+       dirt". Build a proper shrine around it at boot (writes the real
+       tilemap, so digging/collision/lighting all behave):
+         - 7-wide obsidian platform (unbreakable-feel, dark slab)
+         - marble-brick pillars 3 high at both ends, amethyst crowns
+           (light 0.35 purple beacons, visible across the biome)
+         - carved sandstone rune row inlaid in the platform front
+       The flag stays the ritual core at the center. */
+    var ax = world.flag[0], ay = world.flag[1];       /* flag tile */
+    var put = function (tx2, ty2, id2) {
+      var i2 = ty2 * WORLD_W + tx2;
+      if (tx2 < 1 || tx2 >= WORLD_W - 1 || ty2 < 1 || ty2 >= WORLD_H - 1) { return; }
+      world.tile[i2] = id2;
+      var m2 = TILEMETA[id2];
+      if (m2) { this.tiles.putTileAt(m2.atlasIndex, tx2, ty2); }
+    }.bind(this);
+    for (var px2 = ax - 3; px2 <= ax + 3; px2++) {
+      put(px2, ay + 1, 20);                            /* obsidian slab */
+      put(px2, ay, px2 === ax ? 0 : 44);               /* keep center open for the flag, cobble elsewhere */
+    }
+    [[ax - 3, 0], [ax + 3, 0]].forEach(function (cx2) {
+      var bx2 = cx2[0];
+      put(bx2, ay - 1, 58);                            /* marble brick pillar */
+      put(bx2, ay - 2, 58);
+      put(bx2, ay - 3, 42);                            /* amethyst crown */
+      /* support under the pillar base */
+      put(bx2, ay + 1, 20);
+    });
+    put(ax - 2, ay, 68);                               /* carved sandstone runes */
+    put(ax + 2, ay, 68);
+    put(ax - 1, ay, 69);
+    put(ax + 1, ay, 69);
+    /* rebuild collision + relight for the changed tiles */
+    for (var rc = ax - 3; rc <= ax + 3; rc++) { rebuildSolids(this, rc); }
+    relight(this);
     this.flagSpr = this.add.image(
-      world.flag[0] * TILE + 16, world.flag[1] * TILE + 32, 'flag')
+      ax * TILE + 16, ay * TILE + 32, 'flag')
       .setOrigin(0.5, 1).setScale(1.4).setDepth(9);
-    /* flag is not a Light2D target — keep it unlit so the goal stays
-       visible from a distance, like a landmark */
+    /* ritual pillar of light above the flag: ADD-blend gradient beam,
+       slowly pulsing — reads as "something sleeps here" from any cave
+       mouth in the biome. Depth 8 = under the lightmap (40) so beam
+       brightness still scales with cave darkness; ADD blend keeps it
+       visible without a halo sticker. */
+    var beamCv = document.createElement('canvas');
+    beamCv.width = 16; beamCv.height = 96;
+    var bctx = beamCv.getContext('2d');
+    var bg2 = bctx.createLinearGradient(0, 96, 0, 0);
+    bg2.addColorStop(0, 'rgba(186,120,255,0.55)');
+    bg2.addColorStop(0.5, 'rgba(150,90,255,0.22)');
+    bg2.addColorStop(1, 'rgba(120,60,255,0)');
+    bctx.fillStyle = bg2;
+    bctx.fillRect(0, 0, 16, 96);
+    var beamTex = this.textures.addCanvas('altarBeam', beamCv);
+    this.beamSpr = this.add.image(ax * TILE + 16, ay * TILE + 16, 'altarBeam')
+      .setOrigin(0.5, 1).setDepth(8)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    this.tweens.add({
+      targets: this.beamSpr, alpha: { from: 0.55, to: 1 },
+      duration: 1600, yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+    });
 
     /* clouds are WORLD scenery now: the 'clouds' band in BK_DEFS is a
        map-bound TileSprite (scrollFactor 1) like every other backdrop
        layer — the old individually-parallaxed cloud sprites are gone
        (they moved on jumps/resizes, which is what we're eliminating). */
+
+    /* Terraria-style backdrop lives in the DOM sky overlay (drawSky),
+       NOT as Phaser objects: the world-space lightmap (depth 40 MULTIPLY)
+       would multiply screen-fixed sprites by the CAVE light under the
+       camera — painting mountains near-black and making them strobe as
+       you move. drawSkyBackdrop() draws them into eggSkyOverlay, which
+       sits UNDER the game canvas and is never light-multiplied. */
 
     /* Terraria-style backdrop lives in the DOM sky overlay (drawSky),
        NOT as Phaser objects: the world-space lightmap (depth 40 MULTIPLY)
@@ -733,26 +792,69 @@
        Tiny pixel roster — bug, bat, slime, winged bug, fire bat, plus
        eyelet/arachni cave natives. The Kraken Lord boss remains. */
     if (depth > 150) {
-      /* lava tier: fire bats + bugs */
-      kind = roll < 0.55 ? 'batF' : 'bug';
+      /* lava tier: fire bats, bugs + flameskull shooters */
+      kind = roll < 0.40 ? 'batF' : roll < 0.60 ? 'spitterF' : 'bug';
+      fly = kind === 'batF' || kind === 'spitterF';
     } else if (depth > 24) {
-      /* cave tier: slimes, winged bugs, small eyes, spiders */
-      kind = roll < 0.25 ? 'slime' : roll < 0.45 ? 'eyelet'
-        : roll < 0.65 ? 'arachni' : roll < 0.85 ? 'bugW' : 'bug';
+      /* cave tier: slimes, eyes, spiders + willowisp shooters */
+      kind = roll < 0.18 ? 'slime' : roll < 0.33 ? 'eyelet'
+        : roll < 0.48 ? 'arachni' : roll < 0.60 ? 'spitter'
+        : roll < 0.82 ? 'bugW' : 'bug';
+      fly = kind === 'eyelet' || kind === 'spitter' || kind === 'bugW';
     } else if (dayT > 0.5) {
-      /* NIGHT surface: bats join, eyelets scout */
-      kind = roll < 0.45 ? 'bug' : roll < 0.75 ? 'bat' : 'eyelet';
-      fly = kind === 'bat' || kind === 'eyelet';
+      /* NIGHT surface: bats join, eyelets scout, wisps haunt */
+      kind = roll < 0.35 ? 'bug' : roll < 0.60 ? 'bat' : roll < 0.80 ? 'eyelet' : 'spitter';
+      fly = kind === 'bat' || kind === 'eyelet' || kind === 'spitter';
     } else {
-      kind = roll < 0.6 ? 'bug' : 'bat';
-      fly = roll >= 0.6;
+      kind = roll < 0.6 ? 'bug' : roll < 0.9 ? 'bat' : 'spitter';
+      fly = kind !== 'bug';
     }
-    var by = fly ? p.y - 120 - Math.random() * 80 : surfacePx(S, bx) - 20;
-    /* underground: spawn at the player's depth so cave fights happen
-       where the player actually digs, not on the far-away surface */
-    if (!fly && depth > 24) {
-      by = p.y + (Math.random() - 0.5) * 120;
-      by = Math.max(TILE * 4, Math.min(WORLD_H * TILE - 64, by));
+    var by;
+    if (cave) {
+      /* CAVE SPAWNS: scan around the PLAYER for an air pocket 6-14
+         tiles out — BOTH fly and ground kinds. The old fixed offsets
+         put fly anchors in the ceiling rock (player-120px) and ground
+         spawns in the tunnel WALL (±60px at 300-420px sideways): the
+         solids collider pinned those bodies inside stone forever —
+         "spawned but never seen" (caves looked empty). Ground kinds
+         additionally require a solid floor tile beneath. */
+      var found = false;
+      for (var ring = 3; ring <= 7 && !found; ring++) {
+        var rad = ring * 2;                       /* 6..14 tiles out */
+        for (var ang = 0; ang < 16 && !found; ang++) {
+          var th = ang / 16 * Math.PI * 2 + ring * 0.37;
+          var cxT = Math.floor(p.x / TILE) + Math.round(Math.cos(th) * rad);
+          var cyT = Math.floor(p.y / TILE) + Math.round(Math.sin(th) * rad);
+          if (cxT < 2 || cxT >= WORLD_W - 2 || cyT < 2 || cyT >= WORLD_H - 2) { continue; }
+          if (world.tile[cyT * WORLD_W + cxT] !== 0) { continue; }
+          /* 1x1 sealed pocket can't fit a body: need a second open side */
+          if (world.tile[(cyT + 1) * WORLD_W + cxT] !== 0 &&
+              world.tile[(cyT - 1) * WORLD_W + cxT] !== 0 &&
+              world.tile[cyT * WORLD_W + cxT + 1] !== 0 &&
+              world.tile[cyT * WORLD_W + cxT - 1] !== 0) { continue; }
+          if (!fly && world.tile[(cyT + 1) * WORLD_W + cxT] === 0) { continue; }
+          bx = cxT * TILE + 16; by = cyT * TILE + 16;
+          found = true;
+        }
+      }
+      if (!found) { return; }   /* solid rock all around: skip this roll */
+    } else {
+      by = fly ? p.y - 120 - Math.random() * 80 : surfacePx(S, bx) - 20;
+      /* FLYING surface spawns: keep clear of tree canopies — scan a
+         small spiral for open air like the cave path. */
+      if (fly) {
+        for (var ring2 = 0; ring2 < 6; ring2++) {
+          var rad2 = 1 + ring2 * 2;
+          var ok2 = true;
+          var tx2 = Math.floor(bx / TILE) + Math.round(Math.cos(ring2 * 1.1) * rad2);
+          var ty2 = Math.floor(by / TILE) + Math.round(Math.sin(ring2 * 1.1) * rad2);
+          if (tx2 < 1 || tx2 >= WORLD_W - 1 || ty2 < 1) { continue; }
+          if (world.tile[ty2 * WORLD_W + tx2] === 0) {
+            bx = tx2 * TILE + 16; by = ty2 * TILE + 16;
+            break;
+          }
+        }
+      }
     }
     var b = S.bugs.create(bx, by, kind).setScale(1.3);
     b.kind = kind;
@@ -844,6 +946,8 @@
     if (kind === 'eye') { b.tint = 0xd9a6ff; }    /* purple gaze */
     if (kind === 'wraith' || kind === 'banshee') { b.tint = 0xb8c8ff; b.setAlpha(0.75); }
     if (kind === 'krtentacle') { b.tint = 0x6fa3d9; }
+    if (kind === 'spitter') { b.tint = 0xc8f4ff; b.setScale(2.6); b.body.setSize(12, 12); }
+    if (kind === 'spitterF') { b.tint = 0xffc27a; b.setScale(2.6); b.body.setSize(12, 12); }
     if (kind === 'willowisp' || kind === 'flameskull') { b.tint = 0xffc86b; } /* ember glow */
     if (kind === 'maneater') { b.tint = 0x9fe06a; } /* hungry green */
     if (kind === 'purpleworm') { b.tint = 0xd98fd9; } /* worm purple */
@@ -1114,6 +1218,16 @@
         return;
       }
       var dx = px - b.x, dy = py - b.y;
+      /* DESPAWN far strays: ground mobs pile against walls and pin the
+         spawn cap full forever ("caves never spawn" — 10 zombies stuck
+         in a corner 100 tiles away). Terraria rule: anything 1000px+
+         from the player is gone; the cap recycles and fresh spawns
+         appear where the player actually is. Bosses exempt. */
+      if (!b.isBoss && (dx * dx + dy * dy) > 1000000) {
+        if (b.glow && b.glow.active) { b.glow.destroy(); }
+        b.destroy();
+        return;
+      }
       var dist = Math.hypot(dx, dy);
       b.setFlipX(dx < 0);
       var k = b.kind;
@@ -1144,7 +1258,7 @@
         b.body.setAllowGravity(false);
         if (dist < 90 && Math.random() < 0.05) {
           b.x = px + (Math.random() < 0.5 ? -1 : 1) * (500 + Math.random() * 200);
-          b.y = p.y + (Math.random() - 0.5) * 160;
+          b.y = py + (Math.random() - 0.5) * 160;
           burst(S, b.x, b.y, 0xd9a6ff, 4);     /* blink-out puff */
         }
         if (dist < 260) {
@@ -1199,6 +1313,32 @@
         }
         if (Math.random() < 0.06) {
           burst(S, b.x, b.y, 0xff8844, 2);   /* ember trail */
+        }
+      } else if (k === 'spitter' || k === 'spitterF') {
+        /* FLYING SHOOTER: hovers at a stand-off band (180-320px),
+           strafing sideways; spits a slow aimed projectile every
+           ~1.6s when the player is in sight range. Killable by one
+           bolt like every small mob - the threat is the projectile,
+           not the body. */
+        b.body.setAllowGravity(false);
+        var isF = k === 'spitterF';
+        var band = dist < 180 ? -1 : (dist > 320 ? 1 : 0);   /* approach/hold/back off */
+        var spSp = isF ? 95 : 75;
+        var vx = (dx / (dist || 1)) * spSp * band;
+        var vy = (dy / (dist || 1)) * spSp * band
+                 + Math.sin(S.time.now / 500 + b.x) * 28;    /* gentle bob */
+        /* strafe: circle the player while holding the band */
+        if (band === 0) {
+          var side2 = b.x < px ? 1 : -1;
+          vx = side2 * spSp * 0.8;
+          vy = Math.sin(S.time.now / 500 + b.x) * 34;
+        }
+        b.setVelocity(vx, vy);
+        /* fire cycle: spaced salvos while the player is in range */
+        if (!b.spitLast) { b.spitLast = S.time.now; }
+        if (S.time.now - b.spitLast > (isF ? 1300 : 1700) && dist < 460) {
+          b.spitLast = S.time.now;
+          spitShot(S, b, isF);
         }
       } else if (b.fly) {
         /* bat: within 320px, dive at the player; otherwise hover-wander */
@@ -1318,16 +1458,15 @@
     refreshStrip(S, tx);
     rebuildSolids(S, tx);     /* placed block must be solid to stand on */
     if (sel.id === 12 || (TILEMETA[sel.id] && TILEMETA[sel.id].light > 0)) {
-      addTorchLight(S);      /* any light-emitting block relights */
-      if (sel.id === 12) { torchLife[i] = S.time.now + diff().torchLife; }
+      /* torch/lava/crystal placed: refreshStrip already ran a windowed
+         relight over the area - the placed tile's seed is inside that
+         window, so no full relight needed (the old full relight here
+         was redundant work per placement) */
+      if (sel.id === 12) {
+        torchLife[i] = S.time.now + diff().torchLife;
+        if (torchLife[i] < nextTorchExpiry) { nextTorchExpiry = torchLife[i]; }
+      }
     }
-  }
-  function addTorchLight(S) {
-    /* torch tile placed: the colored lightmap handles EVERYTHING now
-       (occlusion-correct pool, warm hue falloff, smooth blur). No glow
-       sticker on top - the old ADD-blend lampGlow sprite double-lit
-       the world and ignored walls. */
-    relight(S);
   }
   /* ---- shooting (ported from old game.js: K fires a bolt, bugs die) ---- */
   var BULLET_V = 780, SHOOT_CD = 170, lastShot = 0;
@@ -1387,6 +1526,30 @@
     b.setVelocity(aimX * BULLET_V, aimY * BULLET_V);
     /* muzzle flash */
     burst(S, mx, my, 0x5ab4ff, 3);
+  }
+
+  /* enemy projectile: slow glowing orb from a spitter. Reuses the
+     bolt group (same collider vs world solids, same cleanup) but is
+     tinted + flagged hostile so it can hurt the PLAYER and can NEVER
+     hurt other enemies. Speed 240 px/s - dodgeable at walking pace. */
+  function spitShot(S, b, isF) {
+    ensureBulletTexture(S);
+    var p = S.player;
+    var dx = p.x - b.x, dy = (p.y - 30) - b.y;
+    var len = Math.hypot(dx, dy) || 1;
+    var sp = isF ? 280 : 240;
+    var pr = S.bullets.create(b.x, b.y, 'bolt');
+    pr.setDepth(45);
+    pr.setBlendMode(Phaser.BlendModes.ADD);
+    pr.hostile = true;                       /* hurts player, not bugs */
+    pr.setTint(isF ? 0xff8a3d : 0x9ff5b3);   /* ember orange / wisp green */
+    pr.setScale(1.25);
+    pr.setRotation(Math.atan2(dy, dx));
+    pr.body.setAllowGravity(false);
+    pr.body.setSize(12, 12);
+    pr.setVelocity((dx / len) * sp, (dy / len) * sp);
+    SFX.spit ? SFX.spit() : 0;
+    burst(S, b.x, b.y, isF ? 0xff8a3d : 0x9ff5b3, 3);
   }
 
   function isSolid(x, y) {
@@ -1534,6 +1697,16 @@
     return t;
   })();
   var torchR = null, torchG = null, torchB = null;
+  /* emissive buffers: light-SOURCE tiles render at full intensity
+     (their own pixel in the lightmap = their lightColor). Without this,
+     a lava pool at the bottom of a dark cave multiplied down to its
+     0.4-strength seed and became invisible - the "light sources you
+     can't see" problem. emisKind: 0 = not a source, 1 = torch,
+     2 = strong glow (>=0.35), 3 = faint glow (<0.35); rebuilt by
+     seedTorches alongside the torch seeds so emissive and propagation
+     stay in lock-step. */
+  var emisR = null, emisG = null, emisB = null;
+  var emisKind = null;
   var torchField = null;   /* mono snapshot for held-torch window logic */
 
   function ensureTorchBufs() {
@@ -1543,26 +1716,37 @@
       torchG = new Uint8ClampedArray(n);
       torchB = new Uint8ClampedArray(n);
       torchField = new Uint8Array(n);
+      emisR = new Uint8Array(n);
+      emisG = new Uint8Array(n);
+      emisB = new Uint8Array(n);
+      emisKind = new Uint8Array(n);
     }
   }
 
   function resetTorchField() {
     ensureTorchBufs();
     torchR.fill(0); torchG.fill(0); torchB.fill(0); torchField.fill(0);
+    emisR.fill(0); emisG.fill(0); emisB.fill(0); emisKind.fill(0);
   }
 
-  function seedTorches(now) {
-    for (var i = 0; i < world.tile.length; i++) {
-      var t = world.tile[i];
-      var m = t ? TILEMETA[t] : null;
-      var lum = m && m.light ? m.light : 0;
-      if (t === 12) {              /* TORCH: warm full-strength */
+  function seedTorches(now, x0, y0, x1, y1) {
+    if (x0 === undefined) { x0 = 0; y0 = 0; x1 = WORLD_W - 1; y1 = WORLD_H - 1; }
+    for (var y = y0; y <= y1; y++) {
+      var row = y * WORLD_W;
+      for (var x = x0; x <= x1; x++) {
+        var i = row + x;
+        var t = world.tile[i];
+        var m = t ? TILEMETA[t] : null;
+        var lum = m && m.light ? m.light : 0;
+        if (t === 12) {              /* TORCH: warm full-strength */
         /* fuel check: worldgen torches (no registry entry) burn eternal;
            player-placed ones gutter out when their clock runs down */
         if (torchLife[i] && torchLife[i] < now) { continue; }
         torchR[i] = TORCH_R; torchG[i] = TORCH_G; torchB[i] = TORCH_B;
         torchField[i] = 255;
-      } else if (lum > 0) {
+        emisR[i] = TORCH_R; emisG[i] = TORCH_G; emisB[i] = TORCH_B;
+        emisKind[i] = 1;
+        } else if (lum > 0) {
         /* data-driven glow: crystal/coral/lava/mushroom etc. Terraria-style
            COLORED light: meta may carry lightColor:[r,g,b]; without one,
            fall back to the warm torch tint (scaled), same as before. */
@@ -1572,10 +1756,27 @@
         } else {
           sr = TORCH_R; sg = TORCH_G; sb = TORCH_B * 1.3;
         }
-        torchR[i] = Math.round(sr * lum);
-        torchG[i] = Math.round(sg * lum);
-        torchB[i] = Math.round(sb * lum);
-        torchField[i] = Math.round(255 * lum);
+        /* ORE beacons: gold(10) / diamond(11) / amethyst(42) light at
+           FULL torch strength in their own color - the deep-cave
+           amethyst objective must glow across a cave like a placed
+           torch, not a faint 0.35 tint. Everything else keeps the
+           meta strength (decorative glows x1.25 boost below). */
+        var oreGlow = (t === 10 || t === 11 || t === 42);
+        var lumSeed = oreGlow ? 1
+          : (lum < 0.35 ? Math.min(1, lum * 1.25) : lum);
+        torchR[i] = Math.round(sr * lumSeed);
+        torchG[i] = Math.round(sg * lumSeed);
+        torchB[i] = Math.round(sb * lumSeed);
+        torchField[i] = Math.round(255 * lumSeed);
+        /* emissive self-illumination only for REAL light emitters
+           (lumSeed >= 0.35: torches, ores, lava, diamond, amethyst).
+           Decorative glows (coral, ice, mushroom) keep their tinted
+           pool but never light their own cell. */
+        if (lumSeed >= 0.35) {
+          emisR[i] = sr; emisG[i] = sg; emisB[i] = sb;
+          emisKind[i] = 2;
+        }
+      }
       }
     }
   }
@@ -1626,10 +1827,51 @@
     sweepRGB(torchR, torchG, torchB, 0, 0, WORLD_W - 1, WORLD_H - 1);
   }
 
+  /* gutter out expired torches: remove tile + smoke + windowed relight
+     (per torch, not per sweep) + track nextTorchExpiry so update()
+     can act on expiry within a frame (the 3s poll alone left dead
+     torches lit for up to 3s and out of sync with the fuel HUD) */
+  var nextTorchExpiry = Infinity;
+  function gutterTorches(S) {
+    if (!torchLife) { return; }
+    var now = S.time.now;
+    nextTorchExpiry = Infinity;
+    var dirty = false;
+    for (var k in torchLife) {
+      if (torchLife[k] < now) {
+        var ti = k | 0;
+        if (world.tile[ti] === 12) {
+          world.tile[ti] = 0;
+          refreshStrip(S, ti % WORLD_W);
+          burst(S, (ti % WORLD_W) * TILE + 16,
+            Math.floor(ti / WORLD_W) * TILE + 16, 0x555555, 6);
+          dirty = true;
+        }
+        delete torchLife[k];
+      } else if (torchLife[k] < nextTorchExpiry) {
+        nextTorchExpiry = torchLife[k];
+      }
+    }
+    return dirty;
+  }
+
   /* skyLight (Uint8/tile): 255 where open sky reaches a cell (air
      column down to the first solid tile), with a soft falloff into the
      first solid rows below the surface line. Static until geometry
      changes. */
+  /* solidBits: 1 per solid tile, 0 per air - the solid-aware blur's
+     occlusion mask. Rebuilt on every geometry change (relight /
+     windowRelight), reads world.tile via isSolid(). */
+  var solidBits = null;
+  function rebuildSolidBits(x0, y0, x1, y1) {
+    if (!solidBits) { solidBits = new Uint8Array(WORLD_W * WORLD_H); }
+    for (var y = y0; y <= y1; y++) {
+      for (var x = x0; x <= x1; x++) {
+        solidBits[y * WORLD_W + x] = isSolid(x, y) ? 1 : 0;
+    }
+    }
+  }
+
   function computeSkyLight() {
     skyLight = skyLight || new Uint8Array(WORLD_W * WORLD_H);
     skyLight.fill(0);
@@ -1648,6 +1890,11 @@
         skyLight[i] = 255;
       }
     }
+    /* BLEED: relax the sky field sideways through air, exactly like
+       the torch field (aulos-agent-1 restored this cave-mouth falloff;
+       HEAD had removed it). airF matches AIR_F so sky and torch pools
+       share ONE falloff feel at cave mouths. */
+    sweepScalar(skyLight, 0, 0, WORLD_W - 1, WORLD_H - 1, AIR_F, 0.40);
   }
 
   /* scalar variant of the four-sweep relaxation (see sweepRGB): each
@@ -1683,17 +1930,29 @@
   /* compose sky + torch into the lightmap canvas. BRIGHTNESS lives in
      RGB (alpha stays 255): Phaser MULTIPLY multiplies RGB and IGNORES
      alpha (alpha-encoded maps were a no-op - the "torches didn't glow"
-     bug). Composition per channel: out = max(surfaceTint, torchRGB),
-     then a gamma LUT lifts dim values so light pools read bright and
-     shadow edges stay soft instead of muddy. */
-  function paintLight(S) {
+     bug). Composition per channel: out = max(surfaceTint, torchRGB,
+     emissive), then a gamma LUT lifts dim values so light pools read
+     bright and shadow edges stay soft instead of muddy.
+
+     zone: null = full map (create / full relight); 'view' = camera
+     viewport only (the 20 Hz ambient tick - visible tiles are ~8% of
+     the map, so clipping cuts the CPU pixel pipeline ~12x); a tile
+     rect {x0,y0,x1,y1} = local window relights (dig/place/torch).
+     All buffers are persistent (no per-call 512KB allocations - the
+     old version allocated a scratch canvas + typed array every 50ms,
+     20 Hz GC pressure). lightComp always holds the LATEST composed
+     value of every pixel, so a zone blur can read correct unblurred
+     inputs just outside its border: no seams. */
+  var BLUR_R = 2;   /* box-blur radius in tiles */
+
+  function paintLight(S, zone) {
     var day = dayFactor(dayT);
     /* surface tint: neutral white at noon, warm gold at golden hour,
        cool moonlight blue at night. Lerp in RGB between keyed stops. */
     var noon   = [255, 250, 242];   /* high sun: near-neutral */
     var golden = [255, 216, 156];   /* sunrise / sunset */
     var night  = [104, 122, 158];   /* moonlight (cool, dim) */
-    var surf, cave;
+    var surf;
     if (day > 0.35) {
       var f = (day - 0.35) / 0.65;             /* 0..1 toward noon */
       surf = lerp3(golden, noon, f);
@@ -1713,79 +1972,122 @@
        surface while soil texture and wall tiles stay visible. */
     var cR = 62, cG = 54, cB = 44;
 
+    var W = WORLD_W, H = WORLD_H;
+    if (zone === 'view') {
+      var vw = S.cameras.main.worldView;
+      zone = { x0: Math.floor(vw.x / TILE), y0: Math.floor(vw.y / TILE),
+               x1: Math.ceil((vw.x + vw.width) / TILE),
+               y1: Math.ceil((vw.y + vw.height) / TILE) };
+    }
+    /* zx/zy = the zone whose DISPLAY must be correct;
+       px/py = blur+put region (zone + BLUR_R halo, so the ring just
+       outside a window relight also gets re-blurred from fresh
+       inputs);  cx/cy = compose region (needs 2*BLUR_R reach for the
+       separable h+v kernels). */
+    var zx0 = 0, zy0 = 0, zx1 = W - 1, zy1 = H - 1;
+    if (zone) {
+      zx0 = Math.max(0, zone.x0); zy0 = Math.max(0, zone.y0);
+      zx1 = Math.min(W - 1, zone.x1); zy1 = Math.min(H - 1, zone.y1);
+    }
+    var px0 = Math.max(0, zx0 - BLUR_R), py0 = Math.max(0, zy0 - BLUR_R),
+        px1 = Math.min(W - 1, zx1 + BLUR_R), py1 = Math.min(H - 1, zy1 + BLUR_R);
+    var cx0 = Math.max(0, zx0 - 2 * BLUR_R), cy0 = Math.max(0, zy0 - 2 * BLUR_R),
+        cx1 = Math.min(W - 1, zx1 + 2 * BLUR_R), cy1 = Math.min(H - 1, zy1 + 2 * BLUR_R);
+
     var ctx = S.lightCv.getContext('2d');
-    var img = ctx.createImageData(WORLD_W, WORLD_H);
-    var px = img.data;
     if (!S.gammaLUT || S.gammaLUT.day !== day.toFixed(3)) {
       S.gammaLUT = makeGammaLUT(day);
     }
     var lut = S.gammaLUT.t;
-    for (var i = 0, p = 0; i < WORLD_W * WORLD_H; i++, p += 4) {
-      var s = skyLight[i] / 255;                /* 0..1 sky reach */
-      var baseR = cR + (sR - cR) * s,
-          baseG = cG + (sG - cG) * s,
-          baseB = cB + (sB - cB) * s;
-      /* per-channel max with the colored torch field; the TORCH side
-         uses its own brighter LUT (see TORCH_LUT) so pools stay vivid
-         while the ambient keeps the softer curve */
-      var tR = torchR[i], tG = torchG[i], tB = torchB[i];
-      var oR = baseR > tR ? lut[baseR | 0] : TORCH_LUT[tR],
-          oG = baseG > tG ? lut[baseG | 0] : TORCH_LUT[tG],
-          oB = baseB > tB ? lut[baseB | 0] : TORCH_LUT[tB];
-      px[p]     = oR;
-      px[p + 1] = oG;
-      px[p + 2] = oB;
-      px[p + 3] = 255;
+    /* persistent buffers:
+       lightComp - composed (pre-blur) RGBA for the WHOLE map
+       hOut      - horizontal blur scratch
+       lightImg  - final blur output ImageData (putImageData source)
+       All full-map, allocated once. */
+    if (!S.lightComp) { S.lightComp = new Uint8ClampedArray(W * H * 4); }
+    if (!S.hOut)      { S.hOut = new Uint8ClampedArray(W * H * 4); }
+    if (!S.lightImg)  { S.lightImg = ctx.createImageData(W, H); }
+    var comp = S.lightComp, hOut = S.hOut, out = S.lightImg.data;
+
+    /* 1. compose: ambient(sky-day tint) vs torch (own brighter LUT)
+       vs emissive (source tiles at display intensity) - per channel. */
+    for (var y = cy0; y <= cy1; y++) {
+      var row = y * W;
+      for (var x = cx0; x <= cx1; x++) {
+        var i = row + x, p4 = i * 4;
+        var s = skyLight[i] / 255;                /* 0..1 sky reach */
+        var baseR = cR + (sR - cR) * s,
+            baseG = cG + (sG - cG) * s,
+            baseB = cB + (sB - cB) * s;
+        var tR = TORCH_LUT[torchR[i]],
+            tG = TORCH_LUT[torchG[i]],
+            tB = TORCH_LUT[torchB[i]];
+        var oR = lut[baseR | 0], oG = lut[baseG | 0], oB = lut[baseB | 0];
+        if (tR > oR) { oR = tR; }
+        if (tG > oG) { oG = tG; }
+        if (tB > oB) { oB = tB; }
+        var eR = emisR[i], eG = emisG[i], eB = emisB[i];
+        if (eR > oR) { oR = eR; }
+        if (eG > oG) { oG = eG; }
+        if (eB > oB) { oB = eB; }
+        comp[p4] = oR; comp[p4 + 1] = oG; comp[p4 + 2] = oB; comp[p4 + 3] = 255;
+      }
     }
-    ctx.putImageData(img, 0, 0);
-    /* ---- smooth pass: light values still move per-tile, so a light
-       LINEAR-interpolated upscale would show soft diamond contours.
-       Two separable box-blur passes (h then v, radius 2) turn the steps
-       into a continuous gradient - Terraria-style smooth light. Runs on
-       the 512x256 canvas: a few ten-thousand px, cheap. */
-    var W = WORLD_W, H = WORLD_H;
-    if (!S.lightScratch) {
-      S.lightScratch = document.createElement('canvas');
-      S.lightScratch.width = W; S.lightScratch.height = H;
-    }
-    var sc = S.lightScratch.getContext('2d');
-    sc.clearRect(0, 0, W, H);
-    sc.drawImage(S.lightCv, 0, 0);
-    var src = sc.getImageData(0, 0, W, H);
-    var d = src.data;
-    var buf = new Uint8ClampedArray(d.length);
-    var R = 2;                                   /* blur radius in tiles */
-    /* horizontal pass - blur all three channels (torch light is
-       tinted; blurring only R would tear the hue at pool edges) */
-    for (var y3 = 0; y3 < H; y3++) {
-      var row = y3 * W;
-      for (var x3 = 0; x3 < W; x3++) {
+
+    /* 2. horizontal blur pass (solid-aware). A bright air cell no
+       longer averages in samples from across a wall - the old
+       isotropic blur smeared light THROUGH 1-2 tile walls (thin-wall
+       leak). Rule: AIR centers skip SOLID samples; SOLID centers
+       still sample air (a lit wall face may glow, but the far-side
+       air never samples across the wall). */
+    for (var y2 = cy0; y2 <= cy1; y2++) {
+      var row2 = y2 * W;
+      for (var x2 = px0; x2 <= px1; x2++) {
+        var c2 = row2 + x2, cs = solidBits[c2];
         var sumR = 0, sumG = 0, sumB = 0, n = 0;
-        for (var k = -R; k <= R; k++) {
-          var xi = x3 + k;
-          if (xi < 0 || xi >= W) { continue; }
-          var q = (row + xi) * 4;
-          sumR += d[q]; sumG += d[q + 1]; sumB += d[q + 2]; n++;
+        for (var k = -BLUR_R; k <= BLUR_R; k++) {
+          var xi = x2 + k;
+          if (xi < cx0 || xi > cx1) { continue; }
+          var si = row2 + xi;
+          if (cs === 0 && solidBits[si] !== 0) { continue; }
+          var q = si * 4;
+          sumR += comp[q]; sumG += comp[q + 1]; sumB += comp[q + 2]; n++;
         }
-        var o = (row + x3) * 4;
-        buf[o] = sumR / n; buf[o + 1] = sumG / n; buf[o + 2] = sumB / n;
+        var o2 = c2 * 4;
+        hOut[o2] = sumR / n; hOut[o2 + 1] = sumG / n; hOut[o2 + 2] = sumB / n;
+        hOut[o2 + 3] = 255;
       }
     }
-    /* vertical pass (reads the h-pass output) */
-    for (var y4 = 0; y4 < H; y4++) {
-      for (var x4 = 0; x4 < W; x4++) {
+
+    /* 3. vertical blur pass (same solid rule), then emissive re-max:
+       a source tile's own pixel must never average BELOW its glow. */
+    for (var y3 = py0; y3 <= py1; y3++) {
+      var row3 = y3 * W;
+      for (var x3 = px0; x3 <= px1; x3++) {
+        var c3 = row3 + x3, cs3 = solidBits[c3];
         var s2R = 0, s2G = 0, s2B = 0, n2 = 0;
-        for (var k2 = -R; k2 <= R; k2++) {
-          var yi = y4 + k2;
-          if (yi < 0 || yi >= H) { continue; }
-          var q2 = (yi * W + x4) * 4;
-          s2R += buf[q2]; s2G += buf[q2 + 1]; s2B += buf[q2 + 2]; n2++;
+        for (var k2 = -BLUR_R; k2 <= BLUR_R; k2++) {
+          var yi = y3 + k2;
+          if (yi < cy0 || yi > cy1) { continue; }
+          var si2 = yi * W + x3;
+          if (cs3 === 0 && solidBits[si2] !== 0) { continue; }
+          var q2 = si2 * 4;
+          s2R += hOut[q2]; s2G += hOut[q2 + 1]; s2B += hOut[q2 + 2]; n2++;
         }
-        var o2 = (y4 * W + x4) * 4;
-        d[o2] = s2R / n2; d[o2 + 1] = s2G / n2; d[o2 + 2] = s2B / n2;
+        var o3 = c3 * 4;
+        var vR = s2R / n2, vG = s2G / n2, vB = s2B / n2;
+        if (emisKind[c3]) {
+          if (emisR[c3] > vR) { vR = emisR[c3]; }
+          if (emisG[c3] > vG) { vG = emisG[c3]; }
+          if (emisB[c3] > vB) { vB = emisB[c3]; }
+        }
+        out[o3] = vR; out[o3 + 1] = vG; out[o3 + 2] = vB; out[o3 + 3] = 255;
       }
     }
-    ctx.putImageData(src, 0, 0);
+
+    /* 4. upload only the dirty rect */
+    ctx.putImageData(S.lightImg, 0, 0,
+                     px0, py0, px1 - px0 + 1, py1 - py0 + 1);
     S.lightTex.refresh();
   }
 
@@ -1869,16 +2171,79 @@
     var y0 = Math.max(0, ty - R2), y1 = Math.min(WORLD_H - 1, ty + R2);
     sweepRGB(torchR, torchG, torchB, x0, y0, x1, y1);
     S.heldTorchAt = [tx, ty];
-    paintLight(S);
+    /* compose only the held-torch window + blur halo (was full-map) */
+    paintLight(S, { x0: x0, y0: y0, x1: x1, y1: y1 });
   }
 
   function relight(S) {
+    rebuildSolidBits(0, 0, WORLD_W - 1, WORLD_H - 1);
     computeSkyLight();
     computeTorchField(S && S.time ? S.time.now : 0);
     /* geometry changed: any held-torch window is stale — drop it so
        the next frame rebuilds from the fresh field */
     S.heldTorchAt = null; S.heldSnap = null;
     paintLight(S);
+  }
+
+  /* ---- windowed local relight: dig/place/torch-expiry ---------------
+     A dig/place changes light in a radius = light reach (~22 tiles)
+     around the changed column. Full-world sweeps made rapid digging
+     relight the ENTIRE 512x256 field per block (the top perf hit).
+     Window approach (same trick as the held torch):
+       1. snapshot skyLight + torch RGB + emissive in a W_R box
+       2. re-seed the sky column seeds INSIDE the box only (open-sky
+          columns re-lit to 255 down to first solid), re-seed torch
+          tiles inside the box, then sweep INSIDE the box
+       3. sweep uses max() so borders blend into the untouched field
+       4. paintLight(zone) composites only the box + blur halo
+     Sky needs special handling: a dig that opens a shaft to the sky
+     lights the whole column; seeding per-column inside the box covers
+     exactly that. */
+  var W_R = 24;   /* window radius: > torch reach (21) + margin */
+
+  function windowRelight(S, cx, cy) {
+    ensureTorchBufs();
+    heldRestore(S);            /* undo held-torch window first: field
+                                  must be the persisted base */
+    var x0 = Math.max(0, cx - W_R), x1 = Math.min(WORLD_W - 1, cx + W_R);
+    var y0 = Math.max(0, cy - W_R), y1 = Math.min(WORLD_H - 1, cy + W_R);
+
+    /* geometry changed inside the window: refresh the blur mask there
+       BEFORE sky seeding reads it */
+    rebuildSolidBits(x0, y0, x1, y1);
+
+    /* 1. zero + re-seed INSIDE the window */
+    for (var y = y0; y <= y1; y++) {
+      var row = y * WORLD_W;
+      for (var x = x0; x <= x1; x++) {
+        var i = row + x;
+        skyLight[i] = 0;
+        torchR[i] = 0; torchG[i] = 0; torchB[i] = 0;
+        emisR[i] = 0; emisG[i] = 0; emisB[i] = 0; emisKind[i] = 0;
+      }
+    }
+    /* sky seeds: per column, scan from WORLD TOP to first solid (same
+       rule as computeSkyLight), then light the non-solid cells of that
+       column that fall INSIDE the window. A dig can only open a shaft
+       where it dug (inside the window), so above-window cells keep
+       their already-correct values. */
+    for (var x2 = x0; x2 <= x1; x2++) {
+      for (var y2 = 0; y2 <= y1; y2++) {
+        var i2 = y2 * WORLD_W + x2;
+        if (solidBits[i2]) { break; }        /* first solid ends the column */
+        if (y2 >= y0) { skyLight[i2] = 255; }
+      }
+    }
+    /* torch + emissive seeds inside the window (same rules as full) */
+    seedTorches(S.time ? S.time.now : 0, x0, y0, x1, y1);
+
+    /* 2. sweeps inside the window. Border cells keep their incoming
+       values from outside (max-only), so pools blend seamlessly. */
+    sweepScalar(skyLight, x0, y0, x1, y1, AIR_F, 0.40);
+    sweepRGB(torchR, torchG, torchB, x0, y0, x1, y1);
+
+    /* 3. compose just the window + halo */
+    paintLight(S, { x0: x0, y0: y0, x1: x1, y1: y1 });
   }
 
 
@@ -1994,8 +2359,8 @@
     }
 
     /* ---- Backdrop note: the 7 parallax layers are now PHASER objects
-       (buildPhaserBackdrop, TileSprite + setScrollFactor(fx, 0)), drawn
-       on the game canvas UNDER the terrain (depth -4..-3). This sky
+       (buildPhaserBackdrop, map-bound TileSprites, scrollFactor 1,1),
+       drawn on the game canvas UNDER the terrain (depth -4.x). This sky
        canvas only carries the day/night gradient, sun/moon and stars. */
     return sky;
   }
@@ -2189,10 +2554,12 @@
     return im.complete && im.naturalWidth > 0;
   }
   function drawBackdrop(S, ctx, w, h, sky) {
-    /* RETIRED in favor of buildPhaserBackdrop (TileSprite layers inside
-       the Phaser world). No-op stub: the sky canvas now only draws the
-       day/night gradient, sun/moon and stars. */
+    /* RETIRED in favor of buildPhaserBackdrop (map-bound TileSprite
+       layers inside the Phaser world). No-op stub: the sky canvas now
+       only draws the day/night gradient, sun/moon and stars. */
     return;
+  }
+  function _drawBackdrop_retired(S, ctx, w, h, sky) {
     loadBackdropLayers();
     var T = _bkTex && _bkTex.img && bkReady(_bkTex.img.clouds)
       ? _bkTex : null;
@@ -2203,9 +2570,9 @@
     var sc = w / 1280;
     var dw = 1280 * sc, dh = 360 * sc;
     var NW = 768, NH = 432;          /* Admurin layers native 2x size */
-    /* RETIRED BODY — kept below unreachable for reference; the entire
+    /* RETIRED BODY — kept unreachable for reference; the entire
        canvas-2D backdrop pipeline (anchor math, freeze, horizon crop)
-       was replaced by Phaser TileSprites with setScrollFactor(fx, 0). */
+       was replaced by map-bound Phaser TileSprites. */
     var surfWorldY = (typeof PLAYER_SURFACE_Y === 'number'
       ? PLAYER_SURFACE_Y : 96 * 32);
     var BK_LIFT = 10 * 32;
@@ -2241,12 +2608,16 @@
         }
       }
     }
+    /* ground plane: from the lowest layer's bottom to the canvas floor,
+       painted in the nearest layer's ground color. */
     var yBot = yBase + dh;
     if (yBot < h && _bkGround) {
       ctx.globalAlpha = lum;
       ctx.fillStyle = _bkGround;
       ctx.fillRect(0, Math.round(yBot) - 1, w, Math.ceil(h - yBot) + 2);
     }
+    /* CROP at the horizon: erase the sky canvas below each column's world
+       surface line (Terraria rule: surface backdrop ends AT the terrain). */
     if (world && world.surfaceY) {
       ctx.globalCompositeOperation = 'destination-out';
       ctx.fillStyle = 'rgba(0,0,0,1)';
@@ -2255,7 +2626,7 @@
         var wx = Math.floor((cam.scrollX + sx) / 32);
         if (wx < 0) { wx = 0; }
         if (wx >= WORLD_W) { wx = WORLD_W - 1; }
-        var syW = world.surfaceY[wx] * 32 - sy;
+        var syW = world.surfaceY[wx] * 32 - cam.scrollY;
         if (syW >= h) { continue; }
         var top = Math.max(0, Math.round(syW));
         ctx.fillRect(sx, top, step, h - top);
@@ -2306,6 +2677,7 @@
     chest: function () { tone(523, 0.09, 'square', 0.06); setTimeout(function(){tone(659,0.09,'square',0.06);},80); setTimeout(function(){tone(784,0.15,'square',0.06);},160); },
     hurt: function () { tone(180, 0.22, 'sawtooth', 0.12, 60); },
     shoot: function () { tone(920, 0.07, 'square', 0.05, 320); },
+    spit: function () { tone(340, 0.12, 'sawtooth', 0.06, 160); },
     jump: function () { tone(300, 0.12, 'sine', 0.06, 600); },
     win: function () {
       var seq = [523, 659, 784, 1047, 1319];
@@ -2522,9 +2894,11 @@
       if (wm) { wL.putTileAt(wm.atlasIndex, x, ly); }
       else { wL.removeTileAt(x, ly); }
     }
-    /* world geometry changed -> light paths changed. Full relight is a
-       BFS over 512x256 (a few ms); per-dig that is imperceptible. */
-    relight(S);
+    /* world geometry changed -> light paths changed. Windowed relight:
+       only the ~50x50 box around the changed column re-sweeps (the
+       full-world BFS per dig was the top perf hit during rapid
+       digging). Full relight stays for world create / torch sweep. */
+    windowRelight(S, x, Math.floor(S.player.y / TILE));
   }
 
   function hpChange(S, d) {
@@ -2735,9 +3109,17 @@
          when the player crosses a tile boundary) */
       heldTorchRelight(this);
     } else if (this.heldTorchAt) {
-      /* torch just unequipped: restore the field window */
+      /* torch just unequipped: restore the field window and recompose
+         just that window (was full-map repaint) */
+      var ha = this.heldTorchAt, hr = HELD_R + 1;
       heldRestore(this);
-      paintLight(this);
+      paintLight(this, { x0: ha[0] - hr, y0: ha[1] - hr,
+                         x1: ha[0] + hr, y1: ha[1] + hr });
+    }
+    /* torch fuel: frame-level expiry check so gutter-out lands within
+       one frame of the clock (3s backstop sweep stays for safety) */
+    if (nextTorchExpiry !== Infinity && this.time.now >= nextTorchExpiry) {
+      gutterTorches(this);
     }
     /* day/night clock advances continuously; ambient + sky follow it */
     this.lightT = (this.lightT || 0) + dt;
@@ -2766,8 +3148,10 @@
       this.hudT = 0; this.hudDirty = false;
       drawSky(this);
       drawHotbar(this);
-      /* ambient re-tint only (no BFS) — putImageData of 512x256 */
-      paintLight(this);
+      /* ambient re-tint only (no BFS) — composed for the camera
+         viewport only (~8% of the map; full-map putImageData was the
+         steady-state CPU cost every 50ms) */
+      paintLight(this, 'view');
     }
 
     /* dig highlight + damage fill */
@@ -2797,11 +3181,40 @@
     /* auto-fire at the pointer while the left button is held (mouseFire
        is only set when the press did NOT start a dig). */
     if (this.mouseFire) { shoot(this); }
-    /* bullets: fly; solid tile → burst+die; bug overlap → kill+burst */
+    /* bullets: fly; solid tile → burst+die; bug overlap → kill+burst;
+       HOSTILE projectiles (spitter spit) instead hurt the PLAYER */
     var S = this;
     this.bullets.children.each(function (bl) {
       if (!bl.active) { return; }
       var bx = bl.x, by = bl.y;
+      /* hostile spit: check the player, never the bugs */
+      if (bl.hostile) {
+        var pl = S.player;
+        if (pl && pl.active && Math.abs(pl.x - bx) < 20 && Math.abs(pl.y - 30 - by) < 34) {
+          if (!pl.invT || pl.invT <= 0) {
+            pl.invT = 1.0;
+            hpChange(S, -1);
+            SFX.hurt();
+            var awayS = pl.x < bx ? -1 : 1;
+            pl.setVelocity(awayS * 220, -240);
+            S.cameras.main.shake(140, 0.008);
+            S.tweens.add({ targets: pl, tint: 0xff5555, duration: 70,
+              yoyo: true, repeat: 3, onComplete: function () { pl.clearTint(); } });
+          }
+          burst(S, bx, by, 0xff8a3d, 6);
+          bl.destroy();
+          return;
+        }
+        /* spit also dies on walls/outside view */
+        var camS = S.cameras.main;
+        var hitWallS = isSolid(Math.floor(bx / TILE), Math.floor(by / TILE));
+        if (hitWallS || bx < camS.scrollX - 200 || bx > camS.scrollX + S.scale.width + 200 ||
+            by < camS.scrollY - 200 || by > camS.scrollY + S.scale.height + 200) {
+          burst(S, bx, by, 0x9ff5b3, 4);
+          bl.destroy();
+        }
+        return;
+      }
       var hitWall = isSolid(Math.floor(bx / TILE), Math.floor(by / TILE));
       var hitBug = false;
       S.bugs.children.each(function (bg) {
@@ -2919,8 +3332,31 @@
     if (!flagHit && !this.boss && Math.abs(this.player.x - (world.flag[0] * TILE + 16)) < 26 &&
         Math.abs(this.player.y - (world.flag[1] * TILE)) < 64) {
       if (crystalsGot >= CRYSTALS_NEED) {
+        /* SUMMON RITUAL: three-beat cinematic before the boss rises —
+           ground shockwaves, a rising beam flare, then the spawn burst.
+           (A single 26-particle burst read as "a bug died", not "an
+           ancient guardian tore through the floor".) */
+        var S3 = this, ax3 = world.flag[0] * TILE + 16, ay3 = world.flag[1] * TILE + 16;
+        S3.cameras.main.shake(420, 0.010);
+        tone(70, 0.5, 'sawtooth', 0.14, 35);
+        [0, 260, 520].forEach(function (d, i3) {
+          S3.time.delayedCall(d, function () {
+            S3.cameras.main.shake(300, 0.008 + i3 * 0.004);
+            tone(60 + i3 * 25, 0.4, 'sawtooth', 0.12, 30);
+            /* expanding shockwave ring on the altar floor */
+            for (var rr = 0; rr < 14; rr++) {
+              (function (ang) {
+                burst(S3, ax3 + Math.cos(ang) * (16 + i3 * 14),
+                      ay3 + Math.sin(ang) * (10 + i3 * 8), 0xb48cff, 3);
+              })(rr / 14 * Math.PI * 2);
+            }
+          });
+        });
+        S3.time.delayedCall(780, function () {
+          burst(S3, ax3, ay3 - 40, 0x9a6cff, 30);
+          burst(S3, ax3, ay3 - 40, 0xf2e07e, 12);
+        });
         bossSpawn(this);
-        burst(this, world.flag[0] * TILE + 16, world.flag[1] * TILE, 0x9a6cff, 26);
       } else if (!this.altarHintT || this.time.now - this.altarHintT > 4000) {
         this.altarHintT = this.time.now;
         tone(220, 0.18, 'sine', 0.07, 180);
@@ -3050,7 +3486,10 @@
     toggle: toggle,
     enter: enter,
     leave: leave,
-    running: function () { return running; }
+    running: function () { return running; },
+    /* dev probe: live scene handles for console diagnostics */
+    scene: function () { return game ? game.scene.getScene('main') : null; },
+    world: function () { return world; }
   };
   if ((location.hash || '').indexOf('egg-run') >= 0) {
     window.addEventListener('load', function () { setTimeout(enter, 300); });
