@@ -639,11 +639,13 @@
     if (depth > 150) {
       /* lava tier: fire bats, bugs + flameskull shooters */
       kind = roll < 0.40 ? 'batF' : roll < 0.60 ? 'spitterF' : 'bug';
+      fly = kind === 'batF' || kind === 'spitterF';
     } else if (depth > 24) {
       /* cave tier: slimes, eyes, spiders + willowisp shooters */
       kind = roll < 0.18 ? 'slime' : roll < 0.33 ? 'eyelet'
         : roll < 0.48 ? 'arachni' : roll < 0.60 ? 'spitter'
         : roll < 0.82 ? 'bugW' : 'bug';
+      fly = kind === 'eyelet' || kind === 'spitter' || kind === 'bugW';
     } else if (dayT > 0.5) {
       /* NIGHT surface: bats join, eyelets scout, wisps haunt */
       kind = roll < 0.35 ? 'bug' : roll < 0.60 ? 'bat' : roll < 0.80 ? 'eyelet' : 'spitter';
