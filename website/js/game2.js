@@ -1498,12 +1498,12 @@
         torchB[i] = Math.round(sb * lumSeed);
         torchField[i] = Math.round(255 * lum);
         /* emissive self-illumination only for REAL light emitters
-           (>= 0.3: torch-strength blocks, lava, diamond, crystal, gold).
-           Faint decorative glows (coral 0.15, ice 0.05, mushroom) keep
-           their subtle tinted POOL but the tile itself must NOT render
-           as a bright single cell - decorative blocks glowing one
-           bright pixel each looked wrong in dark caves. */
-        if (lum >= 0.3) {
+           (>= 0.35: lava 0.4, diamond 0.55, amethyst 0.35 + torches).
+           Everything below - gold ore 0.3, mushroom 0.2, coral 0.15,
+           ice 0.05 - is DECORATIVE glow: keep the tinted light pool
+           but never light the tile's own cell, or each decorative
+           block reads as one bright pixel in a dark cave. */
+        if (lum >= 0.35) {
           emisR[i] = sr; emisG[i] = sg; emisB[i] = sb;
           emisKind[i] = 2;
         }
