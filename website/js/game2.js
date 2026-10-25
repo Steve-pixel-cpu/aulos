@@ -401,14 +401,18 @@
     this.localY = function (y) { return y; };
 
     /* ---- world-space lightmap (the ACTUAL light engine) ----
-       A tiny canvas, 1 pixel per tile (512x256): each pixel's ALPHA =
-       darkness of that tile (0 = fully lit, 255 = pitch black), RGB is
-       white so MULTIPLY keeps hue. Rendered as a world image at depth
-       40 with LINEAR filtering, so the camera scrolls it with the
+       A small canvas at 2x tile resolution (1024x512): 2x2 light
+       samples per tile, bilinearly sampled from the tile-level light
+       fields at compose time (LIGHT_SCALE below). The tile fields
+       (skyLight / torch RGB / emissive / solidBits) stay 1 per tile -
+       only the painted map is finer, so point pools read round instead
+       of diamond and emissive tiles get a half-tile soft edge. RGB
+       carries the light color; rendered as a world image at depth 40
+       with LINEAR filtering, so the camera scrolls it with the
        terrain: no seams, no lag, no DOM sync. Rebuilt by relight() on
-       torch place / dig (BFS over 512x256, a few ms). */
+       torch place / dig (windowed, a few ms). */
     this.lightCv = document.createElement('canvas');
-    this.lightCv.width = WORLD_W; this.lightCv.height = WORLD_H;
+    this.lightCv.width = LIGHT_W; this.lightCv.height = LIGHT_H;
     this.lightTex = this.textures.addCanvas('worldLight', this.lightCv);
     /* pixelArt:true forces NEAREST on all textures — fine for tiles,
        but the lightmap must interpolate or caves get blocky edges */
@@ -2187,6 +2191,7 @@ var dayCount = 0;               /* nights elapsed — drives moon phase (8-day c
         solidBits[y * WORLD_W + x] = isSolid(x, y) ? 1 : 0;
     }
     }
+    rebuildSolidBits2(x0, y0, x1, y1); /* keep the 2x mirror in sync */
   }
 
   function computeSkyLight() {
@@ -2260,7 +2265,52 @@ var dayCount = 0;               /* nights elapsed — drives moon phase (8-day c
      20 Hz GC pressure). lightComp always holds the LATEST composed
      value of every pixel, so a zone blur can read correct unblurred
      inputs just outside its border: no seams. */
-  var BLUR_R = 2;   /* box-blur radius in tiles */
+  /* ---- 2x light-map subdivision ------------------------------------
+     The light FIELDS stay tile-resolution (1 sample per tile); the
+     painted canvas is 2x2 cells per tile. Compose bilinearly samples
+     the tile fields at cell centers, then the solid-aware blur runs
+     on cells with radius 2*LIGHT_SCALE (=4 cells = 2 tiles), so the
+     blur footprint in WORLD units is unchanged from the 1x pipeline.
+     Higher factors only shrink tiles from 32px to 16/8px on screen
+     without gaining real smoothness - 2x is the sweet spot. */
+  var LIGHT_SCALE = 2;
+  var LIGHT_W = WORLD_W * LIGHT_SCALE, LIGHT_H = WORLD_H * LIGHT_SCALE;
+  var BLUR_R = 2; /* solid-aware blur radius, in TILES (footprint is 2*BLUR_R+1 = 5) */
+  /* bilinear sample of a Uint8 tile field at a cell center:
+     fx/fy in cells; gx/gy = the tile grid position (0.5-cell inset so
+     cell centers land mid-edge between tile centers). Returns the
+     plain (unweighted) sample when LIGHT_SCALE === 1. */
+  function sampleB(f, fx, fy, W, H) {
+    var gx = fx * 0.5 - 0.5, gy = fy * 0.5 - 0.5;
+    var x0 = Math.floor(gx), y0 = Math.floor(gy);
+    var ax = gx - x0, ay = gy - y0;
+    var x1 = x0 + 1, y1 = y0 + 1;
+    var cx0 = x0 < 0 ? 0 : (x0 > W - 1 ? W - 1 : x0);
+    var cx1 = x1 < 0 ? 0 : (x1 > W - 1 ? W - 1 : x1);
+    var cy0 = y0 < 0 ? 0 : (y0 > H - 1 ? H - 1 : y0);
+    var cy1 = y1 < 0 ? 0 : (y1 > H - 1 ? H - 1 : y1);
+    return (f[cy0 * W + cx0] * (1 - ax) + f[cy0 * W + cx1] * ax) * (1 - ay) +
+           (f[cy1 * W + cx0] * (1 - ax) + f[cy1 * W + cx1] * ax) * ay;
+  }
+  /* 2x mirror of solidBits (1 cell per 1/4 tile) for the solid-aware
+     blur. Rebuilt alongside rebuildSolidBits from the tile mask - a
+     solid tile always makes all 4 of its cells solid. */
+  var solidBits2 = null;
+  function rebuildSolidBits2(x0, y0, x1, y1) {
+    if (!solidBits2) { solidBits2 = new Uint8Array(LIGHT_W * LIGHT_H); }
+    var SC = LIGHT_SCALE, W2 = LIGHT_W, H2 = LIGHT_H;
+    for (var y = y0; y <= y1; y++) {
+      for (var x = x0; x <= x1; x++) {
+        var b = isSolid(x, y) ? 1 : 0;
+        for (var sy = 0; sy < SC; sy++) {
+          var row2 = (y * SC + sy) * W2;
+          for (var sx = 0; sx < SC; sx++) {
+            row2[x * SC + sx] = b;
+          }
+        }
+      }
+    }
+  }
 
   function paintLight(S, zone) {
     var day = dayFactor(dayT);
@@ -2296,61 +2346,71 @@ var dayCount = 0;               /* nights elapsed — drives moon phase (8-day c
     var cf = CFG.caveBright / 100;
     var cR = Math.round(62 * cf), cG = Math.round(54 * cf), cB = Math.round(44 * cf);
 
-    var W = WORLD_W, H = WORLD_H;
+    var TW = WORLD_W, TH = WORLD_H, SC = LIGHT_SCALE;
+    var CW = LIGHT_W, CH = LIGHT_H;
     if (zone === 'view') {
       var vw = S.cameras.main.worldView;
       zone = { x0: Math.floor(vw.x / TILE), y0: Math.floor(vw.y / TILE),
                x1: Math.ceil((vw.x + vw.width) / TILE),
                y1: Math.ceil((vw.y + vw.height) / TILE) };
     }
-    /* zx/zy = the zone whose DISPLAY must be correct;
+    /* zx/zy = the zone whose DISPLAY must be correct (TILE units);
        px/py = blur+put region (zone + BLUR_R halo, so the ring just
        outside a window relight also gets re-blurred from fresh
        inputs);  cx/cy = compose region (needs 2*BLUR_R reach for the
-       separable h+v kernels). */
-    var zx0 = 0, zy0 = 0, zx1 = W - 1, zy1 = H - 1;
+       separable h+v kernels). Everything below is CELL units
+       (LIGHT_SCALE cells per tile). */
+    var zx0 = 0, zy0 = 0, zx1 = TW - 1, zy1 = TH - 1;
     if (zone) {
       zx0 = Math.max(0, zone.x0); zy0 = Math.max(0, zone.y0);
-      zx1 = Math.min(W - 1, zone.x1); zy1 = Math.min(H - 1, zone.y1);
+      zx1 = Math.min(TW - 1, zone.x1); zy1 = Math.min(TH - 1, zone.y1);
     }
-    var px0 = Math.max(0, zx0 - BLUR_R), py0 = Math.max(0, zy0 - BLUR_R),
-        px1 = Math.min(W - 1, zx1 + BLUR_R), py1 = Math.min(H - 1, zy1 + BLUR_R);
-    var cx0 = Math.max(0, zx0 - 2 * BLUR_R), cy0 = Math.max(0, zy0 - 2 * BLUR_R),
-        cx1 = Math.min(W - 1, zx1 + 2 * BLUR_R), cy1 = Math.min(H - 1, zy1 + 2 * BLUR_R);
+    var px0 = Math.max(0, zx0 - BLUR_R) * SC, py0 = Math.max(0, zy0 - BLUR_R) * SC,
+        px1 = Math.min(TW - 1, zx1 + BLUR_R) * SC + (SC - 1),
+        py1 = Math.min(TH - 1, zy1 + BLUR_R) * SC + (SC - 1);
+    var cx0 = Math.max(0, zx0 - 2 * BLUR_R) * SC, cy0 = Math.max(0, zy0 - 2 * BLUR_R) * SC,
+        cx1 = Math.min(TW - 1, zx1 + 2 * BLUR_R) * SC + (SC - 1),
+        cy1 = Math.min(TH - 1, zy1 + 2 * BLUR_R) * SC + (SC - 1);
+    var BR = BLUR_R * SC;   /* blur radius in cells (same WORLD extent) */
 
     var ctx = S.lightCv.getContext('2d');
     if (!S.gammaLUT || S.gammaLUT.day !== day.toFixed(3)) {
       S.gammaLUT = makeGammaLUT(day);
     }
     var lut = S.gammaLUT.t;
-    /* persistent buffers:
-       lightComp - composed (pre-blur) RGBA for the WHOLE map
+    /* persistent buffers (CELL units, full map, allocated once):
+       lightComp - composed (pre-blur) RGBA
        hOut      - horizontal blur scratch
-       lightImg  - final blur output ImageData (putImageData source)
-       All full-map, allocated once. */
-    if (!S.lightComp) { S.lightComp = new Uint8ClampedArray(W * H * 4); }
-    if (!S.hOut)      { S.hOut = new Uint8ClampedArray(W * H * 4); }
-    if (!S.lightImg)  { S.lightImg = ctx.createImageData(W, H); }
+       lightImg  - final blur output ImageData (putImageData source) */
+    if (!S.lightComp) { S.lightComp = new Uint8ClampedArray(CW * CH * 4); }
+    if (!S.hOut)      { S.hOut = new Uint8ClampedArray(CW * CH * 4); }
+    if (!S.lightImg)  { S.lightImg = ctx.createImageData(CW, CH); }
     var comp = S.lightComp, hOut = S.hOut, out = S.lightImg.data;
 
     /* 1. compose: ambient(sky-day tint) vs torch (own brighter LUT)
-       vs emissive (source tiles at display intensity) - per channel. */
+       vs emissive (source tiles at display intensity) - per channel.
+       The tile-level fields are BILINEARLY sampled at each cell
+       center (2x2 cells per tile) - this, not block copy, is what
+       makes pools round at 2x. */
     for (var y = cy0; y <= cy1; y++) {
-      var row = y * W;
+      var row = y * CW;
       for (var x = cx0; x <= cx1; x++) {
         var i = row + x, p4 = i * 4;
-        var s = skyLight[i] / 255;                /* 0..1 sky reach */
+        /* x,y are CELL coords; sampleB converts to the tile grid itself */
+        var s = sampleB(skyLight, x, y, TW, TH) / 255;  /* 0..1 sky */
         var baseR = cR + (sR - cR) * s,
             baseG = cG + (sG - cG) * s,
             baseB = cB + (sB - cB) * s;
-        var tR = TORCH_LUT[torchR[i]],
-            tG = TORCH_LUT[torchG[i]],
-            tB = TORCH_LUT[torchB[i]];
+        var tR = TORCH_LUT[sampleB(torchR, x, y, TW, TH) | 0],
+            tG = TORCH_LUT[sampleB(torchG, x, y, TW, TH) | 0],
+            tB = TORCH_LUT[sampleB(torchB, x, y, TW, TH) | 0];
         var oR = lut[baseR | 0], oG = lut[baseG | 0], oB = lut[baseB | 0];
         if (tR > oR) { oR = tR; }
         if (tG > oG) { oG = tG; }
         if (tB > oB) { oB = tB; }
-        var eR = emisR[i], eG = emisG[i], eB = emisB[i];
+        var eR = sampleB(emisR, x, y, TW, TH),
+            eG = sampleB(emisG, x, y, TW, TH),
+            eB = sampleB(emisB, x, y, TW, TH);
         if (eR > oR) { oR = eR; }
         if (eG > oG) { oG = eG; }
         if (eB > oB) { oB = eB; }
@@ -2358,22 +2418,22 @@ var dayCount = 0;               /* nights elapsed — drives moon phase (8-day c
       }
     }
 
-    /* 2. horizontal blur pass (solid-aware). A bright air cell no
-       longer averages in samples from across a wall - the old
-       isotropic blur smeared light THROUGH 1-2 tile walls (thin-wall
-       leak). Rule: AIR centers skip SOLID samples; SOLID centers
-       still sample air (a lit wall face may glow, but the far-side
-       air never samples across the wall). */
+    /* 2. horizontal blur pass (solid-aware, same rule as the 1x map).
+       A bright air cell no longer averages in samples from across a
+       wall - the old isotropic blur smeared light THROUGH 1-2 tile
+       walls (thin-wall leak). Rule: AIR centers skip SOLID samples;
+       SOLID centers still sample air (a lit wall face may glow, but
+       the far-side air never samples across the wall). */
     for (var y2 = cy0; y2 <= cy1; y2++) {
-      var row2 = y2 * W;
+      var row2 = y2 * CW;
       for (var x2 = px0; x2 <= px1; x2++) {
-        var c2 = row2 + x2, cs = solidBits[c2];
+        var c2 = row2 + x2, cs = solidBits2[c2];
         var sumR = 0, sumG = 0, sumB = 0, n = 0;
-        for (var k = -BLUR_R; k <= BLUR_R; k++) {
+        for (var k = -BR; k <= BR; k++) {
           var xi = x2 + k;
           if (xi < cx0 || xi > cx1) { continue; }
           var si = row2 + xi;
-          if (cs === 0 && solidBits[si] !== 0) { continue; }
+          if (cs === 0 && solidBits2[si] !== 0) { continue; }
           var q = si * 4;
           sumR += comp[q]; sumG += comp[q + 1]; sumB += comp[q + 2]; n++;
         }
@@ -2384,32 +2444,34 @@ var dayCount = 0;               /* nights elapsed — drives moon phase (8-day c
     }
 
     /* 3. vertical blur pass (same solid rule), then emissive re-max:
-       a source tile's own pixel must never average BELOW its glow. */
+       a source tile's own pixels must never average BELOW its glow
+       (cell -> parent tile via >>1). */
     for (var y3 = py0; y3 <= py1; y3++) {
-      var row3 = y3 * W;
+      var row3 = y3 * CW;
       for (var x3 = px0; x3 <= px1; x3++) {
-        var c3 = row3 + x3, cs3 = solidBits[c3];
+        var c3 = row3 + x3, cs3 = solidBits2[c3];
         var s2R = 0, s2G = 0, s2B = 0, n2 = 0;
-        for (var k2 = -BLUR_R; k2 <= BLUR_R; k2++) {
+        for (var k2 = -BR; k2 <= BR; k2++) {
           var yi = y3 + k2;
           if (yi < cy0 || yi > cy1) { continue; }
-          var si2 = yi * W + x3;
-          if (cs3 === 0 && solidBits[si2] !== 0) { continue; }
+          var si2 = yi * CW + x3;
+          if (cs3 === 0 && solidBits2[si2] !== 0) { continue; }
           var q2 = si2 * 4;
           s2R += hOut[q2]; s2G += hOut[q2 + 1]; s2B += hOut[q2 + 2]; n2++;
         }
         var o3 = c3 * 4;
         var vR = s2R / n2, vG = s2G / n2, vB = s2B / n2;
-        if (emisKind[c3]) {
-          if (emisR[c3] > vR) { vR = emisR[c3]; }
-          if (emisG[c3] > vG) { vG = emisG[c3]; }
-          if (emisB[c3] > vB) { vB = emisB[c3]; }
+        var ti = ((y3 / SC) | 0) * TW + ((x3 / SC) | 0);
+        if (emisKind[ti]) {
+          if (emisR[ti] > vR) { vR = emisR[ti]; }
+          if (emisG[ti] > vG) { vG = emisG[ti]; }
+          if (emisB[ti] > vB) { vB = emisB[ti]; }
         }
         out[o3] = vR; out[o3 + 1] = vG; out[o3 + 2] = vB; out[o3 + 3] = 255;
       }
     }
 
-    /* 4. upload only the dirty rect */
+    /* 4. upload only the dirty rect (cell units) */
     ctx.putImageData(S.lightImg, 0, 0,
                      px0, py0, px1 - px0 + 1, py1 - py0 + 1);
     S.lightTex.refresh();
