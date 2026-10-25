@@ -1431,7 +1431,12 @@
     /* hover highlight follows the LIVE pointer; stale targets left the
        white box parked on whichever tile was last clicked */
     var dist = Math.abs(tx * TILE + 16 - S.player.x) + Math.abs(ty * TILE + 16 - S.player.y);
-    S.digTarget = dist <= DIG_RANGE * TILE
+    /* Only a breakable tile can consume the click as mining. Nearby
+       air / bedrock must fall through to the pointerdown shooting path.
+       (main #5: restore close-range shooting) */
+    var m = tx >= 0 && tx < WORLD_W && ty >= 0 && ty < WORLD_H
+      ? TILEMETA[world.tile[ty * WORLD_W + tx]] : null;
+    S.digTarget = dist <= DIG_RANGE * TILE && m && m.hardness >= 0
       ? { x: tx, y: ty }
       : null;
   }
