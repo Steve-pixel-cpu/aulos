@@ -24,6 +24,8 @@
 
   var TILE = 32;                       /* on-screen tile size (16px source x2) */
   var WORLD_W = 512, WORLD_H = 256;
+  /* average surface line (world px), set by create() from worldgen data */
+  var PLAYER_SURFACE_Y = 96 * 32;
   var MAX_HP = 3;
 
   var game = null;                     /* Phaser.Game */
@@ -206,6 +208,12 @@
 
     /* regenerate world */
     world = worldgen.generate((Date.now() % 4294967296) | 0, WORLD_W, WORLD_H);
+    /* backdrop band anchor: mean surface row -> world px */
+    (function () {
+      var sum = 0;
+      for (var i = 0; i < world.surfaceY.length; i++) { sum += world.surfaceY[i]; }
+      PLAYER_SURFACE_Y = (sum / world.surfaceY.length) * TILE;
+    })();
     /* seal sky leaks: any air cell BELOW its column's surface that has no
        wall would show the sky gradient through the cave (pale rectangles).
        These are enclosed pockets — give them the stone back-wall. */
@@ -245,6 +253,28 @@
     }
 
     this.tiles = map.createBlankLayer('tiles', tileset).setDepth(-1);
+    /* Terraria underground backdrop: dark fill under the wall layer with
+       its top edge EXACTLY tracking each column's surfaceY (drawn once
+       into a texture — zero per-frame cost, world-attached, never jitters
+       and never peeks above terrain on hills/cliffs). */
+    (function () {
+      /* bake at 1/4 world resolution (4096x2048 = 32MB) then scale x4:
+         quantization step 8px is invisible under 32px tiles/walls */
+      var Q = 4;                        /* texel = 8 world px */
+      var tw = Math.ceil(WORLD_W * TILE / Q);
+      var th = Math.ceil(WORLD_H * TILE / Q);
+      var g = this.make.graphics({ x: 0, y: 0 }, false);
+      g.fillStyle(0x241d16, 1);
+      for (var fx = 0; fx < WORLD_W; fx++) {
+        var syW = world.surfaceY[fx] * TILE;
+        g.fillRect(fx * TILE / Q, syW / Q, TILE / Q,
+          (WORLD_H * TILE - syW) / Q);
+      }
+      g.generateTexture('caveFill', tw, th);
+      g.destroy();
+      this.add.image(0, 0, 'caveFill').setOrigin(0, 0)
+        .setScale(Q, Q).setDepth(-2.5);
+    }).call(this);
     this.walls = map.createBlankLayer('walls', tileset).setDepth(-2).setAlpha(0.55);
 
     for (var y = 0; y < WORLD_H; y++) {
@@ -477,6 +507,13 @@
         .setScrollFactor(0.25).setDepth(-3).setAlpha(0.9)
         .setScale(1 + (cl % 3) * 0.4);
     }
+
+    /* Terraria-style backdrop lives in the DOM sky overlay (drawSky),
+       NOT as Phaser objects: the world-space lightmap (depth 40 MULTIPLY)
+       would multiply screen-fixed sprites by the CAVE light under the
+       camera — painting mountains near-black and making them strobe as
+       you move. drawSkyBackdrop() draws them into eggSkyOverlay, which
+       sits UNDER the game canvas and is never light-multiplied. */
 
     /* ---- DOM overlays: sky (bottom) + HUD (top). No darkness mask —
        caves are dark simply because no light reaches them; ALL light
@@ -793,11 +830,6 @@
     S.textures.addCanvas('glow', cv);
   }
 
-  /* ===== BOSS: 克拉肯领主 (Kraken Lord) =====
-     Spawns when the player reaches the altar WITH enough crystals —
-     it rises from the depths to guard the win condition. 64px sprite,
-     3 phases by HP, physics body (bullet-hittable), glow halo, big
-     screen presence. Killing it = the real victory. */
   var BOSS_MAX = 40;                          /* bullet hits */
   function bossSpawn(S) {
     if (S.boss) { return; }
@@ -1438,10 +1470,18 @@
         torchR[i] = TORCH_R; torchG[i] = TORCH_G; torchB[i] = TORCH_B;
         torchField[i] = 255;
       } else if (lum > 0) {
-        /* data-driven glow: crystal/coral/lava/amethyst etc. */
-        torchR[i] = Math.round(TORCH_R * lum);
-        torchG[i] = Math.round(TORCH_G * lum);
-        torchB[i] = Math.round(TORCH_B * lum * 1.3);
+        /* data-driven glow: crystal/coral/lava/mushroom etc. Terraria-style
+           COLORED light: meta may carry lightColor:[r,g,b]; without one,
+           fall back to the warm torch tint (scaled), same as before. */
+        var sr, sg, sb;
+        if (m.lightColor && m.lightColor.length === 3) {
+          sr = m.lightColor[0]; sg = m.lightColor[1]; sb = m.lightColor[2];
+        } else {
+          sr = TORCH_R; sg = TORCH_G; sb = TORCH_B * 1.3;
+        }
+        torchR[i] = Math.round(sr * lum);
+        torchG[i] = Math.round(sg * lum);
+        torchB[i] = Math.round(sb * lum);
         torchField[i] = Math.round(255 * lum);
       }
     }
@@ -1799,9 +1839,189 @@
       }
       ctx.globalAlpha = 1;
     }
+
+    /* ---- Terraria backdrop: clouds / snow mountains / forest line /
+       grass hills, drawn INTO this sky canvas (under the game canvas, so
+       the world lightmap can never darken them). Parallax via camera x
+       with tiny factors; brightness follows the day cycle. ---- */
+    drawBackdrop(S, ctx, w, h, sky);
     return sky;
   }
 
+  /* ---- Terraria-style backdrop: hand-painted CC0 layers by MatiasVME
+     (opengameart.org/content/parallax-background-forest-pixel-art).
+     8 seamless 1280x360 layers blitted with per-layer parallax into the
+     DOM sky canvas (never touched by the world lightmap). ---- */
+  var _bkTex = null;
+  var _bkLoaded = false;
+  var _bkGround = null;
+  var _bkDbg = false;
+  /* depth treatment baked per layer at LOAD time (blur + aerial haze with
+     'source-atop', so the wash only tints THIS layer, never the canvas):
+       far mountains = softest + most washed, near trees = crisp.
+     The pack's own sky/sun layers are NOT used: drawSky already renders a
+     day/night gradient + sun/moon + stars. */
+  var BK_HAZE = '#cdd8dd';   /* aerial haze: bright desaturated gray-blue */
+  /* Admurin snowy-mountains set (CC-BY 4.0, recolored to Terraria daylight
+     slate) + brightened plains forests. Files live in assets/scenery/bg/. */
+  var BK_DEFS = [
+    { n: 'clouds',       blur: 0, haze: 0.12, fx: 0.01,  top: 0.05 },
+    { n: 'ridge',        blur: 0, haze: 0.52, fx: 0.018 },
+    { n: 'peaks',        blur: 0, haze: 0.34, fx: 0.03 },
+    { n: 'rocks_gray',   blur: 0, haze: 0.18, fx: 0.05 },
+    { n: 'forest_3',     blur: 0, haze: 0.06, fx: 0.08 },
+    { n: 'forest_2',     blur: 0, haze: 0,    fx: 0.12 },
+    { n: 'trees_near',   blur: 0, haze: 0,    fx: 0.18 }
+  ];
+  function loadBackdropLayers() {
+    if (_bkLoaded || typeof Image === 'undefined') { return; }
+    _bkLoaded = true;
+    _bkTex = { img: {} };
+    BK_DEFS.forEach(function (d) {
+      var im = new Image();
+      im.onload = function () {
+        if (!d.blur && !d.haze) { _bkTex.img[d.n] = im; return; }
+        /* bake: blur, then haze tinted ONLY onto this layer's pixels */
+        var c = document.createElement('canvas');
+        c.width = im.width; c.height = im.height;
+        var x2 = c.getContext('2d');
+        if (d.blur) { x2.filter = 'blur(' + d.blur + 'px)'; }
+        x2.drawImage(im, 0, 0);
+        x2.filter = 'none';
+        if (d.haze) {
+          x2.globalCompositeOperation = 'source-atop';
+          x2.globalAlpha = d.haze;
+          x2.fillStyle = BK_HAZE;
+          x2.fillRect(0, 0, c.width, c.height);
+          x2.globalCompositeOperation = 'source-over';
+          x2.globalAlpha = 1;
+        }
+        _bkTex.img[d.n] = c;
+        /* remember the NEAREST layer's bottom-edge color: used to extend
+           the backdrop to the canvas bottom when jumps expose it */
+        if (d.n === 'trees_near') {
+          var p2 = c.getContext('2d').getImageData(6, c.height - 2, 1, 1).data;
+          _bkGround = 'rgb(' + p2[0] + ',' + p2[1] + ',' + p2[2] + ')';
+        }
+      };
+      im.src = 'assets/scenery/bg/' + d.n + '.png';
+      _bkTex.img[d.n] = im;          /* shown until the bake lands */
+    });
+  }
+  /* readiness: baked layers are CANVASES which have NO .complete —
+     checking .complete alone made T permanently null after the bake
+     (the "backdrop never appears" bug). Canvas => ready by definition. */
+  function bkReady(im) {
+    if (!im) { return false; }
+    if (im.tagName === 'CANVAS') { return true; }
+    /* broken (404) images: complete=true but naturalWidth=0 */
+    return im.complete && im.naturalWidth > 0;
+  }
+  function drawBackdrop(S, ctx, w, h, sky) {
+    loadBackdropLayers();
+    var T = _bkTex && _bkTex.img && bkReady(_bkTex.img.clouds)
+      ? _bkTex : null;
+    var cam = S && S.cameras ? S.cameras.main : null;
+    if (!cam) { return; }
+    var scroll = cam.scrollX;
+    if (!T) { return; }
+    var sc = w / 1280;
+    var dw = 1280 * sc, dh = 360 * sc;
+    var NW = 768, NH = 432;          /* Admurin layers native 2x size */
+    /* Terraria anchoring: the band lives at the WORLD SURFACE. Its screen
+       y = (worldSurfacePx - camera.scrollY) * (1 - a small factor), so
+       walking on the surface keeps it steady, descending into caves lets
+       it slide up and away BEHIND the terrain (exactly how Terraria
+       hides the surface backdrop underground). PLAYER_SURFACE_Y is the
+       world px of the average terrain line; scrollFactorY-like 0.85 */
+    var surfWorldY = (typeof PLAYER_SURFACE_Y === 'number'
+      ? PLAYER_SURFACE_Y : 96 * 32);
+    /* BK_LIFT in WORLD px (TILE=32): scale-independent. The band top sits
+       ~10 tiles above the mean surface, whether window is 720p or 4K. */
+    var BK_LIFT = 10 * 32;
+    /* DEAD-ZONE lock: at the surface scrollY has a constant offset (the
+       camera centers the player above the ground line), so multiply-free
+       anchoring keeps the band perfectly still while walking/jumping.
+       Only when the camera descends into caves (scrollY passes the
+       surface-centered band + slack) does the backdrop start sliding up
+       behind the terrain. smoothstep over 6 tiles of descent. */
+    var slack = 6 * 32;
+    var deep = cam.scrollY + h * 0.5 - (surfWorldY + slack * 2);
+    var t = Math.max(0, Math.min(1, deep / (6 * 32)));
+    var ease = t * t * (3 - 2 * t);
+    /* Terraria-style scrollFactorY ≈ 0.15: tiny vertical parallax so the
+       band is essentially stable (jump = ±12px drift of distant hills,
+       reads as natural depth) yet never looks glued/frozen. ease slides
+       the band fully off-screen once you descend into caves. */
+    var restSy = surfWorldY - h * 0.54;
+    /* y-factor 0: the band is fully locked while above ground (jumps
+       cause ZERO band movement — the user-visible requirement). The
+       ease slide still lowers it away when descending into caves. */
+    var surfScreen = (surfWorldY - restSy);
+    var yBase = surfScreen - dh * 0.78 - ease * (surfScreen + dh);
+    /* day/night dim: dayness 1=noon -> 1.0, 0=midnight -> 0.34 floor */
+    var lum = 0.34 + 0.66 * sky.dayness;
+    for (var bi = 0; bi < BK_DEFS.length; bi++) {
+      var d = BK_DEFS[bi];
+      var im = T.img[d.n];
+      if (!bkReady(im)) { continue; }
+      ctx.globalAlpha = lum;
+      var y = d.top != null ? h * d.top : yBase;
+      var is768 = im.width === NW;
+      var lw = is768 ? NW * sc : dw;
+      var lh = is768 ? NH * sc : dh;
+      /* Admurin ground line sits at ~96% of its frame: align layer bottoms
+         to the same terrain horizon as the 1280-wide clouds */
+      var yy = is768 ? yBase + (dh - lh) : y;
+      var off = -((scroll * d.fx) % lw);
+      for (var xx = off; xx < w; xx += lw) {
+        ctx.drawImage(im, Math.round(xx), Math.round(yy),
+          Math.ceil(lw) + 1, Math.ceil(lh));
+        /* seal the bottom: repeat the layer's last rows down to the
+           canvas floor so jumps (camera up) can never expose sky under
+           the backdrop — the wall reads as continuous, static ground */
+        var bot = yy + lh;
+        if (bot < h) {
+          var bandH = Math.min(8, im.height);
+          ctx.drawImage(im, 0, im.height - bandH, im.width, bandH,
+            Math.round(xx), Math.round(bot) - 1,
+            Math.ceil(lw) + 1, Math.ceil(h - bot) + 2);
+        }
+      }
+    }
+    /* ground plane: from the lowest layer's bottom to the canvas floor,
+       painted in the nearest layer's ground color. The sky canvas is then
+       FULLY opaque below the band — no sky gradient can peek through dug
+       shafts/55% walls regardless of camera position; underground it reads
+       as a consistent earth tone behind the wall tiles. */
+    var yBot = yBase + dh;
+    if (yBot < h && _bkGround) {
+      ctx.globalAlpha = lum;
+      ctx.fillStyle = _bkGround;
+      ctx.fillRect(0, Math.round(yBot) - 1, w, Math.ceil(h - yBot) + 2);
+    }
+    /* CROP at the horizon: erase the sky canvas below each column's world
+       surface line. The band's own green "field" section can then never
+       bleed through 55% walls underground — below the terrain the sky
+       canvas is fully transparent, so walls blend against caveFill's dark
+       (Terraria rule: surface backdrop ends AT the terrain). */
+    if (world && world.surfaceY) {
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.fillStyle = 'rgba(0,0,0,1)';
+      var step = 4;
+      for (var sx = 0; sx < w; sx += step) {
+        var wx = Math.floor((cam.scrollX + sx) / 32);
+        if (wx < 0) { wx = 0; }
+        if (wx >= WORLD_W) { wx = WORLD_W - 1; }
+        var syW = world.surfaceY[wx] * 32 - cam.scrollY;
+        if (syW >= h) { continue; }
+        var top = Math.max(0, Math.round(syW));
+        ctx.fillRect(sx, top, step, h - top);
+      }
+      ctx.globalCompositeOperation = 'source-over';
+    }
+    ctx.globalAlpha = 1;
+  }
   /* ---- SFX: WebAudio synth (zero audio files) --------------------------
      Tiny helper: every call creates osc/gain, schedules envelope, done.
      Lazy AudioContext on first user gesture (autoplay policy). */
