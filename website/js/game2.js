@@ -1063,6 +1063,16 @@
         return;
       }
       var dx = px - b.x, dy = py - b.y;
+      /* DESPAWN far strays: ground mobs pile against walls and pin the
+         spawn cap full forever ("caves never spawn" — 10 zombies stuck
+         in a corner 100 tiles away). Terraria rule: anything 1000px+
+         from the player is gone; the cap recycles and fresh spawns
+         appear where the player actually is. Bosses exempt. */
+      if (!b.isBoss && (dx * dx + dy * dy) > 1000000) {
+        if (b.glow && b.glow.active) { b.glow.destroy(); }
+        b.destroy();
+        return;
+      }
       var dist = Math.hypot(dx, dy);
       b.setFlipX(dx < 0);
       var k = b.kind;
