@@ -775,8 +775,8 @@
     if (kind === 'eye') { b.tint = 0xd9a6ff; }    /* purple gaze */
     if (kind === 'wraith' || kind === 'banshee') { b.tint = 0xb8c8ff; b.setAlpha(0.75); }
     if (kind === 'krtentacle') { b.tint = 0x6fa3d9; }
-    if (kind === 'spitter') { b.tint = 0x9fe8ff; }      /* wisp: bright cyan-white */
-    if (kind === 'spitterF') { b.tint = 0xffa04d; }     /* skull: bright ember */
+    if (kind === 'spitter') { b.tint = 0xc8f4ff; b.setScale(2.6); b.body.setSize(12, 12); }
+    if (kind === 'spitterF') { b.tint = 0xffc27a; b.setScale(2.6); b.body.setSize(12, 12); }
     if (kind === 'willowisp' || kind === 'flameskull') { b.tint = 0xffc86b; } /* ember glow */
     if (kind === 'maneater') { b.tint = 0x9fe06a; } /* hungry green */
     if (kind === 'purpleworm') { b.tint = 0xd98fd9; } /* worm purple */
@@ -1362,7 +1362,7 @@
     pr.setBlendMode(Phaser.BlendModes.ADD);
     pr.hostile = true;                       /* hurts player, not bugs */
     pr.setTint(isF ? 0xff8a3d : 0x9ff5b3);   /* ember orange / wisp green */
-    pr.setScale(0.85);
+    pr.setScale(1.25);
     pr.setRotation(Math.atan2(dy, dx));
     pr.body.setAllowGravity(false);
     pr.body.setSize(12, 12);
