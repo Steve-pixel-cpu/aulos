@@ -546,9 +546,15 @@
       this.treeLayer = [];
       for (var ti = 0; ti < world.trees.length; ti++) {
         var tr = world.trees[ti];
+        /* 2.2x native (96 -> ~211px ≈ 13 tiles tall): reads as a full
+           tree, not a bush (USER: 太小了). Base y drops 0.35 tile so the
+           trunk bottom is INSIDE the grass tile, not floating on it
+           (USER: 和方块重叠了 — the previous base sat exactly on the
+           tile top edge and collided visually with surface blocks). */
         var spr = this.add.image(
-          tr.x * TILE + TILE / 2, (tr.y + 1) * TILE, 'trees', tr.sprite)
+          tr.x * TILE + TILE / 2, (tr.y + 1.35) * TILE, 'trees', tr.sprite)
           .setOrigin(0.5, 1)
+          .setScale(2.2)
           .setDepth(-0.5);
         this.treeLayer.push(spr);
       }
