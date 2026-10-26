@@ -341,8 +341,13 @@
    "name": "crystal_amethyst",
    "solid": false,
    "hardness": 0.3,
-   "light": 0.35,
-   "atlasIndex": 42
+   "light": 0.55,
+   "atlasIndex": 42,
+   "lightColor": [
+    190,
+    120,
+    245
+   ]
   },
   {
    "id": 43,
