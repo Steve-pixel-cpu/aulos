@@ -86,7 +86,12 @@
    "solid": true,
    "hardness": 1.4,
    "light": 0.3,
-   "atlasIndex": 10
+   "atlasIndex": 10,
+   "lightColor": [
+    255,
+    200,
+    90
+   ]
   },
   {
    "id": 11,
@@ -94,7 +99,12 @@
    "solid": true,
    "hardness": 1.6,
    "light": 0.55,
-   "atlasIndex": 11
+   "atlasIndex": 11,
+   "lightColor": [
+    180,
+    230,
+    255
+   ]
   },
   {
    "id": 12,
@@ -134,7 +144,12 @@
    "solid": false,
    "hardness": -1.0,
    "light": 0.25,
-   "atlasIndex": 16
+   "atlasIndex": 16,
+   "lightColor": [
+    255,
+    120,
+    50
+   ]
   },
   {
    "id": 17,
@@ -909,7 +924,12 @@
    "solid": false,
    "hardness": 0.15,
    "light": 0.3,
-   "atlasIndex": 106
+   "atlasIndex": 106,
+   "lightColor": [
+    90,
+    220,
+    230
+   ]
   },
   {
    "id": 107,
@@ -917,7 +937,12 @@
    "solid": false,
    "hardness": 0.15,
    "light": 0.3,
-   "atlasIndex": 107
+   "atlasIndex": 107,
+   "lightColor": [
+    245,
+    225,
+    120
+   ]
   },
   {
    "id": 108,
@@ -925,7 +950,12 @@
    "solid": false,
    "hardness": 0.15,
    "light": 0.3,
-   "atlasIndex": 108
+   "atlasIndex": 108,
+   "lightColor": [
+    90,
+    220,
+    230
+   ]
   },
   {
    "id": 109,
@@ -933,7 +963,12 @@
    "solid": false,
    "hardness": 0.15,
    "light": 0.3,
-   "atlasIndex": 109
+   "atlasIndex": 109,
+   "lightColor": [
+    245,
+    225,
+    120
+   ]
   },
   {
    "id": 110,
@@ -941,7 +976,12 @@
    "solid": false,
    "hardness": 0.15,
    "light": 0.3,
-   "atlasIndex": 110
+   "atlasIndex": 110,
+   "lightColor": [
+    90,
+    220,
+    230
+   ]
   },
   {
    "id": 111,
@@ -949,7 +989,12 @@
    "solid": false,
    "hardness": 0.15,
    "light": 0.3,
-   "atlasIndex": 111
+   "atlasIndex": 111,
+   "lightColor": [
+    245,
+    225,
+    120
+   ]
   },
   {
    "id": 112,
@@ -957,7 +1002,12 @@
    "solid": false,
    "hardness": 0.15,
    "light": 0.3,
-   "atlasIndex": 112
+   "atlasIndex": 112,
+   "lightColor": [
+    90,
+    220,
+    230
+   ]
   },
   {
    "id": 113,
@@ -965,7 +1015,12 @@
    "solid": false,
    "hardness": 0.15,
    "light": 0.3,
-   "atlasIndex": 113
+   "atlasIndex": 113,
+   "lightColor": [
+    245,
+    225,
+    120
+   ]
   },
   {
    "id": 114,
@@ -1125,7 +1180,12 @@
    "solid": false,
    "hardness": 0.3,
    "light": 0.1,
-   "atlasIndex": 133
+   "atlasIndex": 133,
+   "lightColor": [
+    120,
+    220,
+    180
+   ]
   },
   {
    "id": 134,
