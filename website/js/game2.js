@@ -2884,13 +2884,11 @@ var dayCount = 0;               /* nights elapsed — drives moon phase (8-day c
   /* Admurin snowy-mountains set (CC-BY 4.0, recolored to Terraria daylight
      slate) + brightened plains forests. Files live in assets/scenery/bg/. */
   var BK_DEFS = [
-    { n: 'clouds',       blur: 0, haze: 0.12, fx: 0.06,  top: 0.05 },
-    { n: 'ridge',        blur: 0, haze: 0.52, fx: 0.14 },
-    { n: 'peaks',        blur: 0, haze: 0.34, fx: 0.22 },
-    { n: 'rocks_gray',   blur: 0, haze: 0.18, fx: 0.34 },
-    { n: 'forest_3',     blur: 0, haze: 0.06, fx: 0.48 },
-    { n: 'forest_2',     blur: 0, haze: 0,    fx: 0.64 },
-    { n: 'trees_near',   blur: 0, haze: 0,    fx: 0.82 }
+    /* single far-scenery band (pixelforge side-scroll loop, 2560x720).
+       The art is FULLY OPAQUE and paints its own sky — it intentionally
+       covers the DOM sky gradient; day/night, sun & moon still read
+       through the lightmap layer above it. Seamless L/R (edge diff ~5). */
+    { n: 'pixelforge_far', blur: 0, haze: 0, fx: 0.18 }
   ];
   /* ---- Phaser-native backdrop ------------------------------------------
      Builds 7 TileSprites with per-layer scroll factors. Textures are
@@ -2943,18 +2941,12 @@ var dayCount = 0;               /* nights elapsed — drives moon phase (8-day c
         var surfPx2 = (typeof PLAYER_SURFACE_Y === 'number'
           ? PLAYER_SURFACE_Y : 96 * 32);
         var srcH = img ? img.height : 360;
-        var sc = 1.4;                       /* art scale: TileSprite
-                                              textures tile at NATIVE
-                                              pixel size — without
-                                              setScale the 432px art
-                                              sat 1:1 in its window and
-                                              only the bottommost
-                                              solid band (~20px) peeked
-                                              above the surface line
-                                              ("only mountain tips").
-                                              1.4x lifts the peak art
-                                              ~600 world px above the
-                                              welded ground line. */
+        var sc = d.n === 'pixelforge_far' ? 1.0 : 1.4;
+        /* TileSprite textures tile at NATIVE pixel size — the legacy
+           432px Admurin art needed 1.4x or only ~20px of mountain tips
+           peeked above the surface line; the 720px pixelforge band is
+           already taller than the surface window, so 1.0 keeps it
+           crisp. */
         var lh = srcH * sc;                 /* VISUAL layer height */
         var sy0 = d.top != null
           ? surfPx2 - 600 + d.top * 400     /* clouds: fixed world band */
@@ -2975,16 +2967,18 @@ var dayCount = 0;               /* nights elapsed — drives moon phase (8-day c
         ts._fx = d.fx; ts._srcW = img ? img.width : 1280;
         ts._srcH = srcH;
         if (d.n === 'clouds') { S.cloudsBand = ts; }  /* wind drift hook */
-        /* GREEN EXTENSION: every ground layer gets a solid green skirt
-           welded to its bottom edge (USER: "远景的草地需要往下延生一点
-           绿的，不然有间隙"). The art's bottom rows are semi-transparent
-           and the terrain below varies, so bright sky / cave wall could
-           peek through the fringe. The skirt uses the band art's own
-           bottom-row green (forest_2 #3f8d4c sampled), extends 5 tiles
-           down with a 3-tile alpha fade to 0 — hands off invisibly to
-           the textured caveFill behind. Same transform as its parent
-           band: scrollFactor 1, one tile deeper, so it can never
-           detach. */
+        /* GREEN EXTENSION (legacy Admurin bands only): a solid green
+           skirt welded to the band's bottom edge (USER: "远景的草地需要
+           往下延生一点绿的，不然有间隙"). The Admurin art's bottom rows
+           are semi-transparent and the terrain below varies, so bright
+           sky / cave wall could peek through the fringe. The skirt uses
+           the band art's own bottom-row green (forest_2 #3f8d4c
+           sampled), extends 5 tiles down with a 3-tile alpha fade to 0
+           — hands off invisibly to the textured caveFill behind. Same
+           transform as its parent band: scrollFactor 1, one tile
+           deeper, so it can never detach. The pixelforge band is opaque
+           full-height art — no gap possible, but the skirt is harmless
+           behind it (one tile deeper), so no branch is needed. */
         if (d.top == null) {
           var skTex = 'bkd_green_ext';
           if (!S.textures.exists(skTex)) {
