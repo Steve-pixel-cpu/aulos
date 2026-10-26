@@ -93,6 +93,19 @@
 
   function generate(seed, W, H) {
     var rand = rng(seed);
+  /* whole-tree placement rule (USER): 8 grass tiles under the footprint.
+     tx-3..tx+5 must all be grass-capped at the SAME surfaceY — flat ground
+     only. Returns false on cliff steps / non-grass ground. */
+  function treeFootprintOk(tx, sy) {
+    if (tx - 3 < 1 || tx + 5 >= W - 1) { return false; }
+    for (var cx = tx - 3; cx <= tx + 5; cx++) {
+      var cy2 = surfaceY[cx];
+      if (cy2 !== sy) { return false; }
+      if (tile[cy2 * W + cx] !== TILE.GRASS) { return false; }
+    }
+    return true;
+  }
+
     var tile = new Uint8Array(W * H);
     var wall = new Uint8Array(W * H);
     var surfaceY = new Int16Array(W);
@@ -360,9 +373,12 @@
           }
           tx += 3 + Math.floor(rand() * 6);
         }
-      } else if (rand() < 0.4 && groundSolid) {
-        /* whole-tree sprite: one multi-tile image per tree (USER tree.png,
-           white bg keyed, 92x96 native = 6 tiles tall — crisp at 1.0) */
+      } else if (rand() < 0.4 && groundSolid && treeFootprintOk(tx, surfaceY[tx])) {
+        /* whole-tree sprite: one multi-tile image per tree (USER art).
+           RULE (USER): a tree needs 8 GRASS tiles under its footprint —
+           treeFootprintOk() checks the surface columns tx-3..tx+5: all
+           must be GRASS cap at the same height (flat ground), so trees
+           never straddle cliff steps or sprout on stone/sand. */
         trees.push({ x: tx, y: surfaceY[tx], sprite: rand() < 0.5 ? 0 : 1 });
         tx += 12 + Math.floor(rand() * 13);
       } else {
