@@ -4026,7 +4026,7 @@ var dayCount = 0;               /* nights elapsed — drives moon phase (8-day c
       parent: chat,
       width: Math.max(320, chat.clientWidth),
       height: Math.max(240, chat.clientHeight),
-      backgroundColor: '#7aa8e8',
+      backgroundColor: null,   /* transparent: DOM drawSky (sun/moon) shows through keyed band */
       transparent: true,     /* game canvas is see-through: the sky layer
                                 (DOM, below) shows through as background */
       pixelArt: true,
