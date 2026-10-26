@@ -232,6 +232,7 @@
     /* whole-tree sprites: two keyed high-res trees, pick per placement */
     this.load.image('trees', 'assets/mc/tree_user.png?v=s2');
     this.load.image('trees2', 'assets/mc/tree_user2.png?v=s2');
+    this.load.image('trees3', 'assets/mc/tree_user3.png?v=s2');
     this.load.image('bug', 'assets/scenery/bug0.png?v=s1');
     this.load.image('bug1', 'assets/scenery/bug1.png?v=s1');
     this.load.image('bat', 'assets/scenery/bat0.png?v=s1');
@@ -551,16 +552,21 @@
            trunk bottom is INSIDE the grass tile, not floating on it
            (USER: 和方块重叠了 — the previous base sat exactly on the
            tile top edge and collided visually with surface blocks). */
-        var key = tr.sprite === 1 ? 'trees2' : 'trees';
-        /* 560x580 (tree1) / 470x555 (tree2 narrower); trunk base sits
-           INSIDE the surface tile (USER: 树底部扎进泥土tile里) — base y
-           = surface row TOP + half a tile so roots visually bury into
-           the grass block, and the tree is behind terrain anyway */
+        /* variant table: sprite 0/1/2 -> texture + display size */
+        var VARIANTS = [
+          { key: 'trees',  w: 560, h: 580 },
+          { key: 'trees2', w: 470, h: 555 },
+          { key: 'trees3', w: 500, h: 590 }
+        ];
+        var v = VARIANTS[tr.sprite % VARIANTS.length];
+        /* trunk base sits INSIDE the surface tile (USER: 树底部扎进泥
+           土tile里) — base y = surface row TOP + half a tile so roots
+           visually bury into the grass block, and the tree is behind
+           terrain anyway */
         var spr = this.add.image(
-          tr.x * TILE + TILE / 2, (tr.y + 0.5) * TILE, key)
+          tr.x * TILE + TILE / 2, (tr.y + 0.5) * TILE, v.key)
           .setOrigin(0.5, 1)
-          .setDisplaySize(tr.sprite === 1 ? 470 : 560,
-                          tr.sprite === 1 ? 555 : 580)
+          .setDisplaySize(v.w, v.h)
           .setDepth(-1.5);   /* BEHIND terrain tiles (-1): never covers
                                 solid blocks (USER: 不要挡住实体方块) */
         this.treeLayer.push(spr);

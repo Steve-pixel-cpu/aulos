@@ -379,7 +379,7 @@
            treeFootprintOk() checks the surface columns tx-3..tx+5: all
            must be GRASS cap at the same height (flat ground), so trees
            never straddle cliff steps or sprout on stone/sand. */
-        trees.push({ x: tx, y: surfaceY[tx], sprite: rand() < 0.5 ? 0 : 1 });
+        trees.push({ x: tx, y: surfaceY[tx], sprite: Math.floor(rand() * 3) });
         tx += 12 + Math.floor(rand() * 13);
       } else {
         /* open ground: saplings + log stumps use the top textures */
