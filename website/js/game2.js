@@ -2910,12 +2910,12 @@ var dayCount = 0;               /* nights elapsed — drives moon phase (8-day c
   var BK_HAZE = '#cdd8dd';   /* aerial haze: bright desaturated gray-blue */
   /* Admurin snowy-mountains set (CC-BY 4.0, recolored to Terraria daylight
      slate) + brightened plains forests. Files live in assets/scenery/bg/. */
-  var BK_DEFS = [
+    var BK_DEFS = [
     /* far-scenery band (USER-generated "远景" art, 1536x1024): mountains
        + conifer line + flat dark-green grass base. Sky rows are keyed
-       transparent (alpha 0 above the art line, 20px feather) so the DOM
-       day/night gradient, sun & moon show through again — unlike the
-       retired pixelforge band which painted its own opaque sky. */
+       transparent (alpha 0 above the art line, feather) so the DOM
+       day/night gradient, sun & moon show through. Scale 1.0 native —
+       1.35x upscale read blurry (USER: 缩放太严重了). */
     { n: 'yuanjing_far', blur: 0, haze: 0, fx: 0.18 }
   ];
   /* ---- Phaser-native backdrop ------------------------------------------
@@ -2970,7 +2970,8 @@ var dayCount = 0;               /* nights elapsed — drives moon phase (8-day c
           ? PLAYER_SURFACE_Y : 96 * 32);
         var srcH = img ? img.height : 360;
         var sc = d.n === 'pixelforge_far' || d.n === 'yuanjing_far'
-          ? 1.35 : 1.4;
+          ? 1.0 : 1.4;   /* yuanjing native 1.0: 1.35x upscale read blurry
+                            (USER: 缩放太严重了) — back to native size */
         /* TileSprite textures tile at NATIVE pixel size — the legacy
            432px Admurin art needed 1.4x or only ~20px of mountain tips
            peeked above the surface line. The pixelforge/yuanjing bands
