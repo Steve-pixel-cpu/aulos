@@ -2884,11 +2884,12 @@ var dayCount = 0;               /* nights elapsed — drives moon phase (8-day c
   /* Admurin snowy-mountains set (CC-BY 4.0, recolored to Terraria daylight
      slate) + brightened plains forests. Files live in assets/scenery/bg/. */
   var BK_DEFS = [
-    /* single far-scenery band (pixelforge side-scroll loop, 2560x720).
-       The art is FULLY OPAQUE and paints its own sky — it intentionally
-       covers the DOM sky gradient; day/night, sun & moon still read
-       through the lightmap layer above it. Seamless L/R (edge diff ~5). */
-    { n: 'pixelforge_far', blur: 0, haze: 0, fx: 0.18 }
+    /* far-scenery band (USER-generated "远景" art, 1536x1024): mountains
+       + conifer line + flat dark-green grass base. Sky rows are keyed
+       transparent (alpha 0 above the art line, 20px feather) so the DOM
+       day/night gradient, sun & moon show through again — unlike the
+       retired pixelforge band which painted its own opaque sky. */
+    { n: 'yuanjing_far', blur: 0, haze: 0, fx: 0.18 }
   ];
   /* ---- Phaser-native backdrop ------------------------------------------
      Builds 7 TileSprites with per-layer scroll factors. Textures are
@@ -2941,18 +2942,20 @@ var dayCount = 0;               /* nights elapsed — drives moon phase (8-day c
         var surfPx2 = (typeof PLAYER_SURFACE_Y === 'number'
           ? PLAYER_SURFACE_Y : 96 * 32);
         var srcH = img ? img.height : 360;
-        var sc = d.n === 'pixelforge_far' ? 1.0 : 1.4;
+        var sc = d.n === 'pixelforge_far' || d.n === 'yuanjing_far'
+          ? 1.0 : 1.4;
         /* TileSprite textures tile at NATIVE pixel size — the legacy
            432px Admurin art needed 1.4x or only ~20px of mountain tips
-           peeked above the surface line; the 720px pixelforge band is
-           already taller than the surface window, so 1.0 keeps it
+           peeked above the surface line; the pixelforge/yuanjing bands
+           are already taller than the surface window, so 1.0 keeps them
            crisp. */
         var lh = srcH * sc;                 /* VISUAL layer height */
         /* pixelforge band rides 4 tiles higher than the Admurin bands
            did (USER: "贴图抬高一点"): its own art has generous sky at
            the top, so lifting it keeps the mountain line well above the
            horizon instead of hugging the grass row */
-        var LIFT = d.n === 'pixelforge_far' ? 2 * 32 : 0;
+        var LIFT = (d.n === 'pixelforge_far' ||
+                    d.n === 'yuanjing_far') ? 2 * 32 : 0;
         var sy0 = d.top != null
           ? surfPx2 - 600 + d.top * 400     /* clouds: fixed world band */
           : surfPx2 + 32 - lh - LIFT;       /* ground: bottom ONE TILE
