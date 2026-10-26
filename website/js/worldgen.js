@@ -383,15 +383,9 @@
         trees.push({ x: tx, y: surfaceY[tx], sprite: Math.floor(rand() * 3) });
         tx += 12 + Math.floor(rand() * 13);
       } else {
-        /* open ground: saplings + log stumps use the top textures */
-        if (rand() < 0.3 && groundSolid && surfaceY[tx] > 1) {
-          var dec = rand();
-          if (dec < 0.5) {
-            tile[(surfaceY[tx] - 1) * W + tx] = treeSpecies.sapling;
-          } else if (dec < 0.75) {
-            tile[surfaceY[tx] * W + tx] = treeSpecies.top;   /* stump cross-section */
-          }
-        }
+        /* open ground deco RETIRED (USER: 这种堆叠起来的东西也去掉): the
+           sapling/stump art read as odd stacked spheres on the lawn.
+           Grass stays clean; trees only. */
         tx += 3 + Math.floor(rand() * 6);
       }
     }
