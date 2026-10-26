@@ -326,7 +326,8 @@
       }
     }
 
-    /* ---- 5. trees (8 species: 2 dominant per world) --------------------- */
+    /* ---- 5. trees (whole-tree sprites; species list kept for saplings) -- */
+    var trees = [];
     var SPECIES = [
       { wood: TILE.WOOD, leaf: TILE.LEAF, sapling: TILE.SAPLING_OAK, top: TILE.LOG_TOP_OAK },
       { wood: TILE.WOOD_BEECH, leaf: TILE.LEAF_BEECH, sapling: TILE.SAPLING_BEECH, top: TILE.LOG_TOP_BEECH },
@@ -359,35 +360,11 @@
           tx += 3 + Math.floor(rand() * 6);
         }
       } else if (rand() < 0.4 && groundSolid) {
-        var hgt = 4 + Math.floor(rand() * 4);
-        var top = surfaceY[tx] - hgt;
-        /* trunk starts IN the grass row so it never floats */
-        for (var ty = surfaceY[tx]; ty >= top; ty--) {
-          if (ty < 1) { break; }
-          tile[ty * W + tx] = treeSpecies.wood;
-        }
-        tile[surfaceY[tx] * W + tx] = treeSpecies.wood;   /* root sits in the grass cell */
-        /* Terraria-style canopy: one big CIRCLE (r=3.2 tiles) centered
-           above the trunk tip, with ragged rim (edge cells drop randomly).
-           Reads as the round puffy crowns from the trailer, not a diamond. */
-        var ccx = tx + 0.5, ccy = top - 1.5, r = 3.2;
-        for (var ly2 = Math.floor(ccy - r); ly2 <= Math.ceil(ccy + r); ly2++) {
-          if (ly2 <= 1) { continue; }
-          for (var lx2 = Math.floor(ccx - r); lx2 <= Math.ceil(ccx + r); lx2++) {
-            if (lx2 <= 0 || lx2 >= W - 1) { continue; }
-            var dx2 = lx2 + 0.5 - ccx, dy2 = ly2 + 0.5 - ccy;
-            var dist = Math.sqrt(dx2 * dx2 + dy2 * dy2);
-            if (dist <= r - 0.7 || (dist <= r && rand() < 0.62)) {
-              if (tile[ly2 * W + lx2] === TILE.AIR) {
-                tile[ly2 * W + lx2] = treeSpecies.leaf;
-              }
-            }
-          }
-        }
-        /* snowy biome: pine gets a snowy top neighbor via ice caps */
-        if (biome === 1 && rand() < 0.3 && top - 4 > 1) {
-          tile[(top - 4) * W + tx] = TILE.ICE_ICICLES;
-        }
+        /* whole-tree sprite: the tree is ONE multi-tile image (96x96,
+           bottom-anchored), not a trunk-column + leaf-circle. worldgen
+           records the placement; game2 draws it as a sprite so the art
+           keeps its original proportions (USER: 树可以放大变成一整颗). */
+        trees.push({ x: tx, y: surfaceY[tx], sprite: Math.floor(rand() * 13) });
         tx += 12 + Math.floor(rand() * 13);
       } else {
         /* open ground: saplings + log stumps use the top textures */
@@ -831,7 +808,8 @@
     return {
       W: W, H: H,
       tile: tile, wall: wall, surfaceY: surfaceY, dirtBottom: dirtBottom,
-      spawn: spawn, flag: flag, chests: chests, crystals: crystals
+      spawn: spawn, flag: flag, chests: chests, crystals: crystals,
+      trees: trees
     };
   }
 

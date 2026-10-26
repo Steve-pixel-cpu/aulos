@@ -229,6 +229,9 @@
         { frameWidth: 192, frameHeight: 208 });
     }
     this.load.image('flag', 'assets/scenery/flag0.png?v=s1');
+    /* whole-tree sprites: 13 cells of 96x96, bottom-anchored in-cell */
+    this.load.spritesheet('trees', 'assets/mc/trees_sheet.png?v=s1',
+      { frameWidth: 96, frameHeight: 96 });
     this.load.image('bug', 'assets/scenery/bug0.png?v=s1');
     this.load.image('bug1', 'assets/scenery/bug1.png?v=s1');
     this.load.image('bat', 'assets/scenery/bat0.png?v=s1');
@@ -532,6 +535,24 @@
     this.game.canvas.addEventListener('webglcontextrestored', function () {
       console.warn('[dig] webglcontextrestored');
     });
+
+    /* ---- whole-tree sprite layer ----
+       worldgen records tree placements; each is a 96x96 cell from the
+       trees sheet, bottom-anchored at (x*TILE + TILE/2, y*TILE + TILE) so
+       the trunk base sits in the grass row. Depth -0.5: behind terrain
+       tiles (-1) so the trunk base tucks under the ground line, in front
+       of background walls (-2). Non-interactive (no physics). */
+    if (world.trees && world.trees.length) {
+      this.treeLayer = [];
+      for (var ti = 0; ti < world.trees.length; ti++) {
+        var tr = world.trees[ti];
+        var spr = this.add.image(
+          tr.x * TILE + TILE / 2, (tr.y + 1) * TILE, 'trees', tr.sprite)
+          .setOrigin(0.5, 1)
+          .setDepth(-0.5);
+        this.treeLayer.push(spr);
+      }
+    }
 
     /* ---- player ---- */
     this.player = this.physics.add.sprite(
