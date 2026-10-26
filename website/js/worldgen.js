@@ -359,11 +359,10 @@
           }
           tx += 3 + Math.floor(rand() * 6);
         }
-      } else if (rand() < 0.4 && groundSolid) {
-        /* whole-tree sprite: the tree is ONE multi-tile image (96x96,
-           bottom-anchored), not a trunk-column + leaf-circle. worldgen
-           records the placement; game2 draws it as a sprite so the art
-           keeps its original proportions (USER: 树可以放大变成一整颗). */
+      } else if (false && groundSolid) {
+        /* whole-tree sprites RETIRED (USER: 放大之后有点糊，还是去掉树吧):
+           the AI art upscaled 2.2x went blurry and nothing looked right.
+           Kept as dead branch for reference; worldgen emits no trees. */
         trees.push({ x: tx, y: surfaceY[tx], sprite: Math.floor(rand() * 13) });
         tx += 12 + Math.floor(rand() * 13);
       } else {
