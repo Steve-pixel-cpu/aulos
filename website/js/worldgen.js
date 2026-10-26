@@ -115,7 +115,7 @@
     /* ---- 1. surface heightmap: segmented slopes + smoothing ---------- */
     var SEG = 16, segW = Math.ceil(W / SEG);
     /* USER: 地表线再往下移一点 — 0.30 -> 0.38 of world height */
-    var base = Math.round(H * 0.38);
+    var base = Math.round(H * 0.5);
     var pts = [];
     for (var s = 0; s <= SEG; s++) { pts.push(base + Math.round((rand() - 0.5) * 24)); }
     for (var pass = 0; pass < 2; pass++) {          /* gaussian-ish smooth */
@@ -653,12 +653,15 @@
        underground (USER: "地表石头不应该放地底"); deep pockets read as
        marble veins instead. */
     for (var st = 0; st < 6; st++) {
-      var sp = findSpot(H - 180, H - 40);
+      var sp = findSpot(dirtBottom[Math.floor(W / 2)] + 150, H - 40);
       if (sp) { tile[sp[1] * W + sp[0]] = TILE.MARBLE; rareGuest(18, sp[1], sp[0]); }
     }
-    /* glass: crystal caves window pockets deep */
+    /* glass: crystal caves window pockets DEEP. Must stay below the
+       surface — findSpot(H-200, H-60) used to reach rows ABOVE the
+       lowered surface line (USER: 地表不要放这种白色方块), so anchor to
+       the stone band instead: 120 tiles below the mean dirt bottom. */
     for (var gl = 0; gl < 5; gl++) {
-      var gp = findSpot(H - 200, H - 60);
+      var gp = findSpot(dirtBottom[Math.floor(W / 2)] + 120, H - 60);
       if (gp) { tile[gp[1] * W + gp[0] + 1 < W ? gp[0] + 1 : gp[0]] = TILE.GLASS; rareGuest(26, gp[1], gp[0]); }
     }
     /* snow cover on snowy biome surface */
@@ -706,14 +709,14 @@
     /* plank family variety: scattered single planks underground */
     var PLANKS = [TILE.PLANK_BEECH, TILE.PLANK_EUC, TILE.PLANK_MAPLE, TILE.PLANK_PINE];
     for (var pl = 0; pl < 8; pl++) {
-      var pp = findSpot(H - 170, H - 20);
+      var pp = findSpot(dirtBottom[Math.floor(W / 2)] + 60, H - 20);
       if (pp) { tile[pp[1] * W + pp[0]] = PLANKS[pl % PLANKS.length]; }
     }
     /* coral plant guests in caves (variety, including bleached) */
     var CORAL_GUESTS = [TILE.P_CORAL_BRAIN, TILE.P_CORAL_CAULIFLOWER,
       TILE.P_CORAL_PORE_BLEACHED, TILE.P_CORAL_STAR_BLEACHED];
     for (var cg = 0; cg < 14; cg++) {
-      var cgp = findSpot(H - 170, H - 20);
+      var cgp = findSpot(dirtBottom[Math.floor(W / 2)] + 60, H - 20);
       if (cgp) { tile[cgp[1] * W + cgp[0]] = CORAL_GUESTS[cg % CORAL_GUESTS.length]; }
     }
     /* coral_star solid block, deep */
