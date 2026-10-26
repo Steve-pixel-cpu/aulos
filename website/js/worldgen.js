@@ -644,10 +644,13 @@
       }
       return null;
     }
-    /* old-stone remnants: classic stone pockets at mid depth */
+    /* old-stone remnants: stone pockets at mid depth. Marble body, not
+       STONE — the surface-looking 石头 art (slot 3) must never render
+       underground (USER: "地表石头不应该放地底"); deep pockets read as
+       marble veins instead. */
     for (var st = 0; st < 6; st++) {
       var sp = findSpot(H - 180, H - 40);
-      if (sp) { tile[sp[1] * W + sp[0]] = TILE.STONE; rareGuest(3, sp[1], sp[0]); }
+      if (sp) { tile[sp[1] * W + sp[0]] = TILE.MARBLE; rareGuest(18, sp[1], sp[0]); }
     }
     /* glass: crystal caves window pockets deep */
     for (var gl = 0; gl < 5; gl++) {
