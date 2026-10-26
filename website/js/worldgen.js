@@ -305,9 +305,10 @@
       TILE.MARBLE_BRICKS2, TILE.MARBLE_BRICKS3, TILE.SANDSTONE_BRICKS,
       TILE.SANDSTONE_CARVED, TILE.SANDSTONE_TILES, TILE.SERPENTINE_BRICKS,
       TILE.SERPENTINE_CARVED, TILE.RHYOLITE_TILES, TILE.SLATE_TILES,
-      TILE.CORAL_BRAIN_BLEACHED, TILE.CORAL_CAULIFLOWER_BLEACHED,
-      TILE.CORAL_PORE_BLEACHED, TILE.CORAL_STAR_BLEACHED,
       TILE.ICE_ICICLES, TILE.BASALT_FLOW];
+    /* coral crystal pockets REMOVED from ruins (USER: 地下的这种水晶太多了)
+       — they overran every cave as glowing teal mounds; the yellow/cyan
+       crystals remain only as rare cave-decor plants. */
     for (var rv = 0; rv < 240; rv++) {
       var rx = 2 + Math.floor(rand() * (W - 4));
       var ry = dirtBottom[rx] + 4 + Math.floor(rand() * Math.max(1, H - dirtBottom[rx] - 16));
@@ -359,11 +360,10 @@
           }
           tx += 3 + Math.floor(rand() * 6);
         }
-      } else if (false && groundSolid) {
-        /* whole-tree sprites RETIRED (USER: 放大之后有点糊，还是去掉树吧):
-           the AI art upscaled 2.2x went blurry and nothing looked right.
-           Kept as dead branch for reference; worldgen emits no trees. */
-        trees.push({ x: tx, y: surfaceY[tx], sprite: Math.floor(rand() * 13) });
+      } else if (rand() < 0.4 && groundSolid) {
+        /* whole-tree sprite: one multi-tile image per tree (USER tree.png,
+           white bg keyed, 92x96 native = 6 tiles tall — crisp at 1.0) */
+        trees.push({ x: tx, y: surfaceY[tx], sprite: rand() < 0.5 ? 0 : 1 });
         tx += 12 + Math.floor(rand() * 13);
       } else {
         /* open ground: saplings + log stumps use the top textures */
@@ -443,16 +443,27 @@
           (cap5 === TILE.MUD_CRACKED || cap5 === TILE.GRASS)) {
         tile[(surfaceY[px5] - 1) * W + px5] = SWAMPY[Math.floor(rand() * SWAMPY.length)];
       }
-      /* caves: mushroom / spiderweb / coral plants on air-above-solid cells */
+      /* caves: mushroom / spiderweb / coral plants on air-above-solid cells.
+       Coral crystals heavily de-weighted (USER: 地下的这种水晶太多了) —
+       the deco pool used to be 5/9 corals at 6%/cell; now corals only via
+       a 1.2% side roll, mushrooms/webs dominate. */
       for (var cy5 = surfaceY[px5] + 4; cy5 < H - 4; cy5++) {
         var ii = cy5 * W + px5;
         if (tile[ii] === TILE.AIR && tile[ii + W] !== TILE.AIR &&
             PASSABLE[tile[ii + W]] === undefined && rand() < 0.06) {
-          tile[ii] = CAVE_DECO[Math.floor(rand() * CAVE_DECO.length)];
+          var cd = rand();
+          if (cd < 0.2) {
+            tile[ii] = TILE.P_CORAL_PORE;
+          } else {
+            var BASE_DECO = [TILE.PLANT_BROWN_MUSHROOM, TILE.SPIDERWEB,
+              TILE.PLANT_RED_MUSHROOM, TILE.PLANT_RED_MUSHROOM,
+              TILE.PLANT_RED_MUSHROOM, TILE.P_STROMATOLITE];
+            tile[ii] = BASE_DECO[Math.floor(rand() * BASE_DECO.length)];
+          }
         }
       }
-      /* amethyst crystals sparkle deep down */
-      if (rand() < 0.05) {
+      /* amethyst crystals sparkle deep down (rarer: 0.05 -> 0.015) */
+      if (rand() < 0.015) {
         for (var cy6 = dirtBottom[px5] + 60; cy6 < H - 4; cy6++) {
           var jj = cy6 * W + px5;
           if (tile[jj] === TILE.AIR && tile[jj + W] !== TILE.AIR) {

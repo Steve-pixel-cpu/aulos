@@ -229,8 +229,9 @@
         { frameWidth: 192, frameHeight: 208 });
     }
     this.load.image('flag', 'assets/scenery/flag0.png?v=s1');
-    /* whole-tree sprite: single image, white bg keyed, 92x96 native */
+    /* whole-tree sprites: two keyed high-res trees, pick per placement */
     this.load.image('trees', 'assets/mc/tree_user.png?v=s2');
+    this.load.image('trees2', 'assets/mc/tree_user2.png?v=s2');
     this.load.image('bug', 'assets/scenery/bug0.png?v=s1');
     this.load.image('bug1', 'assets/scenery/bug1.png?v=s1');
     this.load.image('bat', 'assets/scenery/bat0.png?v=s1');
@@ -550,11 +551,18 @@
            trunk bottom is INSIDE the grass tile, not floating on it
            (USER: 和方块重叠了 — the previous base sat exactly on the
            tile top edge and collided visually with surface blocks). */
+        var key = tr.sprite === 1 ? 'trees2' : 'trees';
+        /* 560x580 (tree1) / 470x555 (tree2 narrower); trunk base sits
+           INSIDE the surface tile (USER: 树底部扎进泥土tile里) — base y
+           = surface row TOP + half a tile so roots visually bury into
+           the grass block, and the tree is behind terrain anyway */
         var spr = this.add.image(
-          tr.x * TILE + TILE / 2, tr.y * TILE, 'trees')
+          tr.x * TILE + TILE / 2, (tr.y + 0.5) * TILE, key)
           .setOrigin(0.5, 1)
-          .setDisplaySize(560, 580)   /* full-res source at big display size */
-          .setDepth(-0.5);
+          .setDisplaySize(tr.sprite === 1 ? 470 : 560,
+                          tr.sprite === 1 ? 555 : 580)
+          .setDepth(-1.5);   /* BEHIND terrain tiles (-1): never covers
+                                solid blocks (USER: 不要挡住实体方块) */
         this.treeLayer.push(spr);
       }
     }
