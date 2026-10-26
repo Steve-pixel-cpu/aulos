@@ -2948,9 +2948,14 @@ var dayCount = 0;               /* nights elapsed — drives moon phase (8-day c
            already taller than the surface window, so 1.0 keeps it
            crisp. */
         var lh = srcH * sc;                 /* VISUAL layer height */
+        /* pixelforge band rides 4 tiles higher than the Admurin bands
+           did (USER: "贴图抬高一点"): its own art has generous sky at
+           the top, so lifting it keeps the mountain line well above the
+           horizon instead of hugging the grass row */
+        var LIFT = d.n === 'pixelforge_far' ? 4 * 32 : 0;
         var sy0 = d.top != null
           ? surfPx2 - 600 + d.top * 400     /* clouds: fixed world band */
-          : surfPx2 + 32 - lh;              /* ground: bottom ONE TILE
+          : surfPx2 + 32 - lh - LIFT;       /* ground: bottom ONE TILE
                                               below the mean surface —
                                               the grass row slightly
                                               overlaps the backdrop's
