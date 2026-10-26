@@ -445,16 +445,26 @@
    "name": "ice_glacier",
    "solid": true,
    "hardness": 0.5,
-   "light": 0.05,
-   "atlasIndex": 55
+   "light": 0.4,
+   "atlasIndex": 55,
+   "lightColor": [
+    140,
+    200,
+    255
+   ]
   },
   {
    "id": 56,
    "name": "ice_icicles",
    "solid": true,
    "hardness": 0.5,
-   "light": 0.05,
-   "atlasIndex": 56
+   "light": 0.4,
+   "atlasIndex": 56,
+   "lightColor": [
+    140,
+    200,
+    255
+   ]
   },
   {
    "id": 57,
@@ -613,64 +623,104 @@
    "name": "coral_brain",
    "solid": true,
    "hardness": 0.6,
-   "light": 0.15,
-   "atlasIndex": 76
+   "light": 0.4,
+   "atlasIndex": 76,
+   "lightColor": [
+    90,
+    220,
+    230
+   ]
   },
   {
    "id": 77,
    "name": "coral_brain_bleached",
    "solid": true,
    "hardness": 0.6,
-   "light": 0.1,
-   "atlasIndex": 77
+   "light": 0.4,
+   "atlasIndex": 77,
+   "lightColor": [
+    245,
+    225,
+    120
+   ]
   },
   {
    "id": 78,
    "name": "coral_cauliflower",
    "solid": true,
    "hardness": 0.6,
-   "light": 0.15,
-   "atlasIndex": 78
+   "light": 0.4,
+   "atlasIndex": 78,
+   "lightColor": [
+    90,
+    220,
+    230
+   ]
   },
   {
    "id": 79,
    "name": "coral_cauliflower_bleached",
    "solid": true,
    "hardness": 0.6,
-   "light": 0.1,
-   "atlasIndex": 79
+   "light": 0.4,
+   "atlasIndex": 79,
+   "lightColor": [
+    245,
+    225,
+    120
+   ]
   },
   {
    "id": 80,
    "name": "coral_pore",
    "solid": true,
    "hardness": 0.6,
-   "light": 0.15,
-   "atlasIndex": 80
+   "light": 0.4,
+   "atlasIndex": 80,
+   "lightColor": [
+    90,
+    220,
+    230
+   ]
   },
   {
    "id": 81,
    "name": "coral_pore_bleached",
    "solid": true,
    "hardness": 0.6,
-   "light": 0.1,
-   "atlasIndex": 81
+   "light": 0.4,
+   "atlasIndex": 81,
+   "lightColor": [
+    245,
+    225,
+    120
+   ]
   },
   {
    "id": 82,
    "name": "coral_star",
    "solid": true,
    "hardness": 0.6,
-   "light": 0.15,
-   "atlasIndex": 82
+   "light": 0.4,
+   "atlasIndex": 82,
+   "lightColor": [
+    90,
+    220,
+    230
+   ]
   },
   {
    "id": 83,
    "name": "coral_star_bleached",
    "solid": true,
    "hardness": 0.6,
-   "light": 0.1,
-   "atlasIndex": 83
+   "light": 0.4,
+   "atlasIndex": 83,
+   "lightColor": [
+    245,
+    225,
+    120
+   ]
   },
   {
    "id": 84,
@@ -853,7 +903,7 @@
    "name": "plant_coral_brain",
    "solid": false,
    "hardness": 0.15,
-   "light": 0.1,
+   "light": 0.3,
    "atlasIndex": 106
   },
   {
@@ -861,7 +911,7 @@
    "name": "plant_coral_brain_bleached",
    "solid": false,
    "hardness": 0.15,
-   "light": 0.08,
+   "light": 0.3,
    "atlasIndex": 107
   },
   {
@@ -869,7 +919,7 @@
    "name": "plant_coral_cauliflower",
    "solid": false,
    "hardness": 0.15,
-   "light": 0.1,
+   "light": 0.3,
    "atlasIndex": 108
   },
   {
@@ -877,7 +927,7 @@
    "name": "plant_coral_cauliflower_bleached",
    "solid": false,
    "hardness": 0.15,
-   "light": 0.08,
+   "light": 0.3,
    "atlasIndex": 109
   },
   {
@@ -885,7 +935,7 @@
    "name": "plant_coral_pore",
    "solid": false,
    "hardness": 0.15,
-   "light": 0.1,
+   "light": 0.3,
    "atlasIndex": 110
   },
   {
@@ -893,7 +943,7 @@
    "name": "plant_coral_pore_bleached",
    "solid": false,
    "hardness": 0.15,
-   "light": 0.08,
+   "light": 0.3,
    "atlasIndex": 111
   },
   {
@@ -901,7 +951,7 @@
    "name": "plant_coral_star",
    "solid": false,
    "hardness": 0.15,
-   "light": 0.1,
+   "light": 0.3,
    "atlasIndex": 112
   },
   {
@@ -909,7 +959,7 @@
    "name": "plant_coral_star_bleached",
    "solid": false,
    "hardness": 0.15,
-   "light": 0.08,
+   "light": 0.3,
    "atlasIndex": 113
   },
   {
