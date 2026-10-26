@@ -631,8 +631,10 @@
        path; the backdrop refit uses the same 0.10/0.60 pair, so the
        coincidence holds at ANY window size. */
     this.cameras.main.startFollow(this.player, true, 0.25, 0.25, 0, 0);
+    /* USER: 人物在屏幕上的位置再往下一点 — offset +10% -> +22% (player
+       rests at ~72% screen height instead of ~60%) */
     this.setFollowOffsetY = function () {
-      this.cameras.main.setFollowOffset(0, this.scale.height * 0.10);
+      this.cameras.main.setFollowOffset(0, this.scale.height * 0.22);
     };
     this.setFollowOffsetY();
     this.physics.world.setBounds(0, 0, WORLD_W * TILE, WORLD_H * TILE);
