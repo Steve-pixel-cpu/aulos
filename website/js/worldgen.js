@@ -177,12 +177,12 @@
         var r4 = rand();
         if (r4 < 0.10) { return TILE.OBSIDIAN; }
         if (r4 < 0.14) { return TILE.BASALT_FLOW; }
-        if (r4 < 0.18) { return TILE.CORAL_BRAIN; }
+        if (r4 < 0.18) { return TILE.GABBRO; }
         return TILE.BASALT;
       }
       var r5 = rand();
       if (r5 < 0.28) { return TILE.OBSIDIAN; }
-      if (r5 < 0.34) { return TILE.CORAL_STAR; }
+      if (r5 < 0.34) { return TILE.GRANITE_BRICKS; }
       return TILE.BASALT;
     }
     /* biome columns: grass(0) / snowy(1) / desert(2) / swamp(3).
@@ -272,10 +272,10 @@
        (shallow cold pockets). coal/iron/gold/diamond stay the core. */
     function oreWeight(depth) {
       /* depth below surface */
-      if (depth < 20) { return [TILE.COAL, TILE.COAL, TILE.IRON, TILE.ICE_GLACIER]; }
-      if (depth < 60) { return [TILE.COAL, TILE.IRON, TILE.IRON, TILE.GOLD, TILE.CORAL_CAULIFLOWER]; }
-      if (depth < 100) { return [TILE.IRON, TILE.GOLD, TILE.GOLD, TILE.DIAMOND, TILE.CORAL_PORE]; }
-      return [TILE.GOLD, TILE.DIAMOND, TILE.DIAMOND, TILE.DIAMOND, TILE.CORAL_BRAIN];
+      if (depth < 20) { return [TILE.COAL, TILE.COAL, TILE.IRON, TILE.SANDSTONE]; }
+      if (depth < 60) { return [TILE.COAL, TILE.IRON, TILE.IRON, TILE.GOLD, TILE.CLAY]; }
+      if (depth < 100) { return [TILE.IRON, TILE.GOLD, TILE.GOLD, TILE.DIAMOND, TILE.GABBRO]; }
+      return [TILE.GOLD, TILE.DIAMOND, TILE.DIAMOND, TILE.DIAMOND, TILE.MARBLE_BRICKS];
     }
     var ORE_VEINS = 320;
     for (var v = 0; v < ORE_VEINS; v++) {
@@ -715,7 +715,7 @@
     /* coral_star solid block, deep */
     for (var cso = 0; cso < 4; cso++) {
       var csp = findSpot(H - 150, H - 30);
-      if (csp) { tile[csp[1] * W + csp[0]] = TILE.CORAL_STAR; rareGuest(82, csp[1], csp[0]); }
+      if (csp) { tile[csp[1] * W + csp[0]] = TILE.GRANITE_BRICKS; rareGuest(51, csp[1], csp[0]); }
     }
     /* obsidian extra deep: already banded but ensure presence */
     /* crops early stages near farmland patches */
