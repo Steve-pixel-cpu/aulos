@@ -4026,9 +4026,12 @@ var dayCount = 0;               /* nights elapsed — drives moon phase (8-day c
       parent: chat,
       width: Math.max(320, chat.clientWidth),
       height: Math.max(240, chat.clientHeight),
-      backgroundColor: null,   /* transparent: DOM drawSky (sun/moon) shows through keyed band */
+      backgroundColor: 'rgba(0,0,0,0)',
       transparent: true,     /* game canvas is see-through: the sky layer
-                                (DOM, below) shows through as background */
+                                (DOM, below) shows through as background.
+                                NOTE: backgroundColor null CRASHES Phaser
+                                boot (Color(null).r) — must be a parseable
+                                transparent color string. */
       pixelArt: true,
       physics: { default: 'arcade', arcade: { gravity: { y: 1500 } } },
       scale: { mode: Phaser.Scale.RESIZE, width: '100%', height: '100%' },
