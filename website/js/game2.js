@@ -229,9 +229,8 @@
         { frameWidth: 192, frameHeight: 208 });
     }
     this.load.image('flag', 'assets/scenery/flag0.png?v=s1');
-    /* whole-tree sprites: 13 cells of 96x96, bottom-anchored in-cell */
-    this.load.spritesheet('trees', 'assets/mc/trees_sheet.png?v=s1',
-      { frameWidth: 96, frameHeight: 96 });
+    /* whole-tree sprite: single image, white bg keyed, 92x96 native */
+    this.load.image('trees', 'assets/mc/tree_user.png?v=s2');
     this.load.image('bug', 'assets/scenery/bug0.png?v=s1');
     this.load.image('bug1', 'assets/scenery/bug1.png?v=s1');
     this.load.image('bat', 'assets/scenery/bat0.png?v=s1');
@@ -552,9 +551,9 @@
            (USER: 和方块重叠了 — the previous base sat exactly on the
            tile top edge and collided visually with surface blocks). */
         var spr = this.add.image(
-          tr.x * TILE + TILE / 2, (tr.y + 1.35) * TILE, 'trees', tr.sprite)
+          tr.x * TILE + TILE / 2, tr.y * TILE, 'trees')
           .setOrigin(0.5, 1)
-          .setScale(2.2)
+          .setDisplaySize(560, 580)   /* full-res source at big display size */
           .setDepth(-0.5);
         this.treeLayer.push(spr);
       }
@@ -2984,7 +2983,7 @@ var dayCount = 0;               /* nights elapsed — drives moon phase (8-day c
         /* yuanjing rides 2 tiles higher than the Admurin ground anchor
            (USER: "贴图抬高一点" then "太高了" — 2 tiles settled) */
         var LIFT = (d.n === 'pixelforge_far' ||
-                    d.n === 'yuanjing_far') ? -8.75 * 32 : 0;
+                    d.n === 'yuanjing_far') ? -4.695 * 32 : 0;
         /* ^ tuning trail: +2 up → too high; −8 → too low; USER hand-
            tuned to −5.75, then "地表线还可以下来一点" → −8.75. The
            band's grass baseline is what reads as the 地表线 against the
