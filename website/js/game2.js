@@ -3,7 +3,7 @@
    collision layers kept regressing. What survives from the old game:
      - js/worldgen.js            (terraria-style generator, untouched)
      - assets/mc tilesheet       (CC0, build_tilesheet.py)
-     - the feibi spritesheet     (character)
+     - assets/feibi spritesheet  (default character; more in PETS below)
      - dig/place/hotbar game rules (hardness table, inventory counts)
    Everything else (rendering, lighting, camera, physics, input) is now
    Phaser. See docs/.../terraria-like-sandbox-design.md. */
@@ -129,11 +129,88 @@
   MainScene.prototype = Object.create(Phaser.Scene.prototype);
   MainScene.prototype.constructor = MainScene;
 
+  /* ---- PLAYABLE CHARACTERS ----
+     Every character is a Codex-pet spritesheet (192x208 cells, 1536 wide;
+     rows: 0 idle, 1 run, 3 wave, 4 jump — 9-row v1 and 11-row v2 sheets
+     share these rows). Adding a character = drop the sheet under
+     assets/pets/<id>/ and append one entry here. `petSel` is the stored
+     selection; it is NOT a numeric CFG knob (config panel edits numbers
+     only) — it lives beside CFG and persists in its own localStorage key. */
+  var PETS = [
+    { id: 'feibi', name: '菲比', tex: 'phoebe', src: 'assets/feibi/spritesheet.webp' },
+    { id: 'dafeiyu2', name: '蓝色大肥鱼', tex: 'dafeiyu2', src: 'assets/pets/dafeiyu2/spritesheet.webp' }
+  ];
+  var PET_DEFAULT = 'feibi';
+  function petByTex(tex) {
+    for (var i = 0; i < PETS.length; i++) { if (PETS[i].tex === tex) { return PETS[i]; } }
+    return null;
+  }
+  function loadPetSel() {
+    try {
+      var p = petByTex(localStorage.getItem('aulosDigPet'));
+      if (p) { return p.tex; }
+    } catch (e) {}
+    return PET_DEFAULT;
+  }
+  function savePetSel(tex) {
+    try { localStorage.setItem('aulosDigPet', tex); } catch (e) {}
+  }
+  var petSel = loadPetSel();
+  /* live character switch: retexture the sprite + rebuild its anims from
+     the new sheet. Anim keys are texture-independent, so the state
+     machine (which only switches on anim KEY) recovers on the next tick;
+     stopping the stale anim first avoids one frame of the old texture. */
+  function swapPet(tex) {
+    var p = petByTex(tex);
+    if (!p) { return; }
+    petSel = p.tex;
+    savePetSel(petSel);
+    if (game && scene && scene.player) {
+      scene.player.anims.stop();
+      scene.player.setTexture(petSel, 0);
+      buildPetAnims(scene);
+    }
+  }
+  /* the four player anims from the CURRENT petSel sheet (rows: 0 idle
+     0-5, 1 run 8-15, 3 wave 24-27, 4 jump 32-36 — same layout on 9-row
+     v1 and 11-row v2 sheets; see static/pet.js ROWS for the row spec).
+     Called from create() and on every live character switch. */
+  function buildPetAnims(S) {
+    if (S.anims.exists('run')) { S.anims.remove('run'); }
+    S.anims.create({
+      key: 'run',
+      frames: S.anims.generateFrameNumbers(petSel, { start: 8, end: 15 }),
+      frameRate: 9, repeat: -1
+    });
+    if (S.anims.exists('idle')) { S.anims.remove('idle'); }
+    S.anims.create({
+      key: 'idle',
+      frames: S.anims.generateFrameNumbers(petSel, { start: 0, end: 5 }),
+      frameRate: 4, repeat: -1
+    });
+    /* wave (one-shot, plays on chest open), jump (one-shot, first jump
+       — far better than freezing a run frame) */
+    if (S.anims.exists('jump')) { S.anims.remove('jump'); }
+    S.anims.create({
+      key: 'jump',
+      frames: S.anims.generateFrameNumbers(petSel, { start: 32, end: 36 }),
+      frameRate: 8, repeat: 0
+    });
+    if (S.anims.exists('wave')) { S.anims.remove('wave'); }
+    S.anims.create({
+      key: 'wave',
+      frames: S.anims.generateFrameNumbers(petSel, { start: 24, end: 27 }),
+      frameRate: 7, repeat: 0
+    });
+  }
+
   MainScene.prototype.preload = function () {
     /* build a tiny per-id texture strip so Phaser can draw arbitrary
        ids from our atlas without a runtime spritesheet parser */
-    this.load.spritesheet('phoebe', 'assets/feibi/spritesheet.webp',
-      { frameWidth: 192, frameHeight: 208 });
+    for (var pi = 0; pi < PETS.length; pi++) {
+      this.load.spritesheet(PETS[pi].tex, PETS[pi].src,
+        { frameWidth: 192, frameHeight: 208 });
+    }
     this.load.image('flag', 'assets/scenery/flag0.png?v=s1');
     this.load.image('bug', 'assets/scenery/bug0.png?v=s1');
     this.load.image('bug1', 'assets/scenery/bug1.png?v=s1');
@@ -441,7 +518,7 @@
 
     /* ---- player ---- */
     this.player = this.physics.add.sprite(
-      world.spawn[0] * TILE, world.spawn[1] * TILE, 'phoebe', 0)
+      world.spawn[0] * TILE, world.spawn[1] * TILE, petSel, 0)
       .setDisplaySize(88, 96)           /* frame 192x208 → 88x96 on screen */
       .setOrigin(0.5, 1);
     this.player.setCollideWorldBounds(true);
@@ -457,36 +534,13 @@
        sprite made the character glow like a halo. The soft lamp lives
        in the flood-field lampBuf instead. */
 
-    /* sprite anims: the feibi sheet was loaded via load.spritesheet
+    /* sprite anims: each pet sheet is loaded via load.spritesheet
        (192x208 cells), so frames are auto-numbered 0..87.
-       row 0 = idle (0-5), row 1 = run (8-15). */
-    if (this.anims.exists('run')) { this.anims.remove('run'); }
-    this.anims.create({
-      key: 'run',
-      frames: this.anims.generateFrameNumbers('phoebe', { start: 8, end: 15 }),
-      frameRate: 9, repeat: -1
-    });
-    if (this.anims.exists('idle')) { this.anims.remove('idle'); }
-    this.anims.create({
-      key: 'idle',
-      frames: this.anims.generateFrameNumbers('phoebe', { start: 0, end: 5 }),
-      frameRate: 4, repeat: -1
-    });
-    /* real animations from the pet sheet's own spec (see pet.js ROWS):
-       row 3 = wave (one-shot, plays on chest open), row 4 = jump
-       (one-shot, first jump — far better than freezing a run frame) */
-    if (this.anims.exists('jump')) { this.anims.remove('jump'); }
-    this.anims.create({
-      key: 'jump',
-      frames: this.anims.generateFrameNumbers('phoebe', { start: 32, end: 36 }),
-      frameRate: 8, repeat: 0
-    });
-    if (this.anims.exists('wave')) { this.anims.remove('wave'); }
-    this.anims.create({
-      key: 'wave',
-      frames: this.anims.generateFrameNumbers('phoebe', { start: 24, end: 27 }),
-      frameRate: 7, repeat: 0
-    });
+       row 0 = idle (0-5), row 1 = run (8-15). One anim set per
+       character texture — anim keys stay 'idle'/'run'/…, the frames
+       come from petSel's texture so switching character switches all.
+       buildPetAnims is shared with the live character switch. */
+    buildPetAnims(this);
     /* bug/bat flap: swap between the two loaded frames on a timer.
        (Canvas-composed textures have no numbered frames, so
        generateFrameNumbers built duration-less anims → play() threw.
@@ -4059,6 +4113,18 @@ var dayCount = 0;               /* nights elapsed — drives moon phase (8-day c
     var html = '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--border,#2b2b31)">' +
       '<b style="font-size:13.5px">⚙ 游戏设置</b>' +
       '<span style="color:var(--text-3,#85868f);font-size:11px">改动即时保存 · 重进游戏生效</span></div>';
+    /* character row (topmost): instant switch, unlike the numeric
+       sliders below which need a re-entry. Native <select> — tiny list,
+       no need for a custom dropdown. */
+    html += '<label style="display:flex;align-items:center;gap:8px;margin:3px 0 10px">' +
+      '<span style="flex:0 0 108px;font-size:12px;color:var(--text-2,#a0a1ab)">角色</span>' +
+      '<select id="cfgPet" style="flex:1;height:26px;min-width:0;background:var(--bg,#18181c);color:var(--text,#ececf1);border:1px solid var(--border-strong,#3b3b43);border-radius:8px;padding:0 8px;font:12.5px sans-serif">';
+    for (var pi = 0; pi < PETS.length; pi++) {
+      html += '<option value="' + PETS[pi].tex + '"' +
+        (PETS[pi].tex === petSel ? ' selected' : '') + '>' + PETS[pi].name + '</option>';
+    }
+    html += '</select>' +
+      '<span style="flex:0 0 40px;text-align:right;color:var(--ok,#4ade80);font-size:11px">即换</span></label>';
     CFG_FIELDS.forEach(function (f) {
       html += '<label style="display:flex;align-items:center;gap:8px;margin:3px 0">' +
         '<span style="flex:0 0 108px;font-size:12px;color:var(--text-2,#a0a1ab)">' + f.label + '</span>' +
@@ -4076,6 +4142,23 @@ var dayCount = 0;               /* nights elapsed — drives moon phase (8-day c
     card.innerHTML = html;
     el.appendChild(card);
     host.appendChild(el);
+    /* character switch: instant (swapPet retextures + rebuilds anims);
+       the panel stays open so players can try characters back to back */
+    var petDd = el.querySelector('#cfgPet');
+    if (petDd) {
+      petDd.addEventListener('change', function () {
+        swapPet(petDd.value);
+        var m = el.querySelector('#cfgMsg');
+        if (m) {
+          m.textContent = '已切换角色 ✓';
+          m.style.opacity = 1;
+          setTimeout(function () {
+            m.style.opacity = 0;
+            m.textContent = '已保存 ✓ 退出并重进游戏后完全生效';
+          }, 1800);
+        }
+      });
+    }
     el.querySelectorAll('input[type=range]').forEach(function (inp) {
       inp.addEventListener('input', function () {
         CFG[inp.dataset.k] = parseFloat(inp.value);
@@ -4115,6 +4198,9 @@ var dayCount = 0;               /* nights elapsed — drives moon phase (8-day c
     leave: leave,
     running: function () { return running; },
     cfg: function () { return CFG; },
+    /* live character switch (console / dev backdoor): AulosDig.pet('dafeiyu2') */
+    pet: swapPet,
+    petSel: function () { return petSel; },
     /* dev probe: live scene handles for console diagnostics */
     scene: function () { return game ? game.scene.getScene('main') : null; },
     world: function () { return world; }

@@ -331,6 +331,8 @@ uv run pytest          # 1070+ 用例；CI: .github/workflows/ci.yml
   作者元数据，原始作者不可考，素材本身已进入公有领域
 - **角色菲比** `assets/feibi/`：《鸣潮》(Wuthering Waves) 角色「菲比」的
   同人 chibi 桌宠素材；仓库内未记录原作者与授权信息，仅作非商业彩蛋展示
+- **角色蓝色大肥鱼** `assets/pets/dafeiyu2/`：aulos 桌宠「大肥鱼」自绘
+  素材（鲸尾女仆风 Q 版），彩蛋游戏选角之一，仅作非商业展示
 - **大型怪物** `assets/big/`：bevouliin「Land Monster」（CC0）与
   Redshrike「Ars Notoria」（CC-BY 3.0，须署名）；来源压缩包存于
   `assets/big/src/` 作为授权凭证
