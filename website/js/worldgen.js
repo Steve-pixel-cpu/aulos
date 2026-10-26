@@ -114,7 +114,8 @@
 
     /* ---- 1. surface heightmap: segmented slopes + smoothing ---------- */
     var SEG = 16, segW = Math.ceil(W / SEG);
-    var base = Math.round(H * 0.30);
+    /* USER: 地表线再往下移一点 — 0.30 -> 0.38 of world height */
+    var base = Math.round(H * 0.38);
     var pts = [];
     for (var s = 0; s <= SEG; s++) { pts.push(base + Math.round((rand() - 0.5) * 24)); }
     for (var pass = 0; pass < 2; pass++) {          /* gaussian-ish smooth */
