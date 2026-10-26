@@ -2943,28 +2943,26 @@ var dayCount = 0;               /* nights elapsed — drives moon phase (8-day c
           ? PLAYER_SURFACE_Y : 96 * 32);
         var srcH = img ? img.height : 360;
         var sc = d.n === 'pixelforge_far' || d.n === 'yuanjing_far'
-          ? 1.0 : 1.4;
+          ? 1.35 : 1.4;
         /* TileSprite textures tile at NATIVE pixel size — the legacy
            432px Admurin art needed 1.4x or only ~20px of mountain tips
-           peeked above the surface line; the pixelforge/yuanjing bands
-           are already taller than the surface window, so 1.0 keeps them
-           crisp. */
+           peeked above the surface line. The pixelforge/yuanjing bands
+           are bigger but must still OVERFILL the surface window:
+           yuanjing at 1.35 (1024→1382px visual) keeps its feathered top
+           edge above the highest camera position, so no horizon cut line
+           can ever scroll into view; 1.0 was too short (USER screenshot:
+           horizontal seam near the sky). */
         var lh = srcH * sc;                 /* VISUAL layer height */
-        /* pixelforge band rides 4 tiles higher than the Admurin bands
-           did (USER: "贴图抬高一点"): its own art has generous sky at
-           the top, so lifting it keeps the mountain line well above the
-           horizon instead of hugging the grass row */
+        /* yuanjing rides 2 tiles higher than the Admurin ground anchor
+           (USER: "贴图抬高一点" then "太高了" — 2 tiles settled) */
         var LIFT = (d.n === 'pixelforge_far' ||
                     d.n === 'yuanjing_far') ? 2 * 32 : 0;
         var sy0 = d.top != null
           ? surfPx2 - 600 + d.top * 400     /* clouds: fixed world band */
-          : surfPx2 + 32 - lh - LIFT;       /* ground: bottom ONE TILE
-                                              below the mean surface —
-                                              the grass row slightly
+          : surfPx2 + 32 - lh - LIFT;       /* bottom ONE TILE below the
+                                              mean surface — grass row
                                               overlaps the backdrop's
-                                              base, like Terraria's
-                                              background walls sitting
-                                              under the topsoil */
+                                              base, Terraria-style */
         var ts = S.add.tileSprite(
           0, sy0, (WORLD_W * 32) / sc, srcH, texKey)
           .setOrigin(0, 0)
