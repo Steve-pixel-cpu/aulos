@@ -133,59 +133,76 @@
      Every character is a Codex-pet spritesheet (192x208 cells, 1536 wide;
      rows: 0 idle, 1 run, 3 wave, 4 jump — 9-row v1 and 11-row v2 sheets
      share these rows). Adding a character = drop the sheet under
-     assets/pets/<id>/ and append one entry here. `petSel` is the stored
-     selection; it is NOT a numeric CFG knob (config panel edits numbers
-     only) — it lives beside CFG and persists in its own localStorage key. */
+     assets/pets/<id>/ and append one entry here. `petSel` stores the
+     selection by ID (also what localStorage and the picker hold); the
+     Phaser texture key is the separate `tex` field — NEVER use one
+     where the other is expected (feibi's tex is 'phoebe'). */
   var PETS = [
     { id: 'feibi', name: '菲比', tex: 'phoebe', src: 'assets/feibi/spritesheet.webp' },
     { id: 'dafeiyu2', name: '蓝色大肥鱼', tex: 'dafeiyu2', src: 'assets/pets/dafeiyu2/spritesheet.webp' }
   ];
   var PET_DEFAULT = 'feibi';
-  function petByTex(tex) {
-    for (var i = 0; i < PETS.length; i++) { if (PETS[i].tex === tex) { return PETS[i]; } }
+  /* petBy*: ALWAYS look up by `id`. `tex` is Phaser's texture key and is
+     NOT interchangeable with id (feibi→'phoebe'!). The first version of
+     this picker mixed them up and defaulted to the nonexistent texture
+     'feibi' → anims built from a missing texture have no frames →
+     play() crashed in getFirstTick reading .duration on first visit. */
+  function petById(id) {
+    for (var i = 0; i < PETS.length; i++) { if (PETS[i].id === id) { return PETS[i]; } }
     return null;
   }
   function loadPetSel() {
     try {
-      var p = petByTex(localStorage.getItem('aulosDigPet'));
-      if (p) { return p.tex; }
+      var p = petById(localStorage.getItem('aulosDigPet'));
+      if (p) { return p.id; }
     } catch (e) {}
     return PET_DEFAULT;
   }
-  function savePetSel(tex) {
-    try { localStorage.setItem('aulosDigPet', tex); } catch (e) {}
+  function savePetSel(id) {
+    try { localStorage.setItem('aulosDigPet', id); } catch (e) {}
   }
-  var petSel = loadPetSel();
+  var petSel = loadPetSel();          /* the selected character's ID */
+  function curPet() {
+    return petById(petSel) || petById(PET_DEFAULT);
+  }
   /* live character switch: retexture the sprite + rebuild its anims from
      the new sheet. Anim keys are texture-independent, so the state
      machine (which only switches on anim KEY) recovers on the next tick;
      stopping the stale anim first avoids one frame of the old texture. */
-  function swapPet(tex) {
-    var p = petByTex(tex);
+  function swapPet(id) {
+    var p = petById(id);
     if (!p) { return; }
-    petSel = p.tex;
+    petSel = p.id;
     savePetSel(petSel);
     if (game && scene && scene.player) {
       scene.player.anims.stop();
-      scene.player.setTexture(petSel, 0);
+      scene.player.setTexture(p.tex, 0);
       buildPetAnims(scene);
     }
   }
-  /* the four player anims from the CURRENT petSel sheet (rows: 0 idle
-     0-5, 1 run 8-15, 3 wave 24-27, 4 jump 32-36 — same layout on 9-row
-     v1 and 11-row v2 sheets; see static/pet.js ROWS for the row spec).
-     Called from create() and on every live character switch. */
+  /* the four player anims from the CURRENT selection's sheet (rows: 0
+     idle 0-5, 1 run 8-15, 3 wave 24-27, 4 jump 32-36 — same layout on
+     9-row v1 and 11-row v2 sheets; see static/pet.js ROWS for the row
+     spec). Called from create() and on every live character switch.
+     frameRate is per-frame duration in the anim spec — generateFrameNumbers
+     emits frames WITHOUT duration, so these numbers here are what
+     getFirstTick reads; they must exist, hence the hard texture check. */
   function buildPetAnims(S) {
+    var tex = curPet().tex;
+    /* paranoia from the getFirstTick crash: never build anims from a
+       texture that failed to load — frames would be undefined and
+       play() would throw "reading 'duration'" on the next tick */
+    if (!S.textures.exists(tex)) { tex = PETS[0].tex; }
     if (S.anims.exists('run')) { S.anims.remove('run'); }
     S.anims.create({
       key: 'run',
-      frames: S.anims.generateFrameNumbers(petSel, { start: 8, end: 15 }),
+      frames: S.anims.generateFrameNumbers(tex, { start: 8, end: 15 }),
       frameRate: 9, repeat: -1
     });
     if (S.anims.exists('idle')) { S.anims.remove('idle'); }
     S.anims.create({
       key: 'idle',
-      frames: S.anims.generateFrameNumbers(petSel, { start: 0, end: 5 }),
+      frames: S.anims.generateFrameNumbers(tex, { start: 0, end: 5 }),
       frameRate: 4, repeat: -1
     });
     /* wave (one-shot, plays on chest open), jump (one-shot, first jump
@@ -193,13 +210,13 @@
     if (S.anims.exists('jump')) { S.anims.remove('jump'); }
     S.anims.create({
       key: 'jump',
-      frames: S.anims.generateFrameNumbers(petSel, { start: 32, end: 36 }),
+      frames: S.anims.generateFrameNumbers(tex, { start: 32, end: 36 }),
       frameRate: 8, repeat: 0
     });
     if (S.anims.exists('wave')) { S.anims.remove('wave'); }
     S.anims.create({
       key: 'wave',
-      frames: S.anims.generateFrameNumbers(petSel, { start: 24, end: 27 }),
+      frames: S.anims.generateFrameNumbers(tex, { start: 24, end: 27 }),
       frameRate: 7, repeat: 0
     });
   }
@@ -518,7 +535,7 @@
 
     /* ---- player ---- */
     this.player = this.physics.add.sprite(
-      world.spawn[0] * TILE, world.spawn[1] * TILE, petSel, 0)
+      world.spawn[0] * TILE, world.spawn[1] * TILE, curPet().tex, 0)
       .setDisplaySize(88, 96)           /* frame 192x208 → 88x96 on screen */
       .setOrigin(0.5, 1);
     this.player.setCollideWorldBounds(true);
@@ -538,7 +555,8 @@
        (192x208 cells), so frames are auto-numbered 0..87.
        row 0 = idle (0-5), row 1 = run (8-15). One anim set per
        character texture — anim keys stay 'idle'/'run'/…, the frames
-       come from petSel's texture so switching character switches all.
+       come from the current character's texture so switching character
+       switches all.
        buildPetAnims is shared with the live character switch. */
     buildPetAnims(this);
     /* bug/bat flap: swap between the two loaded frames on a timer.
@@ -4120,8 +4138,8 @@ var dayCount = 0;               /* nights elapsed — drives moon phase (8-day c
       '<span style="flex:0 0 108px;font-size:12px;color:var(--text-2,#a0a1ab)">角色</span>' +
       '<select id="cfgPet" style="flex:1;height:26px;min-width:0;background:var(--bg,#18181c);color:var(--text,#ececf1);border:1px solid var(--border-strong,#3b3b43);border-radius:8px;padding:0 8px;font:12.5px sans-serif">';
     for (var pi = 0; pi < PETS.length; pi++) {
-      html += '<option value="' + PETS[pi].tex + '"' +
-        (PETS[pi].tex === petSel ? ' selected' : '') + '>' + PETS[pi].name + '</option>';
+      html += '<option value="' + PETS[pi].id + '"' +
+        (PETS[pi].id === petSel ? ' selected' : '') + '>' + PETS[pi].name + '</option>';
     }
     html += '</select>' +
       '<span style="flex:0 0 40px;text-align:right;color:var(--ok,#4ade80);font-size:11px">即换</span></label>';
@@ -4200,7 +4218,7 @@ var dayCount = 0;               /* nights elapsed — drives moon phase (8-day c
     cfg: function () { return CFG; },
     /* live character switch (console / dev backdoor): AulosDig.pet('dafeiyu2') */
     pet: swapPet,
-    petSel: function () { return petSel; },
+    petSel: function () { return petSel; },   /* character ID, not tex */
     /* dev probe: live scene handles for console diagnostics */
     scene: function () { return game ? game.scene.getScene('main') : null; },
     world: function () { return world; }
