@@ -2956,7 +2956,10 @@ var dayCount = 0;               /* nights elapsed — drives moon phase (8-day c
         /* yuanjing rides 2 tiles higher than the Admurin ground anchor
            (USER: "贴图抬高一点" then "太高了" — 2 tiles settled) */
         var LIFT = (d.n === 'pixelforge_far' ||
-                    d.n === 'yuanjing_far') ? 2 * 32 : 0;
+                    d.n === 'yuanjing_far') ? -8 * 32 : 0;
+        /* ^ yuanjing: 2 tiles up felt right for the mountain line, but
+           the whole band then sat too high (USER: "远景下来10格") — net
+           8 tiles DOWN from the old Admurin anchor (was +2 up) */
         var sy0 = d.top != null
           ? surfPx2 - 600 + d.top * 400     /* clouds: fixed world band */
           : surfPx2 + 32 - lh - LIFT;       /* bottom ONE TILE below the
