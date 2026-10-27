@@ -380,6 +380,9 @@
            treeFootprintOk() checks the surface columns tx-3..tx+5: all
            must be GRASS cap at the same height (flat ground), so trees
            never straddle cliff steps or sprout on stone/sand. */
+        /* sprite index: modded by the VARIANTS pool length in game2
+           (3 hand-keyed trees — treeSet slices became the mid-ground
+           band) */
         trees.push({ x: tx, y: surfaceY[tx], sprite: Math.floor(rand() * 3) });
         tx += 12 + Math.floor(rand() * 13);
       } else {
@@ -387,6 +390,24 @@
            sapling/stump art read as odd stacked spheres on the lawn.
            Grass stays clean; trees only. */
         tx += 3 + Math.floor(rand() * 6);
+      }
+    }
+    /* ---- 5a. foreground bushes (ChatGPT treeSet undergrowth slices,
+       world sprites in game2 anchored like the trees) on grass lawns,
+       kept clear of tree trunks (USER: "灌木丛直接作为前景插入游戏") ---- */
+    var bushes = [];
+    var bx = 10;
+    while (bx < W - 10) {
+      var okBush = biomeOf[bx] === 0 &&
+        tile[surfaceY[bx] * W + bx] === TILE.GRASS;
+      for (var tbi = 0; tbi < trees.length && okBush; tbi++) {
+        if (Math.abs(trees[tbi].x - bx) <= 3) { okBush = false; }
+      }
+      if (okBush && rand() < 0.55) {
+        bushes.push({ x: bx, y: surfaceY[bx], v: Math.floor(rand() * 3) });
+        bx += 6 + Math.floor(rand() * 9);
+      } else {
+        bx += 3 + Math.floor(rand() * 4);
       }
     }
     /* hay bales: occasional farmland meadow patches on flat grass */
@@ -658,13 +679,10 @@
       var gp = findSpot(dirtBottom[Math.floor(W / 2)] + 120, H - 60);
       if (gp) { tile[gp[1] * W + gp[0] + 1 < W ? gp[0] + 1 : gp[0]] = TILE.GLASS; rareGuest(26, gp[1], gp[0]); }
     }
-    /* snow cover on snowy biome surface */
-    for (var snx = 2; snx < W - 2; snx++) {
-      if (biomeOf[snx] === 1 && tile[surfaceY[snx] * W + snx] === TILE.GRASS_SNOWY && rand() < 0.4 && surfaceY[snx] > 1) {
-        tile[(surfaceY[snx] - 1) * W + snx] = TILE.SNOW;
-        rareGuest(24, surfaceY[snx] - 1, snx);
-      }
-    }
+    /* snow cover on snowy biome surface REMOVED (USER: "地面上不要生成
+       这种白色方块") — full SNOW cubes sitting on the snowy-grass caps
+       read as white blocks littering the lawn; the GRASS_SNOWY cap alone
+       already carries the biome look. */
     /* mossy cobble small clusters — deep only (dirt-band test whitelist) */
     for (var mc = 0; mc < 8; mc++) {
       var mp = findSpot(H - 120, H - 30);
@@ -681,14 +699,10 @@
       var tp = findSpot(surfaceY[4] + 3, H - 60);
       if (tp) { tile[tp[1] * W + tp[0]] = TILE.GRASS_TOP; rareGuest(52, tp[1], tp[0]); }
     }
-    /* hay pair: side + top caps on meadow surface */
-    for (var hy = 0; hy < 4; hy++) {
-      var hp = findSpot(surfaceY[4] + 1, H - 100);
-      if (hp && surfaceY[hp[0]] > 2 && tile[surfaceY[hp[0]] * W + hp[0]] === TILE.GRASS) {
-        tile[(surfaceY[hp[0]] - 1) * W + hp[0]] = rand() < 0.5 ? TILE.HAY_TOP : TILE.HAY_SIDE;
-        rareGuest(54, surfaceY[hp[0]] - 1, hp[0]);
-      }
-    }
+    /* hay pair on meadow surface REMOVED (USER: "地面上不要生成这种白色
+       方块") — a lone pale cube dropped on open grass reads the same as
+       the snow cubes / monument pillars. HAY stays as the farmland edge
+       cap (embedded in the ground row) where it belongs. */
     /* alternate sands inside desert biome band */
     for (var sx2 = 2; sx2 < W - 2; sx2++) {
       if (biomeOf[sx2] === 2 && rand() < 0.3) {
@@ -713,9 +727,11 @@
       var cgp = findSpot(dirtBottom[Math.floor(W / 2)] + 60, H - 20);
       if (cgp) { tile[cgp[1] * W + cgp[0]] = CORAL_GUESTS[cg % CORAL_GUESTS.length]; }
     }
-    /* coral_star solid block, deep */
+    /* coral_star solid block, deep. Anchored below the dirt band — a raw
+       findSpot(H-150, ...) minY could sit ABOVE the surface line and drop
+       the guest onto the open lawn as a floating brick */
     for (var cso = 0; cso < 4; cso++) {
-      var csp = findSpot(H - 150, H - 30);
+      var csp = findSpot(dirtBottom[Math.floor(W / 2)] + 40, H - 30);
       if (csp) { tile[csp[1] * W + csp[0]] = TILE.GRANITE_BRICKS; rareGuest(51, csp[1], csp[0]); }
     }
     /* obsidian extra deep: already banded but ensure presence */
@@ -734,40 +750,12 @@
       }
     }
 
-    /* ---- 6.9 spawn monument (USER: "类似祭坛，弄个特殊结构就行了") ----
-       NOT a building (the earlier fort attempt scattered floating bricks
-       and fought the terrain). A symmetric ALTAR-STYLE monument welded
-       to the spawn column: carved-sandstone twin pillars (2 wide, 5
-       high) with marble-brick capitals, a rune floor of sandstone
-       tiles under the spawn point, an eternal torch at the heart, and
-       crystal shards (TILE 42) as the crest — echoing the Kraken altar
-       look. Pillars stand ON the terrain surface (each column uses its
-       own surfaceY), so nothing floats and nothing boxes the player
-       in — both sides stay walkable. */
-    (function buildSpawnMonument() {
-      var kx = 32;
-      var pil = TILE.SANDSTONE_CARVED, cap = TILE.MARBLE_BRICKS,
-          floor = TILE.SANDSTONE_TILES, crest = 42;
-      [-5, -4, 4, 5].forEach(function (off) {
-        var px2 = kx + off;
-        var gy = surfaceY[px2];               /* own column ground */
-        for (var dy = 0; dy < 5; dy++) {
-          tile[(gy - 1 - dy) * W + px2] = pil;
-        }
-        tile[(gy - 6) * W + px2] = cap;       /* capital on top */
-      });
-      /* rune floor under the spawn point (3 wide) */
-      for (var fx = kx - 1; fx <= kx + 1; fx++) {
-        tile[surfaceY[fx] * W + fx] = floor;
-      }
-      /* eternal torch at the monument heart */
-      tile[(surfaceY[kx] - 1) * W + kx] = 12;
-      /* crystal crests atop each capital */
-      [-5, 5].forEach(function (off) {
-        var px2 = kx + off;
-        tile[(surfaceY[px2] - 7) * W + px2] = crest;
-      });
-    })();
+    /* ---- 6.9 spawn monument REMOVED (USER: "地面上不要生成这种白色方
+       块") — the carved-sandstone pillars + marble capitals + rune floor
+       read as stacked pale cubes on the lawn, and the rune floor also
+       replaced the grass caps under the spawn (so flowers looked like
+       they grew on white stone). Spawn is a plain grass lawn again;
+       surface deco = plants on GRASS caps + trees only. */
 
     /* ---- 7. spawn / flag ----------------------------------------------- */
     var spawn = [32, surfaceY[32] - 2];
@@ -833,7 +821,7 @@
       W: W, H: H,
       tile: tile, wall: wall, surfaceY: surfaceY, dirtBottom: dirtBottom,
       spawn: spawn, flag: flag, chests: chests, crystals: crystals,
-      trees: trees
+      trees: trees, bushes: bushes
     };
   }
 

@@ -221,6 +221,16 @@
     });
   }
 
+  /* foreground bushes = 16px pixel shrubs cut from the Kenney CC0
+     tiny-dungeon sheet (same palette family as the block atlas):
+     0 leafy shrub, 1 flowering bush, 2 sprout. Native 16px -> 1 tile
+     on screen (USER: "灌木太大了，而且还是色块" — the old 100px
+     hi-res slices read as blurry blobs). Sizes in src px; scale
+     variance 1.0-1.3 keeps clumps from reading as stamps. */
+  var BUSH_SET = [
+    { i: 0, w: 16, h: 16 }, { i: 1, w: 16, h: 16 }, { i: 2, w: 16, h: 16 }
+  ];
+
   MainScene.prototype.preload = function () {
     /* build a tiny per-id texture strip so Phaser can draw arbitrary
        ids from our atlas without a runtime spritesheet parser */
@@ -229,10 +239,17 @@
         { frameWidth: 192, frameHeight: 208 });
     }
     this.load.image('flag', 'assets/scenery/flag0.png?v=s1');
-    /* whole-tree sprites: two keyed high-res trees, pick per placement */
+    /* whole-tree sprites: two keyed high-res trees, pick per placement.
+       The ChatGPT treeSet slices are NOT surface trees — they read
+       blurry up close (USER: "这种树有点糊适合做中景") and live as the
+       mid-ground band assets/scenery/bg/tree_band.png (see BK_DEFS). */
     this.load.image('trees', 'assets/mc/tree_user.png?v=s2');
     this.load.image('trees2', 'assets/mc/tree_user2.png?v=s2');
     this.load.image('trees3', 'assets/mc/tree_user3.png?v=s2');
+    /* foreground bushes (16px pixel shrubs, USER: 太大/色块 fix) */
+    BUSH_SET.forEach(function (b) {
+      this.load.image('bush' + b.i, 'assets/mc/bush_px' + b.i + '.png?v=b2');
+    }, this);
     this.load.image('bug', 'assets/scenery/bug0.png?v=s1');
     this.load.image('bug1', 'assets/scenery/bug1.png?v=s1');
     this.load.image('bat', 'assets/scenery/bat0.png?v=s1');
@@ -308,6 +325,10 @@
     this.load.image('manticore1', 'assets/tiny/manticore1.png?v=t2');
     this.load.image('wight', 'assets/tiny/wight0.png?v=t2');           /* armored spectre */
     this.load.image('wight1', 'assets/tiny/wight1.png?v=t2');
+    this.load.image('zombie', 'assets/tiny/zombie0.png?v=t4');         /* night shambler (OGA 'Zombie and Skeleton 32x48', CC0) */
+    this.load.image('zombie1', 'assets/tiny/zombie1.png?v=t4');
+    this.load.image('skeleton', 'assets/tiny/skeleton0.png?v=t4');     /* bone archer, same CC0 sheet */
+    this.load.image('skeleton1', 'assets/tiny/skeleton1.png?v=t4');
     this.load.image('hydra', 'assets/tiny/hydra0.png?v=t2');           /* three heads */
     this.load.image('hydra1', 'assets/tiny/hydra1.png?v=t2');
     /* GIANT composites (64/48px, multi-part, procedurally assembled
@@ -405,7 +426,7 @@
          Drawn with the NATIVE canvas 2D API (Phaser Graphics has no
          pattern fill): tile the dirt-wall atlas tex at 8px so after
          the 4x scale-up each texture block lands at ~32px = one tile,
-         then a 45% black veil sinks it behind the playable walls. */
+         then a 55% black veil sinks it behind the playable walls. */
       var Q = 4;                        /* texel = 8 world px */
       var tw = Math.ceil(WORLD_W * TILE / Q);
       var th = Math.ceil(WORLD_H * TILE / Q);
@@ -424,6 +445,29 @@
       var wMeta = TILEMETA[wWallTex];
       var wIdx = wMeta ? wMeta.atlasIndex : 3;   /* dirt tile fallback */
       var wax = (wIdx % 16) * 16, way = ((wIdx / 16) | 0) * 16;
+      wctx.drawImage(mcSrc, wax, way, 16, 16, 0, 0, 8, 8);
+      /* USER: 降低背景墙的对比度 (blur 试用后否掉, 改压平法) — 把每个
+         墙像素向墙色平均值拉 50%: 明暗斑点/描边反差被压掉, 轮廓仍隐约
+         可见, 读起来是柔和的暗色底而不抢前景。blur 回退 (e990d5c) 曾把
+         这行 drawImage 一并删掉导致墙纹理消失, 此处一并恢复基线。 */
+      try {
+        var wd = wctx.getImageData(0, 0, 8, 8);
+        var dd = wd.data;
+        var mr = 0, mg = 0, mb = 0, n = 0;
+        for (var di = 0; di < dd.length; di += 4) {
+          if (dd[di + 3] > 10) { mr += dd[di]; mg += dd[di + 1]; mb += dd[di + 2]; n++; }
+        }
+        if (n > 0) {
+          mr /= n; mg /= n; mb /= n;
+          var KEEP = 0.5;   /* 50% 原色 + 50% 均色 = 压对比但不糊成色块 */
+          for (var dj = 0; dj < dd.length; dj += 4) {
+            dd[dj]     = dd[dj] * KEEP + mr * (1 - KEEP);
+            dd[dj + 1] = dd[dj + 1] * KEEP + mg * (1 - KEEP);
+            dd[dj + 2] = dd[dj + 2] * KEEP + mb * (1 - KEEP);
+          }
+          wctx.putImageData(wd, 0, 0);
+        }
+      } catch (err) { /* canvas tainted (file://) 时跳过, 保持原样 */ }
       var cv = document.createElement('canvas');
       cv.width = tw; cv.height = th;
       var ctx = cv.getContext('2d');
@@ -449,7 +493,7 @@
           ctx.fillStyle = pat;          /* canvas-aligned tiling: all
                                            columns share one grid */
           ctx.fillRect(bx, by, bw, bh);
-          ctx.fillStyle = 'rgba(0,0,0,0.45)';
+          ctx.fillStyle = 'rgba(0,0,0,0.55)';
           ctx.fillRect(bx, by, bw, bh);
         } else {
           ctx.fillStyle = '#241d16';
@@ -551,7 +595,9 @@
            trunk bottom is INSIDE the grass tile, not floating on it
            (USER: 和方块重叠了 — the previous base sat exactly on the
            tile top edge and collided visually with surface blocks). */
-        /* variant table: sprite 0/1/2 -> texture + display size */
+        /* variant table: sprite N -> texture + display size. The 3
+           hand-keyed trees only — the treeSet slices moved to the
+           mid-ground band (USER: "这种树有点糊适合做中景"). */
         var VARIANTS = [
           { key: 'trees',  w: 560, h: 580 },
           { key: 'trees2', w: 470, h: 555 },
@@ -569,6 +615,25 @@
           .setDepth(-1.5);   /* BEHIND terrain tiles (-1): never covers
                                 solid blocks (USER: 不要挡住实体方块) */
         this.treeLayer.push(spr);
+      }
+    }
+
+    /* ---- foreground bush layer (16px pixel shrubs, worldgen 5a) ----
+       Same anchoring convention as the trees: origin bottom-center at the
+       surface row + half a tile (roots buried in the grass), depth -1.5.
+       16px native at integer-ish scale 1.8-2.6 -> 29-42px, reads as
+       knee-high undergrowth next to the 32px player, not a hedge. */
+    if (world.bushes && world.bushes.length) {
+      this.bushLayer = [];
+      for (var bi2 = 0; bi2 < world.bushes.length; bi2++) {
+        var bu = world.bushes[bi2];
+        var bm = BUSH_SET[bu.v % BUSH_SET.length];
+        var bk = 1.8 + ((bu.x * 7) % 5) * 0.2;
+        this.bushLayer.push(this.add.image(
+          bu.x * TILE + TILE / 2, (bu.y + 0.5) * TILE, 'bush' + bm.i)
+          .setOrigin(0.5, 1)
+          .setScale(bk)
+          .setDepth(-1.5));
       }
     }
 
@@ -852,6 +917,9 @@
            Terraria's real walls occluding the backdrop.
        Layers are baked (blur+haze) once at load, same as before. */
     this.backdrop = buildPhaserBackdrop(this);
+    /* Clouds: the BAKED clouds in the yuanjing band (restored solid in
+       tools/key_yuanjing_sky.py). A drifting-sprite pass was tried and
+       rejected (USER: "云效果很差，还是用原来的静态云吧"). */
     /* UNDERGROUND FILL: the world already has caveFill (opaque earth
        texture below each column's surface line, depth -2.5). The
        backdrop bands only occupy the SKY area of the screen — but when
@@ -987,14 +1055,19 @@
       kind = roll < 0.40 ? 'batF' : roll < 0.60 ? 'spitterF' : 'bug';
       fly = kind === 'batF' || kind === 'spitterF';
     } else if (depth > 24) {
-      /* cave tier: slimes, eyes, spiders + willowisp shooters */
-      kind = roll < 0.18 ? 'slime' : roll < 0.33 ? 'eyelet'
-        : roll < 0.48 ? 'arachni' : roll < 0.60 ? 'spitter'
-        : roll < 0.82 ? 'bugW' : 'bug';
+      /* cave tier: slimes, eyes, spiders + willowisp shooters; the
+         undead dig down too — rare zombies/skeletons haunt caves */
+      kind = roll < 0.15 ? 'slime' : roll < 0.30 ? 'eyelet'
+        : roll < 0.43 ? 'arachni' : roll < 0.55 ? 'spitter'
+        : roll < 0.70 ? 'bugW' : roll < 0.85 ? 'bug'
+        : roll < 0.93 ? 'zombie' : 'skeleton';
       fly = kind === 'eyelet' || kind === 'spitter' || kind === 'bugW';
     } else if (dayT > 0.5) {
-      /* NIGHT surface: bats join, eyelets scout, wisps haunt */
-      kind = roll < 0.35 ? 'bug' : roll < 0.60 ? 'bat' : roll < 0.80 ? 'eyelet' : 'spitter';
+      /* NIGHT surface: bats join, eyelets scout, wisps haunt; zombies
+         shamble out after dark, skeletons patrol the graveyard shift */
+      kind = roll < 0.24 ? 'bug' : roll < 0.42 ? 'bat'
+        : roll < 0.56 ? 'zombie' : roll < 0.68 ? 'skeleton'
+        : roll < 0.84 ? 'eyelet' : 'spitter';
       fly = kind === 'bat' || kind === 'eyelet' || kind === 'spitter';
     } else {
       kind = roll < 0.6 ? 'bug' : roll < 0.9 ? 'bat' : 'spitter';
@@ -1065,6 +1138,8 @@
       : (kind === 'kraken') ? 2.8
       : (kind === 'cube' || kind === 'eye' || kind === 'krtentacle') ? 2.4
       : (kind === 'wraith' || kind === 'batF') ? 2.1
+      : (kind === 'zombie') ? 2.6                                     /* 24x41 src (OGA Reemax sheet) -> big walker */
+      : (kind === 'skeleton') ? 2.4                                   /* 24x48 src, same sheet */
       : 1.9;
     var elite = (depth > 60 && Math.random() < 0.15 && kind.indexOf('big') < 0 &&
                  kind !== 'bhydra' && kind !== 'dlord');
@@ -1099,16 +1174,56 @@
         (frameH - b.body.height) / baseScale);
       b.setMaxVelocity(90, 420);                  /* no tunneling falls */
     }
-    /* nudge loop v2: the OLD loop checked only the sprite CENTER tile —
-       a 3-6 tile wide giant stayed embedded chest-deep. Require the
-       WHOLE body box to be in air. */
+    /* UNDEAD (zombie/skeleton): tall narrow sheets (24x41 / 24x48) at
+       2.6x. setSize() centers the body on the sprite by default — the
+       display center sits at the sheet's transparent midriff, so the
+       body hung in mid-air while the sprite's feet (drawn lower) were
+       inside the floor tile: the collider lifted them off the ground
+       and they fell through. Fix: a NARROW body (legs-width, feet as
+       the collision base) manually offset in SCREEN pixels with
+       center=false — head/shoulders may overhang, feet never lie. */
+    if (kind === 'zombie' || kind === 'skeleton') {
+      var ud = kind === 'zombie'
+        ? { texW: 24, texH: 41, legW: 10, legH: 12 }   /* feet block src px */
+        : { texW: 24, texH: 48, legW: 10, legH: 14 };
+      var bw2 = ud.legW * baseScale, bh2 = ud.legH * baseScale;
+      b.body.setSize(bw2, bh2, false);            /* false: skip auto-center */
+      /* body position = sprite.pos + scale*(offset - displayOrigin)
+         (cf. phaser Body.updateFromGameObject) — offset is in TEXTURE
+         px, scaled at runtime. Narrow legs box anchored bottom-center:
+         x centered, y = sheet bottom minus legs height. */
+      b.body.setOffset(
+        (ud.texW - ud.legW) / 2,
+        ud.texH - ud.legH);
+      b.setMaxVelocity(90, 420);
+    }
+    /* nudge loop v3: verify against the TRUE body rect. Bodies with a
+       manual offset (undead feet box) or bottom-anchored giants don't
+       sit centered on the sprite origin — deriving the rect from
+       b.y - body.height/2 checked a phantom box while the real one
+       stayed inside the rock (spawned-in-wall, never visible). The
+       rect formula mirrors phaser Body.updateFromGameObject:
+       pos = sprite.pos + scale * (offset - displayOrigin). Undead
+       additionally require full-SPRITE headroom (no hair buried in
+       the ceiling); if no such pocket exists, skip this spawn. */
     if (!fly || kind === 'bigworm') {
+      var undead = kind === 'zombie' || kind === 'skeleton';
       var tries = 0;
-      var bw = Math.ceil(b.body.width / TILE) + 1;
-      var bh = Math.ceil(b.body.height / TILE) + 1;
       while (tries < 30) {
-        var cxi0 = Math.floor((b.x - b.body.width / 2) / TILE);
-        var cyi0 = Math.floor((b.y - b.body.height / 2) / TILE);
+        var rx = b.x + b.scaleX * (b.body.offset.x - b.displayOriginX);
+        var ry = b.y + b.scaleY * (b.body.offset.y - b.displayOriginY);
+        var rw = b.body.width, rh = b.body.height;
+        if (undead) {
+          /* full display rect: head/shoulders must be visible too */
+          rx = b.x - b.displayWidth / 2;
+          ry = b.y - b.displayHeight / 2;
+          rw = b.displayWidth;
+          rh = b.displayHeight;
+        }
+        var cxi0 = Math.floor(rx / TILE);
+        var cyi0 = Math.floor(ry / TILE);
+        var bw = Math.ceil(rw / TILE) + 1;
+        var bh = Math.ceil(rh / TILE) + 1;
         var clear = true;
         for (var nx = cxi0; nx < cxi0 + bw && clear; nx++) {
           for (var ny = cyi0; ny < cyi0 + bh && clear; ny++) {
@@ -1120,7 +1235,10 @@
         b.y -= TILE;                          /* box intersects rock: rise */
         tries++;
       }
-      if (tries >= 30) { b.y = Math.max(TILE * 3, p.y - 300); } /* last resort: sky */
+      if (tries >= 30) {
+        if (undead) { return; }     /* no tall pocket: skip, not sky-drop */
+        b.y = Math.max(TILE * 3, p.y - 300); /* last resort: sky */
+      }
     }
     b.setDepth(8);            /* above tiles, below HUD; same plane as shards */
     b.setVelocityX((Math.random() < 0.5 ? -1 : 1) * (30 + Math.random() * 40) * (elite ? 0.7 : 1));
@@ -1146,6 +1264,8 @@
     if (kind === 'demon') { b.tint = 0xe86a6a; }
     if (kind === 'naga' || kind === 'hydra') { b.tint = 0x7ad9b0; }
     if (kind === 'mummy' || kind === 'goul' || kind === 'wight') { b.tint = 0xd9d0b8; }
+    /* zombie/skeleton body: the UNDEAD branch above sets a narrow
+       feet-anchored hitbox (24x41 / 24x48 src, 2.4-2.6x scale) */
     if (kind === 'manticore') { b.tint = 0xf2b86b; }
     if (elite) { b.tint = b.tint ? b.tint : 0xffffff; }
     /* NO glow halos (user request): monsters are lit only by the
@@ -1570,7 +1690,10 @@
         return;
       }
       var dist = Math.hypot(dx, dy);
-      b.setFlipX(dx < 0);
+      /* sheet faces left; everything else faces right */
+      /* sheet faces left; everything else faces right */
+      var faceLeft = b.kind === 'zombie' || b.kind === 'skeleton';
+      b.setFlipX(faceLeft ? dx > 0 : dx < 0);
       var k = b.kind;
       if (k === 'kraken') {
         /* kraken: apex — slow relentless FLOATING pursuit, gravity off,
@@ -1680,6 +1803,19 @@
         if (S.time.now - b.spitLast > (isF ? 1300 : 1700) && dist < 460) {
           b.spitLast = S.time.now;
           spitShot(S, b, isF);
+        }
+      } else if (k === 'skeleton') {
+        /* SKELETON ARCHER: ground caster — shuffles toward the player,
+           holds a stand-off band (200-340px), lobs a fast fire bolt
+           every ~2.2s in sight range. Aims from eye height. */
+        var skBand = dist < 200 ? -1 : (dist > 340 ? 1 : 0);
+        b.setVelocity((dx / dist) * 45 * skBand, b.body.velocity.y);
+        /* hop over small ledges: jump when blocked and grounded */
+        if (skBand !== 0 && b.body.blocked.left) { b.setVelocityY(-320); }
+        if (!b.skLast) { b.skLast = S.time.now; }
+        if (S.time.now - b.skLast > 2200 && dist < 480) {
+          b.skLast = S.time.now;
+          spitShot(S, b, true, 330, 0xffd23d);   /* fast yellow fireball */
         }
       } else if (b.fly) {
         /* bat: within 320px, dive at the player; otherwise hover-wander */
@@ -1965,24 +2101,24 @@
      bolt group (same collider vs world solids, same cleanup) but is
      tinted + flagged hostile so it can hurt the PLAYER and can NEVER
      hurt other enemies. Speed 240 px/s - dodgeable at walking pace. */
-  function spitShot(S, b, isF) {
+  function spitShot(S, b, isF, speed, tint) {
     ensureBulletTexture(S);
     var p = S.player;
     var dx = p.x - b.x, dy = (p.y - 30) - b.y;
     var len = Math.hypot(dx, dy) || 1;
-    var sp = isF ? 280 : 240;
+    var sp = speed || (isF ? 280 : 240);
     var pr = S.bullets.create(b.x, b.y, 'bolt');
     pr.setDepth(45);
     pr.setBlendMode(Phaser.BlendModes.ADD);
     pr.hostile = true;                       /* hurts player, not bugs */
-    pr.setTint(isF ? 0xff8a3d : 0x9ff5b3);   /* ember orange / wisp green */
+    pr.setTint(tint || (isF ? 0xff8a3d : 0x9ff5b3));   /* ember orange / wisp green */
     pr.setScale(1.25);
     pr.setRotation(Math.atan2(dy, dx));
     pr.body.setAllowGravity(false);
     pr.body.setSize(12, 12);
     pr.setVelocity((dx / len) * sp, (dy / len) * sp);
     SFX.spit ? SFX.spit() : 0;
-    burst(S, b.x, b.y, isF ? 0xff8a3d : 0x9ff5b3, 3);
+    burst(S, b.x, b.y, tint || (isF ? 0xff8a3d : 0x9ff5b3), 3);
   }
 
   function isSolid(x, y) {
@@ -2747,6 +2883,111 @@ var dayCount = 0;               /* nights elapsed — drives moon phase (8-day c
 
 
 
+  /* ---- celestial sprites (sun + 8 moon phases), baked ONCE to offscreen
+     canvases and blitted by drawSky every frame: the sun gets stacked
+     radial glows + a gradient core; the moon a sphere-shaded, cratered
+     disc whose LIT portion is a true lune (two-arc clip path) — the old
+     flat-color "bite" circle punched a hole that mismatched the gradient
+     behind it. ---- */
+  var _celSprites = null;
+  function moonLunePath(x, cx, cy, r, p) {
+    /* lit-region path for phase p∈[0,1): 0=new, .25=first quarter, .5=full.
+       Waxing = lit on the right (northern-hemisphere convention, same as
+       the old bite table). Ellipse-arc terminator: rx sweeps r→0→r across
+       the quarter, traversed through the correct side per crescent/
+       gibbous so the enclosed area is exactly the lit lune. */
+    x.beginPath();
+    if (p <= 0.5) {
+      x.arc(cx, cy, r, -Math.PI / 2, Math.PI / 2, false);  /* right half */
+      var t = p * 4;
+      if (t < 1) {   /* crescent: terminator bulges left */
+        x.ellipse(cx, cy, r * Math.cos(t * Math.PI / 2), r, 0,
+          Math.PI / 2, Math.PI * 1.5, false);
+      } else {       /* gibbous: terminator bulges right */
+        x.ellipse(cx, cy, r * Math.cos((t - 1) * Math.PI / 2), r, 0,
+          Math.PI / 2, -Math.PI / 2, true);
+      }
+    } else {
+      x.arc(cx, cy, r, -Math.PI / 2, Math.PI / 2, true);   /* left half */
+      var tt = (p - 0.5) * 4;
+      if (tt < 1) {  /* gibbous: terminator bulges right */
+        x.ellipse(cx, cy, r * Math.cos(tt * Math.PI / 2), r, 0,
+          Math.PI / 2, -Math.PI / 2, true);
+      } else {       /* crescent: terminator bulges left */
+        x.ellipse(cx, cy, r * Math.cos((tt - 1) * Math.PI / 2), r, 0,
+          Math.PI / 2, Math.PI * 1.5, false);
+      }
+    }
+    x.closePath();
+  }
+  function bakeCelestials() {
+    if (_celSprites) { return _celSprites; }
+    var sp = { sun: null, moon: [] };
+    /* SUN — three stacked radial glows, then a warm gradient core */
+    (function () {
+      var SZ = 120, c = document.createElement('canvas');
+      c.width = c.height = SZ;
+      var x = c.getContext('2d');
+      var cx = SZ / 2, cy = SZ / 2, r = 17;
+      [[54, 0.16], [38, 0.26], [26, 0.38]].forEach(function (g) {
+        var gr = x.createRadialGradient(cx, cy, r * 0.4, cx, cy, g[0]);
+        gr.addColorStop(0, 'rgba(255,214,120,' + g[1] + ')');
+        gr.addColorStop(1, 'rgba(255,214,120,0)');
+        x.fillStyle = gr;
+        x.fillRect(0, 0, SZ, SZ);
+      });
+      var core = x.createRadialGradient(cx - 4, cy - 4, 2, cx, cy, r);
+      core.addColorStop(0, '#fff9e3');
+      core.addColorStop(0.55, '#ffe08a');
+      core.addColorStop(1, '#ffb457');
+      x.fillStyle = core;
+      x.beginPath();
+      x.arc(cx, cy, r, 0, Math.PI * 2);
+      x.fill();
+      sp.sun = c;
+    })();
+    /* MOON — one sprite per night of the 8-day cycle: 0 = new moon
+       (faint halo only), 4 = full. Disc shaded top-left like a sphere,
+       five fixed craters, all clipped to the phase's lit lune. */
+    var CRATERS = [[-4, -3, 2.2], [2.6, -4.4, 1.5], [4, 3, 2.5],
+                   [-2.2, 4.4, 1.7], [0.4, 0.6, 1.1]];
+    for (var ph = 0; ph < 8; ph++) {
+      var SZM = 72, cm = document.createElement('canvas');
+      cm.width = cm.height = SZM;
+      var mx = cm.getContext('2d');
+      var mcx = SZM / 2, mcy = SZM / 2, mr = 12;
+      var halo = mx.createRadialGradient(mcx, mcy, mr * 0.5, mcx, mcy, 30);
+      halo.addColorStop(0, 'rgba(214,228,255,' + (ph === 0 ? 0.12 : 0.26) + ')');
+      halo.addColorStop(1, 'rgba(214,228,255,0)');
+      mx.fillStyle = halo;
+      mx.fillRect(0, 0, SZM, SZM);
+      if (ph > 0) {
+        mx.save();
+        moonLunePath(mx, mcx, mcy, mr, ph / 8);
+        mx.clip();
+        var disc = mx.createRadialGradient(
+          mcx - mr * 0.35, mcy - mr * 0.35, mr * 0.15, mcx, mcy, mr);
+        disc.addColorStop(0, '#f6f8fc');
+        disc.addColorStop(0.55, '#dde4f1');
+        disc.addColorStop(1, '#b6c1d9');
+        mx.fillStyle = disc;
+        mx.beginPath();
+        mx.arc(mcx, mcy, mr, 0, Math.PI * 2);
+        mx.fill();
+        mx.fillStyle = 'rgba(148,160,188,0.5)';
+        CRATERS.forEach(function (cr) {
+          mx.beginPath();
+          mx.arc(mcx + cr[0], mcy + cr[1], cr[2], 0, Math.PI * 2);
+          mx.fill();
+        });
+        mx.restore();
+      }
+      sp.moon.push(cm);
+    }
+    _celSprites = sp;
+    return sp;
+  }
+
   /* ---- sky (2d ctx on the BOTTOM overlay, behind the game canvas) ---- */
   function drawSky(S) {
     var ctx = S.skyCtx;
@@ -2813,55 +3054,26 @@ var dayCount = 0;               /* nights elapsed — drives moon phase (8-day c
       ctx.globalAlpha = 1;
     }
 
-    /* SUN & MOON — the ORIGINAL UI scheme: glowing discs drawn straight
-       into the sky canvas at a fixed screen arc driven by dayT (the
-       world-object/texture experiments kept sliding with the camera —
-       a celestial body in this game is sky-painted UI). */
+    /* SUN & MOON — the ORIGINAL UI scheme: drawn straight into the sky
+       canvas at a fixed screen arc driven by dayT (the world-object/
+       texture experiments kept sliding with the camera — a celestial
+       body in this game is sky-painted UI). Bodies blit from the
+       once-baked sprites (bakeCelestials): sun = stacked glows +
+       gradient core; moon = shaded cratered disc with true lune phases
+       (8-night cycle, dayCount increments at each dusk; 0 = new moon =
+       faint halo only, 4 = full). */
     {
       var ang, isDay = dayT < 0.5;
       if (isDay) { ang = (dayT / 0.5) * Math.PI; }
       else { ang = ((dayT - 0.5) / 0.5) * Math.PI; }
       var cxS = w * (0.08 + 0.84 * (ang / Math.PI));
       var cyS = h * 0.30 - Math.sin(ang) * h * 0.24;
-      ctx.beginPath();
+      var cel = bakeCelestials();
       if (isDay) {
-        ctx.fillStyle = '#ffe9a8';
-        ctx.shadowColor = 'rgba(255,220,120,.9)';
-        ctx.shadowBlur = 26;
+        ctx.drawImage(cel.sun, cxS - 60, cyS - 60);
       } else {
-        ctx.fillStyle = '#e8ecf5';
-        ctx.shadowColor = 'rgba(210,225,255,.7)';
-        ctx.shadowBlur = 18;
-      }
-      ctx.arc(cxS, cyS, isDay ? 17 : 12, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.shadowBlur = 0;
-      if (!isDay) {   /* MOON PHASES (USER: "月亮弄个月相变化") — an
-         8-phase cycle over 8 days (dayCount increments at each dusk,
-         maintained by the spawn tick). Terminator = an offset sky-color
-         circle "bite": its x-offset sweeps right→center→left across
-         new→crescent→quarter→gibbous→full→…; at new moon (phase 0) no
-         bite is drawn but the disc itself is dimmed to a faint sliver. */
         var phase = dayCount % 8;
-        if (phase === 0) {
-          /* new moon: barely-there sliver */
-          ctx.globalAlpha = 0.25;
-          ctx.beginPath();
-          ctx.arc(cxS, cyS, 12, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.globalAlpha = 1;
-        } else {
-          /* bite offsets/radii per phase:
-             1 waxing-crescent, 2 first-quarter, 3 waxing-gibbous,
-             4 FULL (no bite), 5 waning-gibbous, 6 last-quarter,
-             7 waning-crescent */
-          var biteX = [0, 13, 11, -6, 0, 6, -11, -13][phase];
-          var biteR = [0, 12.5, 11, 8, 0, 8, 11, 12.5][phase];
-          ctx.fillStyle = cssColor(sky.top);
-          ctx.beginPath();
-          ctx.arc(cxS + biteX, cyS - 4, biteR, 0, Math.PI * 2);
-          ctx.fill();
-        }
+        ctx.drawImage(cel.moon[phase], cxS - 36, cyS - 36);
       }
     }
 
@@ -2881,9 +3093,15 @@ var dayCount = 0;               /* nights elapsed — drives moon phase (8-day c
       ctx.fillText('☂ 血 月 之 夜', w / 2, 62);
       ctx.textAlign = 'left';
       {
-        ctx.fillStyle = 'rgba(255,60,50,0.35)';
+        /* red halo + a disc-sized tint so the cratered moon itself
+           reads blood-red, not just ringed */
+        ctx.fillStyle = 'rgba(255,60,50,0.30)';
         ctx.beginPath();
         ctx.arc(cxS, cyS, 26, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = 'rgba(255,84,64,0.32)';
+        ctx.beginPath();
+        ctx.arc(cxS, cyS, 12, 0, Math.PI * 2);
         ctx.fill();
       }
     }
@@ -2926,11 +3144,26 @@ var dayCount = 0;               /* nights elapsed — drives moon phase (8-day c
      slate) + brightened plains forests. Files live in assets/scenery/bg/. */
     var BK_DEFS = [
     /* far-scenery band (USER-generated "远景" art, 1536x1024): mountains
-       + conifer line + flat dark-green grass base. Sky rows are keyed
-       transparent (alpha 0 above the art line, feather) so the DOM
-       day/night gradient, sun & moon show through. Scale 1.0 native —
+       + conifer line + flat dark-green grass base. The baked sky GRADIENT
+       is keyed transparent (tools/key_yuanjing_sky.py) so the DOM
+       day/night gradient, sun & moon show through with no horizontal seam
+       at any hour. The baked CLOUDS stay SOLID, like the source art;
+       drifting sprite clouds were rejected (USER: "云效果很差，还是用
+       原来的静态云吧"). The land cut is HARD per column (silhouette top =
+       first 3-row run of darker-than-sky pixels; everything above alpha 0
+       except the solid clouds) — wide distance feathers kept far-peak and
+       horizon haze semi-transparent, which glowed over the night gradient
+       as 峰/云残影 between clouds and peaks (USER). Scale 1.0 native —
        1.35x upscale read blurry (USER: 缩放太严重了). */
-    { n: 'yuanjing_far', blur: 0, haze: 0, fx: 0.18 }
+    { n: 'yuanjing_far', blur: 0, haze: 0, fx: 0.18 },
+    /* mid-ground tree line (tools/build_tree_band.py composites the
+       ChatGPT treeSet slices): native 1:1 band IN FRONT of the far
+       mountains (array order drives depth). Those trees read slightly
+       blurry as on-surface trees (USER: "这种树有点糊适合做中景") — the
+       aerial tint is BAKED saturation-preserving by the band builder;
+       in-game blur/haze stay 0 (the flat gray haze washed it out,
+       USER: "太灰了吧"). */
+    { n: 'tree_band', blur: 0, haze: 0, fx: 0.4 }
   ];
   /* ---- Phaser-native backdrop ------------------------------------------
      Builds 7 TileSprites with per-layer scroll factors. Textures are
@@ -2984,8 +3217,10 @@ var dayCount = 0;               /* nights elapsed — drives moon phase (8-day c
           ? PLAYER_SURFACE_Y : 96 * 32);
         var srcH = img ? img.height : 360;
         var sc = d.n === 'pixelforge_far' || d.n === 'yuanjing_far'
-          ? 1.0 : 1.4;   /* yuanjing native 1.0: 1.35x upscale read blurry
-                            (USER: 缩放太严重了) — back to native size */
+          || d.n === 'tree_band'
+          ? 1.0 : 1.4;   /* yuanjing/tree_band native 1.0: 1.35x upscale
+                            read blurry (USER: 缩放太严重了) — back to
+                            native size */
         /* TileSprite textures tile at NATIVE pixel size — the legacy
            432px Admurin art needed 1.4x or only ~20px of mountain tips
            peeked above the surface line. The pixelforge/yuanjing bands
@@ -3030,8 +3265,10 @@ var dayCount = 0;               /* nights elapsed — drives moon phase (8-day c
            transform as its parent band: scrollFactor 1, one tile
            deeper, so it can never detach. The pixelforge band is opaque
            full-height art — no gap possible, but the skirt is harmless
-           behind it (one tile deeper), so no branch is needed. */
-        if (d.top == null) {
+           behind it (one tile deeper), so no branch is needed.
+           tree_band does NOT get one (USER: "树底部的绿色条带不要") —
+           its trunks root behind the terrain, no green fill wanted. */
+        if (d.top == null && d.n !== 'tree_band') {
           var skTex = 'bkd_green_ext';
           if (!S.textures.exists(skTex)) {
             var gc = document.createElement('canvas');
@@ -3067,7 +3304,7 @@ var dayCount = 0;               /* nights elapsed — drives moon phase (8-day c
           _bkTex.img[d.n] = im;
           make(im);
         };
-        im.src = 'assets/scenery/bg/' + d.n + '.png';
+        im.src = 'assets/scenery/bg/' + d.n + '.png?v=sky10';
       }
     });
     return layers;
@@ -3118,7 +3355,7 @@ var dayCount = 0;               /* nights elapsed — drives moon phase (8-day c
           _bkGround = 'rgb(' + p2[0] + ',' + p2[1] + ',' + p2[2] + ')';
         }
       };
-      im.src = 'assets/scenery/bg/' + d.n + '.png';
+      im.src = 'assets/scenery/bg/' + d.n + '.png?v=sky10';
       _bkTex.img[d.n] = im;          /* shown until the bake lands */
     });
   }
@@ -3832,10 +4069,13 @@ var dayCount = 0;               /* nights elapsed — drives moon phase (8-day c
              arachni 3, spitter 2, bugW 3. Boss has its own path. */
           if (bg.maxHp === undefined) {
             var hpTable = { bug: 1, bat: 1, slime: 4, eyelet: 2,
-              arachni: 3, spitter: 2, spitterF: 2, bugW: 3, batF: 2 };
+              arachni: 3, spitter: 2, spitterF: 2, bugW: 3, batF: 2,
+              zombie: 6, skeleton: 4 };      /* undead are chunky */
             bg.bugKind = bg.bugKind ||
               (bg.texture && bg.texture.key) || 'bug';
             bg.maxHp = hpTable[bg.bugKind] || 2;
+            /* BLOOD MOON: all bugs get double HP while the curse is up */
+            if (S.bloodMoon) { bg.maxHp *= 2; }
             bg.hp = bg.maxHp;
           }
           bg.hp -= (bl.dmg || 1);
