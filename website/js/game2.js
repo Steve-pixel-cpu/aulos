@@ -424,7 +424,6 @@
       var wMeta = TILEMETA[wWallTex];
       var wIdx = wMeta ? wMeta.atlasIndex : 3;   /* dirt tile fallback */
       var wax = (wIdx % 16) * 16, way = ((wIdx / 16) | 0) * 16;
-      wctx.drawImage(mcSrc, wax, way, 16, 16, 0, 0, 8, 8);
       var cv = document.createElement('canvas');
       cv.width = tw; cv.height = th;
       var ctx = cv.getContext('2d');
@@ -634,7 +633,7 @@
     /* USER: 人物在屏幕上的位置再往下一点 — offset +10% -> +22% (player
        rests at ~72% screen height instead of ~60%) */
     this.setFollowOffsetY = function () {
-      this.cameras.main.setFollowOffset(0, this.scale.height * 0.22);
+      this.cameras.main.setFollowOffset(0, this.scale.height * 0.33);
     };
     this.setFollowOffsetY();
     this.physics.world.setBounds(0, 0, WORLD_W * TILE, WORLD_H * TILE);
@@ -2999,7 +2998,7 @@ var dayCount = 0;               /* nights elapsed — drives moon phase (8-day c
         /* yuanjing rides 2 tiles higher than the Admurin ground anchor
            (USER: "贴图抬高一点" then "太高了" — 2 tiles settled) */
         var LIFT = (d.n === 'pixelforge_far' ||
-                    d.n === 'yuanjing_far') ? -4.695 * 32 : 0;
+                    d.n === 'yuanjing_far') ? -3.5 * 32 : 0;
         /* ^ tuning trail: +2 up → too high; −8 → too low; USER hand-
            tuned to −5.75, then "地表线还可以下来一点" → −8.75. The
            band's grass baseline is what reads as the 地表线 against the
