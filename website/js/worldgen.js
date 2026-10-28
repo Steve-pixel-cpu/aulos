@@ -93,6 +93,19 @@
 
   function generate(seed, W, H) {
     var rand = rng(seed);
+  /* whole-tree placement rule (USER): 8 grass tiles under the footprint.
+     tx-3..tx+5 must all be grass-capped at the SAME surfaceY — flat ground
+     only. Returns false on cliff steps / non-grass ground. */
+  function treeFootprintOk(tx, sy) {
+    if (tx - 3 < 1 || tx + 5 >= W - 1) { return false; }
+    for (var cx = tx - 3; cx <= tx + 5; cx++) {
+      var cy2 = surfaceY[cx];
+      if (cy2 !== sy) { return false; }
+      if (tile[cy2 * W + cx] !== TILE.GRASS) { return false; }
+    }
+    return true;
+  }
+
     var tile = new Uint8Array(W * H);
     var wall = new Uint8Array(W * H);
     var surfaceY = new Int16Array(W);
@@ -101,7 +114,8 @@
 
     /* ---- 1. surface heightmap: segmented slopes + smoothing ---------- */
     var SEG = 16, segW = Math.ceil(W / SEG);
-    var base = Math.round(H * 0.30);
+    /* USER: 地表线再往下移一点 — 0.30 -> 0.38 of world height */
+    var base = Math.round(H * 0.5);
     var pts = [];
     for (var s = 0; s <= SEG; s++) { pts.push(base + Math.round((rand() - 0.5) * 24)); }
     for (var pass = 0; pass < 2; pass++) {          /* gaussian-ish smooth */
@@ -177,12 +191,12 @@
         var r4 = rand();
         if (r4 < 0.10) { return TILE.OBSIDIAN; }
         if (r4 < 0.14) { return TILE.BASALT_FLOW; }
-        if (r4 < 0.18) { return TILE.CORAL_BRAIN; }
+        if (r4 < 0.18) { return TILE.GABBRO; }
         return TILE.BASALT;
       }
       var r5 = rand();
       if (r5 < 0.28) { return TILE.OBSIDIAN; }
-      if (r5 < 0.34) { return TILE.CORAL_STAR; }
+      if (r5 < 0.34) { return TILE.GRANITE_BRICKS; }
       return TILE.BASALT;
     }
     /* biome columns: grass(0) / snowy(1) / desert(2) / swamp(3).
@@ -272,10 +286,10 @@
        (shallow cold pockets). coal/iron/gold/diamond stay the core. */
     function oreWeight(depth) {
       /* depth below surface */
-      if (depth < 20) { return [TILE.COAL, TILE.COAL, TILE.IRON, TILE.ICE_GLACIER]; }
-      if (depth < 60) { return [TILE.COAL, TILE.IRON, TILE.IRON, TILE.GOLD, TILE.CORAL_CAULIFLOWER]; }
-      if (depth < 100) { return [TILE.IRON, TILE.GOLD, TILE.GOLD, TILE.DIAMOND, TILE.CORAL_PORE]; }
-      return [TILE.GOLD, TILE.DIAMOND, TILE.DIAMOND, TILE.DIAMOND, TILE.CORAL_BRAIN];
+      if (depth < 20) { return [TILE.COAL, TILE.COAL, TILE.IRON, TILE.SANDSTONE]; }
+      if (depth < 60) { return [TILE.COAL, TILE.IRON, TILE.IRON, TILE.GOLD, TILE.CLAY]; }
+      if (depth < 100) { return [TILE.IRON, TILE.GOLD, TILE.GOLD, TILE.DIAMOND, TILE.GABBRO]; }
+      return [TILE.GOLD, TILE.DIAMOND, TILE.DIAMOND, TILE.DIAMOND, TILE.MARBLE_BRICKS];
     }
     var ORE_VEINS = 320;
     for (var v = 0; v < ORE_VEINS; v++) {
@@ -305,9 +319,10 @@
       TILE.MARBLE_BRICKS2, TILE.MARBLE_BRICKS3, TILE.SANDSTONE_BRICKS,
       TILE.SANDSTONE_CARVED, TILE.SANDSTONE_TILES, TILE.SERPENTINE_BRICKS,
       TILE.SERPENTINE_CARVED, TILE.RHYOLITE_TILES, TILE.SLATE_TILES,
-      TILE.CORAL_BRAIN_BLEACHED, TILE.CORAL_CAULIFLOWER_BLEACHED,
-      TILE.CORAL_PORE_BLEACHED, TILE.CORAL_STAR_BLEACHED,
       TILE.ICE_ICICLES, TILE.BASALT_FLOW];
+    /* coral crystal pockets REMOVED from ruins (USER: 地下的这种水晶太多了)
+       — they overran every cave as glowing teal mounds; the yellow/cyan
+       crystals remain only as rare cave-decor plants. */
     for (var rv = 0; rv < 240; rv++) {
       var rx = 2 + Math.floor(rand() * (W - 4));
       var ry = dirtBottom[rx] + 4 + Math.floor(rand() * Math.max(1, H - dirtBottom[rx] - 16));
@@ -326,7 +341,8 @@
       }
     }
 
-    /* ---- 5. trees (8 species: 2 dominant per world) --------------------- */
+    /* ---- 5. trees (whole-tree sprites; species list kept for saplings) -- */
+    var trees = [];
     var SPECIES = [
       { wood: TILE.WOOD, leaf: TILE.LEAF, sapling: TILE.SAPLING_OAK, top: TILE.LOG_TOP_OAK },
       { wood: TILE.WOOD_BEECH, leaf: TILE.LEAF_BEECH, sapling: TILE.SAPLING_BEECH, top: TILE.LOG_TOP_BEECH },
@@ -358,48 +374,40 @@
           }
           tx += 3 + Math.floor(rand() * 6);
         }
-      } else if (rand() < 0.4 && groundSolid) {
-        var hgt = 4 + Math.floor(rand() * 4);
-        var top = surfaceY[tx] - hgt;
-        /* trunk starts IN the grass row so it never floats */
-        for (var ty = surfaceY[tx]; ty >= top; ty--) {
-          if (ty < 1) { break; }
-          tile[ty * W + tx] = treeSpecies.wood;
-        }
-        tile[surfaceY[tx] * W + tx] = treeSpecies.wood;   /* root sits in the grass cell */
-        /* Terraria-style canopy: one big CIRCLE (r=3.2 tiles) centered
-           above the trunk tip, with ragged rim (edge cells drop randomly).
-           Reads as the round puffy crowns from the trailer, not a diamond. */
-        var ccx = tx + 0.5, ccy = top - 1.5, r = 3.2;
-        for (var ly2 = Math.floor(ccy - r); ly2 <= Math.ceil(ccy + r); ly2++) {
-          if (ly2 <= 1) { continue; }
-          for (var lx2 = Math.floor(ccx - r); lx2 <= Math.ceil(ccx + r); lx2++) {
-            if (lx2 <= 0 || lx2 >= W - 1) { continue; }
-            var dx2 = lx2 + 0.5 - ccx, dy2 = ly2 + 0.5 - ccy;
-            var dist = Math.sqrt(dx2 * dx2 + dy2 * dy2);
-            if (dist <= r - 0.7 || (dist <= r && rand() < 0.62)) {
-              if (tile[ly2 * W + lx2] === TILE.AIR) {
-                tile[ly2 * W + lx2] = treeSpecies.leaf;
-              }
-            }
-          }
-        }
-        /* snowy biome: pine gets a snowy top neighbor via ice caps */
-        if (biome === 1 && rand() < 0.3 && top - 4 > 1) {
-          tile[(top - 4) * W + tx] = TILE.ICE_ICICLES;
-        }
+      } else if (rand() < 0.4 && groundSolid && treeFootprintOk(tx, surfaceY[tx])) {
+        /* whole-tree sprite: one multi-tile image per tree (USER art).
+           RULE (USER): a tree needs 8 GRASS tiles under its footprint —
+           treeFootprintOk() checks the surface columns tx-3..tx+5: all
+           must be GRASS cap at the same height (flat ground), so trees
+           never straddle cliff steps or sprout on stone/sand. */
+        /* sprite index: modded by the VARIANTS pool length in game2
+           (3 hand-keyed trees — treeSet slices became the mid-ground
+           band) */
+        trees.push({ x: tx, y: surfaceY[tx], sprite: Math.floor(rand() * 3) });
         tx += 12 + Math.floor(rand() * 13);
       } else {
-        /* open ground: saplings + log stumps use the top textures */
-        if (rand() < 0.3 && groundSolid && surfaceY[tx] > 1) {
-          var dec = rand();
-          if (dec < 0.5) {
-            tile[(surfaceY[tx] - 1) * W + tx] = treeSpecies.sapling;
-          } else if (dec < 0.75) {
-            tile[surfaceY[tx] * W + tx] = treeSpecies.top;   /* stump cross-section */
-          }
-        }
+        /* open ground deco RETIRED (USER: 这种堆叠起来的东西也去掉): the
+           sapling/stump art read as odd stacked spheres on the lawn.
+           Grass stays clean; trees only. */
         tx += 3 + Math.floor(rand() * 6);
+      }
+    }
+    /* ---- 5a. foreground bushes (ChatGPT treeSet undergrowth slices,
+       world sprites in game2 anchored like the trees) on grass lawns,
+       kept clear of tree trunks (USER: "灌木丛直接作为前景插入游戏") ---- */
+    var bushes = [];
+    var bx = 10;
+    while (bx < W - 10) {
+      var okBush = biomeOf[bx] === 0 &&
+        tile[surfaceY[bx] * W + bx] === TILE.GRASS;
+      for (var tbi = 0; tbi < trees.length && okBush; tbi++) {
+        if (Math.abs(trees[tbi].x - bx) <= 3) { okBush = false; }
+      }
+      if (okBush && rand() < 0.55) {
+        bushes.push({ x: bx, y: surfaceY[bx], v: Math.floor(rand() * 3) });
+        bx += 6 + Math.floor(rand() * 9);
+      } else {
+        bx += 3 + Math.floor(rand() * 4);
       }
     }
     /* hay bales: occasional farmland meadow patches on flat grass */
@@ -467,16 +475,27 @@
           (cap5 === TILE.MUD_CRACKED || cap5 === TILE.GRASS)) {
         tile[(surfaceY[px5] - 1) * W + px5] = SWAMPY[Math.floor(rand() * SWAMPY.length)];
       }
-      /* caves: mushroom / spiderweb / coral plants on air-above-solid cells */
+      /* caves: mushroom / spiderweb / coral plants on air-above-solid cells.
+       Coral crystals heavily de-weighted (USER: 地下的这种水晶太多了) —
+       the deco pool used to be 5/9 corals at 6%/cell; now corals only via
+       a 1.2% side roll, mushrooms/webs dominate. */
       for (var cy5 = surfaceY[px5] + 4; cy5 < H - 4; cy5++) {
         var ii = cy5 * W + px5;
         if (tile[ii] === TILE.AIR && tile[ii + W] !== TILE.AIR &&
             PASSABLE[tile[ii + W]] === undefined && rand() < 0.06) {
-          tile[ii] = CAVE_DECO[Math.floor(rand() * CAVE_DECO.length)];
+          var cd = rand();
+          if (cd < 0.2) {
+            tile[ii] = TILE.P_CORAL_PORE;
+          } else {
+            var BASE_DECO = [TILE.PLANT_BROWN_MUSHROOM, TILE.SPIDERWEB,
+              TILE.PLANT_RED_MUSHROOM, TILE.PLANT_RED_MUSHROOM,
+              TILE.PLANT_RED_MUSHROOM, TILE.P_STROMATOLITE];
+            tile[ii] = BASE_DECO[Math.floor(rand() * BASE_DECO.length)];
+          }
         }
       }
-      /* amethyst crystals sparkle deep down */
-      if (rand() < 0.05) {
+      /* amethyst crystals sparkle deep down (rarer: 0.05 -> 0.015) */
+      if (rand() < 0.015) {
         for (var cy6 = dirtBottom[px5] + 60; cy6 < H - 4; cy6++) {
           var jj = cy6 * W + px5;
           if (tile[jj] === TILE.AIR && tile[jj + W] !== TILE.AIR) {
@@ -644,23 +663,26 @@
       }
       return null;
     }
-    /* old-stone remnants: classic stone pockets at mid depth */
+    /* old-stone remnants: stone pockets at mid depth. Marble body, not
+       STONE — the surface-looking 石头 art (slot 3) must never render
+       underground (USER: "地表石头不应该放地底"); deep pockets read as
+       marble veins instead. */
     for (var st = 0; st < 6; st++) {
-      var sp = findSpot(H - 180, H - 40);
-      if (sp) { tile[sp[1] * W + sp[0]] = TILE.STONE; rareGuest(3, sp[1], sp[0]); }
+      var sp = findSpot(dirtBottom[Math.floor(W / 2)] + 150, H - 40);
+      if (sp) { tile[sp[1] * W + sp[0]] = TILE.MARBLE; rareGuest(18, sp[1], sp[0]); }
     }
-    /* glass: crystal caves window pockets deep */
+    /* glass: crystal caves window pockets DEEP. Must stay below the
+       surface — findSpot(H-200, H-60) used to reach rows ABOVE the
+       lowered surface line (USER: 地表不要放这种白色方块), so anchor to
+       the stone band instead: 120 tiles below the mean dirt bottom. */
     for (var gl = 0; gl < 5; gl++) {
-      var gp = findSpot(H - 200, H - 60);
+      var gp = findSpot(dirtBottom[Math.floor(W / 2)] + 120, H - 60);
       if (gp) { tile[gp[1] * W + gp[0] + 1 < W ? gp[0] + 1 : gp[0]] = TILE.GLASS; rareGuest(26, gp[1], gp[0]); }
     }
-    /* snow cover on snowy biome surface */
-    for (var snx = 2; snx < W - 2; snx++) {
-      if (biomeOf[snx] === 1 && tile[surfaceY[snx] * W + snx] === TILE.GRASS_SNOWY && rand() < 0.4 && surfaceY[snx] > 1) {
-        tile[(surfaceY[snx] - 1) * W + snx] = TILE.SNOW;
-        rareGuest(24, surfaceY[snx] - 1, snx);
-      }
-    }
+    /* snow cover on snowy biome surface REMOVED (USER: "地面上不要生成
+       这种白色方块") — full SNOW cubes sitting on the snowy-grass caps
+       read as white blocks littering the lawn; the GRASS_SNOWY cap alone
+       already carries the biome look. */
     /* mossy cobble small clusters — deep only (dirt-band test whitelist) */
     for (var mc = 0; mc < 8; mc++) {
       var mp = findSpot(H - 120, H - 30);
@@ -677,14 +699,10 @@
       var tp = findSpot(surfaceY[4] + 3, H - 60);
       if (tp) { tile[tp[1] * W + tp[0]] = TILE.GRASS_TOP; rareGuest(52, tp[1], tp[0]); }
     }
-    /* hay pair: side + top caps on meadow surface */
-    for (var hy = 0; hy < 4; hy++) {
-      var hp = findSpot(surfaceY[4] + 1, H - 100);
-      if (hp && surfaceY[hp[0]] > 2 && tile[surfaceY[hp[0]] * W + hp[0]] === TILE.GRASS) {
-        tile[(surfaceY[hp[0]] - 1) * W + hp[0]] = rand() < 0.5 ? TILE.HAY_TOP : TILE.HAY_SIDE;
-        rareGuest(54, surfaceY[hp[0]] - 1, hp[0]);
-      }
-    }
+    /* hay pair on meadow surface REMOVED (USER: "地面上不要生成这种白色
+       方块") — a lone pale cube dropped on open grass reads the same as
+       the snow cubes / monument pillars. HAY stays as the farmland edge
+       cap (embedded in the ground row) where it belongs. */
     /* alternate sands inside desert biome band */
     for (var sx2 = 2; sx2 < W - 2; sx2++) {
       if (biomeOf[sx2] === 2 && rand() < 0.3) {
@@ -699,20 +717,22 @@
     /* plank family variety: scattered single planks underground */
     var PLANKS = [TILE.PLANK_BEECH, TILE.PLANK_EUC, TILE.PLANK_MAPLE, TILE.PLANK_PINE];
     for (var pl = 0; pl < 8; pl++) {
-      var pp = findSpot(H - 170, H - 20);
+      var pp = findSpot(dirtBottom[Math.floor(W / 2)] + 60, H - 20);
       if (pp) { tile[pp[1] * W + pp[0]] = PLANKS[pl % PLANKS.length]; }
     }
     /* coral plant guests in caves (variety, including bleached) */
     var CORAL_GUESTS = [TILE.P_CORAL_BRAIN, TILE.P_CORAL_CAULIFLOWER,
       TILE.P_CORAL_PORE_BLEACHED, TILE.P_CORAL_STAR_BLEACHED];
     for (var cg = 0; cg < 14; cg++) {
-      var cgp = findSpot(H - 170, H - 20);
+      var cgp = findSpot(dirtBottom[Math.floor(W / 2)] + 60, H - 20);
       if (cgp) { tile[cgp[1] * W + cgp[0]] = CORAL_GUESTS[cg % CORAL_GUESTS.length]; }
     }
-    /* coral_star solid block, deep */
+    /* coral_star solid block, deep. Anchored below the dirt band — a raw
+       findSpot(H-150, ...) minY could sit ABOVE the surface line and drop
+       the guest onto the open lawn as a floating brick */
     for (var cso = 0; cso < 4; cso++) {
-      var csp = findSpot(H - 150, H - 30);
-      if (csp) { tile[csp[1] * W + csp[0]] = TILE.CORAL_STAR; rareGuest(82, csp[1], csp[0]); }
+      var csp = findSpot(dirtBottom[Math.floor(W / 2)] + 40, H - 30);
+      if (csp) { tile[csp[1] * W + csp[0]] = TILE.GRANITE_BRICKS; rareGuest(51, csp[1], csp[0]); }
     }
     /* obsidian extra deep: already banded but ensure presence */
     /* crops early stages near farmland patches */
@@ -730,40 +750,12 @@
       }
     }
 
-    /* ---- 6.9 spawn monument (USER: "类似祭坛，弄个特殊结构就行了") ----
-       NOT a building (the earlier fort attempt scattered floating bricks
-       and fought the terrain). A symmetric ALTAR-STYLE monument welded
-       to the spawn column: carved-sandstone twin pillars (2 wide, 5
-       high) with marble-brick capitals, a rune floor of sandstone
-       tiles under the spawn point, an eternal torch at the heart, and
-       crystal shards (TILE 42) as the crest — echoing the Kraken altar
-       look. Pillars stand ON the terrain surface (each column uses its
-       own surfaceY), so nothing floats and nothing boxes the player
-       in — both sides stay walkable. */
-    (function buildSpawnMonument() {
-      var kx = 32;
-      var pil = TILE.SANDSTONE_CARVED, cap = TILE.MARBLE_BRICKS,
-          floor = TILE.SANDSTONE_TILES, crest = 42;
-      [-5, -4, 4, 5].forEach(function (off) {
-        var px2 = kx + off;
-        var gy = surfaceY[px2];               /* own column ground */
-        for (var dy = 0; dy < 5; dy++) {
-          tile[(gy - 1 - dy) * W + px2] = pil;
-        }
-        tile[(gy - 6) * W + px2] = cap;       /* capital on top */
-      });
-      /* rune floor under the spawn point (3 wide) */
-      for (var fx = kx - 1; fx <= kx + 1; fx++) {
-        tile[surfaceY[fx] * W + fx] = floor;
-      }
-      /* eternal torch at the monument heart */
-      tile[(surfaceY[kx] - 1) * W + kx] = 12;
-      /* crystal crests atop each capital */
-      [-5, 5].forEach(function (off) {
-        var px2 = kx + off;
-        tile[(surfaceY[px2] - 7) * W + px2] = crest;
-      });
-    })();
+    /* ---- 6.9 spawn monument REMOVED (USER: "地面上不要生成这种白色方
+       块") — the carved-sandstone pillars + marble capitals + rune floor
+       read as stacked pale cubes on the lawn, and the rune floor also
+       replaced the grass caps under the spawn (so flowers looked like
+       they grew on white stone). Spawn is a plain grass lawn again;
+       surface deco = plants on GRASS caps + trees only. */
 
     /* ---- 7. spawn / flag ----------------------------------------------- */
     var spawn = [32, surfaceY[32] - 2];
@@ -828,7 +820,8 @@
     return {
       W: W, H: H,
       tile: tile, wall: wall, surfaceY: surfaceY, dirtBottom: dirtBottom,
-      spawn: spawn, flag: flag, chests: chests, crystals: crystals
+      spawn: spawn, flag: flag, chests: chests, crystals: crystals,
+      trees: trees, bushes: bushes
     };
   }
 
