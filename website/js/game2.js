@@ -251,6 +251,10 @@
        landmark structure (worldgen 5b) */
     this.load.image('maple', 'assets/big/maple.png?v=m1');
     this.load.image('building', 'assets/big/building.png?v=m1');
+    /* celestial art (USER): drawSky blits this sun and moon
+       instead of the baked gradient discs */
+    this.load.image('sunImg', 'assets/mc/sun.png?v=c1');
+    this.load.image('moonImg', 'assets/mc/moon_hard.png?v=c2');
     /* foreground bushes (16px pixel shrubs, USER: 太大/色块 fix) */
     BUSH_SET.forEach(function (b) {
       this.load.image('bush' + b.i, 'assets/mc/bush_px' + b.i + '.png?v=b2');
@@ -1135,7 +1139,10 @@
       }
       if (!found) { return; }   /* solid rock all around: skip this roll */
     } else {
-      by = fly ? p.y - 120 - Math.random() * 80 : surfacePx(S, bx) - 20;
+      /* walkers spawn ON the surface line (was -20: a visible drop at
+         spawn read as 脚没着地); a couple px of clearance so the spawn
+         box never starts embedded in the grass */
+      by = fly ? p.y - 120 - Math.random() * 80 : surfacePx(S, bx) - 6;
       /* FLYING surface spawns: keep clear of tree canopies — scan a
          small spiral for open air like the cave path. */
       if (fly) {
@@ -1197,33 +1204,29 @@
     if (kind === 'bigmonster' || kind === 'andromalius' || kind === 'gnu' ||
         kind === 'shadow' || kind === 'tentaclebig' || kind === 'bigworm' ||
         kind === 'bhydra' || kind === 'dlord') {
-      b.body.setSize(frameW, frameH);             /* reset to frame first */
-      b.body.setSize(Math.max(24, frameW * baseScale * 0.7),
-                     Math.max(24, frameH * baseScale * 0.8));
-      /* center the smaller hitbox on the sprite */
-      b.body.setOffset(
-        (frameW - b.body.width) / 2 / baseScale * 1,
-        (frameH - b.body.height) / baseScale);
+      /* body rect in UNSCALED texture px: updateBounds() multiplies the
+         source size by the sprite scale at runtime, so passing
+         size*scale here double-scaled the box — the body bottom sat
+         ~50px below the sprite's feet and every zombie/skeleton
+         RESTED 1.5 tiles in the air (USER: "僵尸和骷髅，目前还是悬空
+         的"). 70%/80% of the frame, centered by setSize's default. */
+      b.body.setSize(frameW * 0.7, frameH * 0.8);
       b.setMaxVelocity(90, 420);                  /* no tunneling falls */
     }
     /* UNDEAD (zombie/skeleton): tall narrow sheets (24x41 / 24x48) at
-       2.6x. setSize() centers the body on the sprite by default — the
-       display center sits at the sheet's transparent midriff, so the
-       body hung in mid-air while the sprite's feet (drawn lower) were
-       inside the floor tile: the collider lifted them off the ground
-       and they fell through. Fix: a NARROW body (legs-width, feet as
-       the collision base) manually offset in SCREEN pixels with
-       center=false — head/shoulders may overhang, feet never lie. */
+       2.6x. setSize() expects UNSCALED texture px (updateBounds applies
+       the sprite scale at runtime) — the first version passed
+       legW*scale here, double-scaling the box: the body bottom reached
+       ~50px past the sprite's feet, so resting lifted the feet ~1.5
+       tiles into the air (USER: "僵尸和骷髅…悬空的"). Narrow legs box
+       (feet as the collision base), offset in texture px from the frame
+       top-left: x centered, y = sheet bottom minus legs height — head/
+       shoulders may overhang, feet never lie. */
     if (kind === 'zombie' || kind === 'skeleton') {
       var ud = kind === 'zombie'
         ? { texW: 24, texH: 41, legW: 10, legH: 12 }   /* feet block src px */
         : { texW: 24, texH: 48, legW: 10, legH: 14 };
-      var bw2 = ud.legW * baseScale, bh2 = ud.legH * baseScale;
-      b.body.setSize(bw2, bh2, false);            /* false: skip auto-center */
-      /* body position = sprite.pos + scale*(offset - displayOrigin)
-         (cf. phaser Body.updateFromGameObject) — offset is in TEXTURE
-         px, scaled at runtime. Narrow legs box anchored bottom-center:
-         x centered, y = sheet bottom minus legs height. */
+      b.body.setSize(ud.legW, ud.legH, false);    /* false: skip auto-center */
       b.body.setOffset(
         (ud.texW - ud.legW) / 2,
         ud.texH - ud.legH);
@@ -1860,15 +1863,18 @@
         }
       } else if (k === 'slime') {
         /* slime: hop toward the player — no crawling. Grounded = wind
-           up; airborne = travel arc. Slower but tanks one extra hit
-           via knockback instead of death (see bullet overlap). */
+           up; airborne = travel arc. Hop impulse kept moderate (-240 ≈
+           1.7 tiles): at -300 the slime spent most of its life airborne
+           and read as "feet never touching the ground" (USER). Slower
+           but tanks one extra hit via knockback instead of death (see
+           bullet overlap). */
         if (dist < 460) {
           if (b.body.blocked.down) {
             var dirS = dx < 0 ? -1 : 1;
-            b.setVelocity(dirS * (70 + Math.random() * 40), -300);
+            b.setVelocity(dirS * (70 + Math.random() * 40), -240);
           }
         } else if (b.body.blocked.down && Math.random() < 0.2) {
-          b.setVelocity((Math.random() < 0.5 ? -1 : 1) * 60, -220);
+          b.setVelocity((Math.random() < 0.5 ? -1 : 1) * 60, -200);
         }
       } else if (k === 'bugW') {
         /* winged bug: short powered hops — glides toward the player,
@@ -2167,7 +2173,11 @@
      sun height so caves stay dark while the surface dims at night. */
   var DAY_LEN = CFG.dayLen;       /* seconds per full day (configurable) */
   var dayT = -1;                  /* set from hash in startGame(); 0.06 dawn */
-var dayCount = 0;               /* nights elapsed — drives moon phase (8-day cycle) */
+var dayCount = 0;               /* nights elapsed — dusk increments it; now
+                                   only feeds the blood-moon "never two
+                                   nights in a row" bookkeeping (moon
+                                   phases were dropped, USER: "不用做月
+                                   相了") */
   var SKY_STOPS = [               /* [t, top, bottom] colors */
     [0.00, 0x1a2440, 0x3a3a5c],   /* pre-dawn */
     [0.08, 0x7a9ec9, 0xd9b98a],   /* sunrise */
@@ -2915,108 +2925,46 @@ var dayCount = 0;               /* nights elapsed — drives moon phase (8-day c
 
 
 
-  /* ---- celestial sprites (sun + 8 moon phases), baked ONCE to offscreen
-     canvases and blitted by drawSky every frame: the sun gets stacked
-     radial glows + a gradient core; the moon a sphere-shaded, cratered
-     disc whose LIT portion is a true lune (two-arc clip path) — the old
-     flat-color "bite" circle punched a hole that mismatched the gradient
-     behind it. ---- */
-  var _celSprites = null;
-  function moonLunePath(x, cx, cy, r, p) {
-    /* lit-region path for phase p∈[0,1): 0=new, .25=first quarter, .5=full.
-       Waxing = lit on the right (northern-hemisphere convention, same as
-       the old bite table). Ellipse-arc terminator: rx sweeps r→0→r across
-       the quarter, traversed through the correct side per crescent/
-       gibbous so the enclosed area is exactly the lit lune. */
-    x.beginPath();
-    if (p <= 0.5) {
-      x.arc(cx, cy, r, -Math.PI / 2, Math.PI / 2, false);  /* right half */
-      var t = p * 4;
-      if (t < 1) {   /* crescent: terminator bulges left */
-        x.ellipse(cx, cy, r * Math.cos(t * Math.PI / 2), r, 0,
-          Math.PI / 2, Math.PI * 1.5, false);
-      } else {       /* gibbous: terminator bulges right */
-        x.ellipse(cx, cy, r * Math.cos((t - 1) * Math.PI / 2), r, 0,
-          Math.PI / 2, -Math.PI / 2, true);
-      }
-    } else {
-      x.arc(cx, cy, r, -Math.PI / 2, Math.PI / 2, true);   /* left half */
-      var tt = (p - 0.5) * 4;
-      if (tt < 1) {  /* gibbous: terminator bulges right */
-        x.ellipse(cx, cy, r * Math.cos(tt * Math.PI / 2), r, 0,
-          Math.PI / 2, -Math.PI / 2, true);
-      } else {       /* crescent: terminator bulges left */
-        x.ellipse(cx, cy, r * Math.cos((tt - 1) * Math.PI / 2), r, 0,
-          Math.PI / 2, Math.PI * 1.5, false);
-      }
-    }
-    x.closePath();
-  }
-  function bakeCelestials() {
-    if (_celSprites) { return _celSprites; }
-    var sp = { sun: null, moon: [] };
-    /* SUN — three stacked radial glows, then a warm gradient core */
+  /* ---- celestial sprites (USER art) -----------------------------------
+     sun.png / moon.png are loaded as textures in preload (trimmed +
+     sharpened by tools/prep_landmarks.py). drawSky blits them at the
+     same arc positions the baked versions used: sun ~34px radius, moon
+     ~24px, so day/night arc, blood-moon tint sizes and the HUD banner
+     clearance all stay exactly as tuned. NO moon phases (USER: "不用
+     做月相了") and NO halo (USER: "月亮贴图去掉包裹的光圈") — the
+     texture always shows in full. */
+  var _celCanvas = null;
+  function bakeCelestials(S) {
+    if (_celCanvas) { return _celCanvas; }
+    var sunSrc = S.textures.get('sunImg').getSourceImage();
+    var moonSrc = S.textures.get('moonImg').getSourceImage();
+    var sp = { sun: null, moon: null };
+    /* SUN — the art blitted once into a padded canvas (keep its own
+       glow, no extra baked halo). */
     (function () {
-      var SZ = 120, c = document.createElement('canvas');
+      var PAD = 44;                      /* room for a faint warm glow */
+      var SZ = 34 * 2 + PAD * 2;
+      var c = document.createElement('canvas');
       c.width = c.height = SZ;
       var x = c.getContext('2d');
-      var cx = SZ / 2, cy = SZ / 2, r = 17;
-      [[54, 0.16], [38, 0.26], [26, 0.38]].forEach(function (g) {
-        var gr = x.createRadialGradient(cx, cy, r * 0.4, cx, cy, g[0]);
-        gr.addColorStop(0, 'rgba(255,214,120,' + g[1] + ')');
-        gr.addColorStop(1, 'rgba(255,214,120,0)');
-        x.fillStyle = gr;
-        x.fillRect(0, 0, SZ, SZ);
-      });
-      var core = x.createRadialGradient(cx - 4, cy - 4, 2, cx, cy, r);
-      core.addColorStop(0, '#fff9e3');
-      core.addColorStop(0.55, '#ffe08a');
-      core.addColorStop(1, '#ffb457');
-      x.fillStyle = core;
-      x.beginPath();
-      x.arc(cx, cy, r, 0, Math.PI * 2);
-      x.fill();
+      var gr = x.createRadialGradient(SZ / 2, SZ / 2, 20, SZ / 2, SZ / 2, PAD + 20);
+      gr.addColorStop(0, 'rgba(255,214,120,0.30)');
+      gr.addColorStop(1, 'rgba(255,214,120,0)');
+      x.fillStyle = gr;
+      x.fillRect(0, 0, SZ, SZ);
+      x.drawImage(sunSrc, PAD, PAD, SZ - PAD * 2, SZ - PAD * 2);
       sp.sun = c;
     })();
-    /* MOON — one sprite per night of the 8-day cycle: 0 = new moon
-       (faint halo only), 4 = full. Disc shaded top-left like a sphere,
-       five fixed craters, all clipped to the phase's lit lune. */
-    var CRATERS = [[-4, -3, 2.2], [2.6, -4.4, 1.5], [4, 3, 2.5],
-                   [-2.2, 4.4, 1.7], [0.4, 0.6, 1.1]];
-    for (var ph = 0; ph < 8; ph++) {
-      var SZM = 72, cm = document.createElement('canvas');
+    /* MOON — the art alone: full texture, every night. */
+    (function () {
+      var MR = 24;                       /* disc radius on the sky */
+      var SZM = MR * 2 + 8;              /* small margin for AA edge */
+      var cm = document.createElement('canvas');
       cm.width = cm.height = SZM;
-      var mx = cm.getContext('2d');
-      var mcx = SZM / 2, mcy = SZM / 2, mr = 12;
-      var halo = mx.createRadialGradient(mcx, mcy, mr * 0.5, mcx, mcy, 30);
-      halo.addColorStop(0, 'rgba(214,228,255,' + (ph === 0 ? 0.12 : 0.26) + ')');
-      halo.addColorStop(1, 'rgba(214,228,255,0)');
-      mx.fillStyle = halo;
-      mx.fillRect(0, 0, SZM, SZM);
-      if (ph > 0) {
-        mx.save();
-        moonLunePath(mx, mcx, mcy, mr, ph / 8);
-        mx.clip();
-        var disc = mx.createRadialGradient(
-          mcx - mr * 0.35, mcy - mr * 0.35, mr * 0.15, mcx, mcy, mr);
-        disc.addColorStop(0, '#f6f8fc');
-        disc.addColorStop(0.55, '#dde4f1');
-        disc.addColorStop(1, '#b6c1d9');
-        mx.fillStyle = disc;
-        mx.beginPath();
-        mx.arc(mcx, mcy, mr, 0, Math.PI * 2);
-        mx.fill();
-        mx.fillStyle = 'rgba(148,160,188,0.5)';
-        CRATERS.forEach(function (cr) {
-          mx.beginPath();
-          mx.arc(mcx + cr[0], mcy + cr[1], cr[2], 0, Math.PI * 2);
-          mx.fill();
-        });
-        mx.restore();
-      }
-      sp.moon.push(cm);
-    }
-    _celSprites = sp;
+      cm.getContext('2d').drawImage(moonSrc, 4, 4, MR * 2, MR * 2);
+      sp.moon = cm;
+    })();
+    _celCanvas = sp;
     return sp;
   }
 
@@ -3100,12 +3048,12 @@ var dayCount = 0;               /* nights elapsed — drives moon phase (8-day c
       else { ang = ((dayT - 0.5) / 0.5) * Math.PI; }
       var cxS = w * (0.08 + 0.84 * (ang / Math.PI));
       var cyS = h * 0.30 - Math.sin(ang) * h * 0.24;
-      var cel = bakeCelestials();
+      var cel = bakeCelestials(S);
       if (isDay) {
-        ctx.drawImage(cel.sun, cxS - 60, cyS - 60);
+        ctx.drawImage(cel.sun, cxS - cel.sun.width / 2, cyS - cel.sun.height / 2);
       } else {
-        var phase = dayCount % 8;
-        ctx.drawImage(cel.moon[phase], cxS - 36, cyS - 36);
+        var mc2 = cel.moon;
+        ctx.drawImage(mc2, cxS - mc2.width / 2, cyS - mc2.height / 2);
       }
     }
 
