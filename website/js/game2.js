@@ -246,6 +246,11 @@
     this.load.image('trees', 'assets/mc/tree_user.png?v=s2');
     this.load.image('trees2', 'assets/mc/tree_user2.png?v=s2');
     this.load.image('trees3', 'assets/mc/tree_user3.png?v=s2');
+    /* showcase art (tools/prep_landmarks.py trims + sharpens 枫树.png /
+       建筑.png): maple joins the tree variant pool, building is the
+       landmark structure (worldgen 5b) */
+    this.load.image('maple', 'assets/big/maple.png?v=m1');
+    this.load.image('building', 'assets/big/building.png?v=m1');
     /* foreground bushes (16px pixel shrubs, USER: 太大/色块 fix) */
     BUSH_SET.forEach(function (b) {
       this.load.image('bush' + b.i, 'assets/mc/bush_px' + b.i + '.png?v=b2');
@@ -580,6 +585,22 @@
       console.warn('[dig] webglcontextrestored');
     });
 
+    /* ---- landmark buildings (worldgen 5b) ----
+       The showcase BUILDING art on rare flat-grass clearings. Anchored
+       like the trees (base sunk half a tile into the surface row) but
+       one depth step further back, so trees/bushes layered after it
+       always draw in front. Non-interactive scenery. */
+    if (world.landmarks && world.landmarks.length) {
+      for (var li = 0; li < world.landmarks.length; li++) {
+        var lm = world.landmarks[li];
+        this.add.image(lm.x * TILE + TILE / 2, (lm.y + 0.5) * TILE,
+          'building')
+          .setOrigin(0.5, 1)
+          .setDisplaySize(564, 620)   /* native 997x1096, ~19 tiles tall */
+          .setDepth(-1.6);
+      }
+    }
+
     /* ---- whole-tree sprite layer ----
        worldgen records tree placements; each is a 96x96 cell from the
        trees sheet, bottom-anchored at (x*TILE + TILE/2, y*TILE + TILE) so
@@ -596,12 +617,13 @@
            (USER: 和方块重叠了 — the previous base sat exactly on the
            tile top edge and collided visually with surface blocks). */
         /* variant table: sprite N -> texture + display size. The 3
-           hand-keyed trees only — the treeSet slices moved to the
-           mid-ground band (USER: "这种树有点糊适合做中景"). */
+           hand-keyed trees + the ChatGPT maple (showcase art, pre-
+           sharpened; treeSet slices stayed in the mid-ground band). */
         var VARIANTS = [
           { key: 'trees',  w: 560, h: 580 },
           { key: 'trees2', w: 470, h: 555 },
-          { key: 'trees3', w: 500, h: 590 }
+          { key: 'trees3', w: 500, h: 590 },
+          { key: 'maple',  w: 400, h: 590 }
         ];
         var v = VARIANTS[tr.sprite % VARIANTS.length];
         /* trunk base sits INSIDE the surface tile (USER: 树底部扎进泥
@@ -694,7 +716,17 @@
        (window/fullscreen). setFollowOffsetY() re-pins it on every resize
        path; the backdrop refit uses the same 0.10/0.60 pair, so the
        coincidence holds at ANY window size. */
-    this.cameras.main.startFollow(this.player, true, 0.25, 0.25, 0, 0);
+    /* vertical-clamp anchor (USER: 地表线以上跳跃时镜头不跟随): the
+       camera follows this invisible point instead of the player. Its Y
+       holds the LOCAL surface line while the player is airborne above
+       it — small jumps never bob the camera (mainstream platformer
+       feel); sustained altitude (>32% of screen above ground, towers /
+       superjumps) hands off smoothly to the player, and everything at
+       or below the surface follows exactly as before. The follow-offset
+       / horizon-coincidence math below is untouched — only the focus
+       point changed source. */
+    this.camAnchor = this.add.zone(this.player.x, this.player.y, 1, 1);
+    this.cameras.main.startFollow(this.camAnchor, true, 0.25, 0.25, 0, 0);
     /* USER: 人物在屏幕上的位置再往下一点 — offset +10% -> +22% (player
        rests at ~72% screen height instead of ~60%) */
     this.setFollowOffsetY = function () {
@@ -3254,40 +3286,12 @@ var dayCount = 0;               /* nights elapsed — drives moon phase (8-day c
         ts._fx = d.fx; ts._srcW = img ? img.width : 1280;
         ts._srcH = srcH;
         if (d.n === 'clouds') { S.cloudsBand = ts; }  /* wind drift hook */
-        /* GREEN EXTENSION (legacy Admurin bands only): a solid green
-           skirt welded to the band's bottom edge (USER: "远景的草地需要
-           往下延生一点绿的，不然有间隙"). The Admurin art's bottom rows
-           are semi-transparent and the terrain below varies, so bright
-           sky / cave wall could peek through the fringe. The skirt uses
-           the band art's own bottom-row green (forest_2 #3f8d4c
-           sampled), extends 5 tiles down with a 3-tile alpha fade to 0
-           — hands off invisibly to the textured caveFill behind. Same
-           transform as its parent band: scrollFactor 1, one tile
-           deeper, so it can never detach. The pixelforge band is opaque
-           full-height art — no gap possible, but the skirt is harmless
-           behind it (one tile deeper), so no branch is needed.
-           tree_band does NOT get one (USER: "树底部的绿色条带不要") —
-           its trunks root behind the terrain, no green fill wanted. */
-        if (d.top == null && d.n !== 'tree_band') {
-          var skTex = 'bkd_green_ext';
-          if (!S.textures.exists(skTex)) {
-            var gc = document.createElement('canvas');
-            gc.width = 8; gc.height = 8;
-            var gx2 = gc.getContext('2d');
-            gx2.fillStyle = '#3f8d4c';
-            gx2.fillRect(0, 0, 8, 8);
-            S.textures.addCanvas(skTex, gc);
-          }
-          var ext = S.add.tileSprite(
-            0, surfPx2 + 32, (WORLD_W * 32) / sc, 160, skTex)
-            .setOrigin(0, 0)
-            .setScale(sc)
-            .setScrollFactor(1)
-            .setDepth(-3.9)                 /* behind ALL bands */
-            .setAlpha(0.9);
-          ext._parent = ts;
-          ts._greenExt = ext;
-        }
+        /* GREEN EXTENSION REMOVED entirely (USER: "中景下面的绿色裙边
+           需要去掉"). It was a legacy patch for the old Admurin bands'
+           semi-transparent bottom rows; the current yuanjing band has an
+           opaque grass base and the textured caveFill + sky-canvas wall
+           fill cover everything below the bands, so the flat green skirt
+           only read as a colored strip in valleys. */
         layers.push(ts);
         /* layers arrive ASYNC (image onload) — the create-time
            refitBackdrop() ran before any layer existed; rebuild
@@ -3304,7 +3308,7 @@ var dayCount = 0;               /* nights elapsed — drives moon phase (8-day c
           _bkTex.img[d.n] = im;
           make(im);
         };
-        im.src = 'assets/scenery/bg/' + d.n + '.png?v=sky10';
+        im.src = 'assets/scenery/bg/' + d.n + '.png?v=sky13';
       }
     });
     return layers;
@@ -3355,7 +3359,7 @@ var dayCount = 0;               /* nights elapsed — drives moon phase (8-day c
           _bkGround = 'rgb(' + p2[0] + ',' + p2[1] + ',' + p2[2] + ')';
         }
       };
-      im.src = 'assets/scenery/bg/' + d.n + '.png?v=sky10';
+      im.src = 'assets/scenery/bg/' + d.n + '.png?v=sky13';
       _bkTex.img[d.n] = im;          /* shown until the bake lands */
     });
   }
@@ -3844,6 +3848,20 @@ var dayCount = 0;               /* nights elapsed — drives moon phase (8-day c
   MainScene.prototype.update = function (time, delta) {
     if (!this.player) { return; }
     var dt = delta / 1000;
+    /* camera vertical clamp (see camAnchor in create): hold the LOCAL
+       surface line while airborne above it. Branches are continuous at
+       the thresholds, so the handoff never pops. */
+    if (this.camAnchor) {
+      var pcCol = Math.max(0, Math.min(WORLD_W - 1,
+        Math.round(this.player.x / TILE)));
+      var surfW = world.surfaceY[pcCol] * TILE;
+      var above = surfW - this.player.y;      /* + = feet above ground */
+      var aboveMargin = this.scale.height * 0.32;
+      this.camAnchor.x = this.player.x;
+      this.camAnchor.y = above > aboveMargin ? this.player.y + aboveMargin
+        : above > 0 ? surfW
+        : this.player.y;
+    }
     dayT = (dayT + dt / DAY_LEN) % 1;
     var spd = 190;
     var mv = (window.__digAutoWalk || this.keysA.D.isDown || this.cursors.right.isDown ? 1 : 0) -
@@ -3951,19 +3969,8 @@ var dayCount = 0;               /* nights elapsed — drives moon phase (8-day c
       this.cloudsBand.tilePositionX += dt * 6;   /* ~6px/s breeze */
     }
 
-    /* green extension fade: full strength at the surface, gone by the
-       time the camera is ~6 tiles underground (cave depth), so caves
-       never show a green smear under the tree line */
-    if (this.backdrop && this.backdrop.length) {
-      var camDepth = cam.scrollY + this.scale.height * 0.5
-        - (PLAYER_SURFACE_Y || 96 * 32);
-      var gAlpha = Math.max(0, Math.min(0.9,
-        0.9 * (1 - camDepth / (6 * 32))));
-      for (var gbi = 0; gbi < this.backdrop.length; gbi++) {
-        var gb = this.backdrop[gbi];
-        if (gb._greenExt) { gb._greenExt.setAlpha(gAlpha); }
-      }
-    }
+    /* green extension fade REMOVED with the skirt itself (USER: "中景
+       下面的绿色裙边需要去掉") — no _greenExt objects exist anymore */
     /* BACKDROP: map-bound world objects (scrollFactor 1) — they ride
        the SAME camera transform as the terrain tiles, so nothing to
        drive per-frame: no tilePositionX scrolling (that would move the

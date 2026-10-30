@@ -381,9 +381,8 @@
            must be GRASS cap at the same height (flat ground), so trees
            never straddle cliff steps or sprout on stone/sand. */
         /* sprite index: modded by the VARIANTS pool length in game2
-           (3 hand-keyed trees — treeSet slices became the mid-ground
-           band) */
-        trees.push({ x: tx, y: surfaceY[tx], sprite: Math.floor(rand() * 3) });
+           (3 hand-keyed trees + the maple showcase art) */
+        trees.push({ x: tx, y: surfaceY[tx], sprite: Math.floor(rand() * 4) });
         tx += 12 + Math.floor(rand() * 13);
       } else {
         /* open ground deco RETIRED (USER: 这种堆叠起来的东西也去掉): the
@@ -409,6 +408,35 @@
       } else {
         bx += 3 + Math.floor(rand() * 4);
       }
+    }
+    /* ---- 5b. landmarks: the showcase BUILDING art on rare flat-grass
+       clearings (game2 draws it behind trees/bushes, depth -1.6).
+       Max 2 per world, clear of spawn/flag and tree trunks; a fallback
+       scan guarantees at least one (the flat-16 requirement alone left
+       some worlds with none). ---- */
+    var landmarks = [];
+    var bestLx = -1, bestVar = 1e9;
+    for (var lx = 60; lx < W - 90; lx += 9) {
+      if (Math.abs(lx - 32) < 40 || Math.abs(lx - (W - 40)) < 40) { continue; }
+      var vL = 0, okL = true;
+      for (var lw2 = lx; lw2 < lx + 12; lw2++) {
+        if (biomeOf[lw2] !== 0) { okL = false; break; }
+        vL += Math.abs(surfaceY[lw2] - surfaceY[lx]);
+        if (tile[surfaceY[lw2] * W + lw2] !== TILE.GRASS) { okL = false; break; }
+      }
+      if (!okL) { continue; }
+      if (vL < bestVar && landmarks.length === 0) { bestVar = vL; bestLx = lx; }
+      if (vL > 2) { continue; }
+      var treeNear = false;
+      for (var lt2 = 0; lt2 < trees.length; lt2++) {
+        if (Math.abs(trees[lt2].x - (lx + 6)) < 10) { treeNear = true; break; }
+      }
+      if (treeNear) { continue; }
+      landmarks.push({ x: lx + 6, y: surfaceY[lx + 6] });
+      lx += 160;
+    }
+    if (!landmarks.length && bestLx >= 0) {
+      landmarks.push({ x: bestLx + 6, y: surfaceY[bestLx + 6] });
     }
     /* hay bales: occasional farmland meadow patches on flat grass */
     for (var hx0 = 20; hx0 < W - 20; hx0 += 60 + Math.floor(rand() * 80)) {
@@ -821,7 +849,7 @@
       W: W, H: H,
       tile: tile, wall: wall, surfaceY: surfaceY, dirtBottom: dirtBottom,
       spawn: spawn, flag: flag, chests: chests, crystals: crystals,
-      trees: trees, bushes: bushes
+      trees: trees, bushes: bushes, landmarks: landmarks
     };
   }
 
