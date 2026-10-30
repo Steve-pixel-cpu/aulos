@@ -321,10 +321,16 @@ def test_pin_session_model_writes_global_active(isolated_store, monkeypatch):
     ws = server.get_or_create_web_session("s-pin")
     assert (ws.model_provider, ws.model_id) == (None, None)   # 开跑前仍跟随
 
+    seen: list[dict] = []
+    ws.broadcast = seen.append   # 拦截广播: 固化必须可见, 不能静默换模型
     server._pin_session_model(ws)
 
     assert (ws.model_provider, ws.model_id) == ("prov-a", "model-2")
     assert isolated_store.get_model("s-pin") == ("prov-a", "model-2")   # 已落盘
+    # 回归 20261030（显示 A 调用 B）: 固化必须广播 model_changed,
+    # 否则前端还显示"跟随全局"的旧回显值, 实际请求已换固化模型
+    assert seen == [{"type": "model_changed", "session_id": ws.session_id,
+                     "provider_id": "prov-a", "model_id": "model-2"}]
 
 
 def test_pin_session_model_keeps_explicit_record(isolated_store, monkeypatch):
@@ -336,11 +342,14 @@ def test_pin_session_model_keeps_explicit_record(isolated_store, monkeypatch):
                        "models": [{"id": "model-1"}]}],
         "active": {"provider": "prov-a", "model": "model-1"},
     })
+    seen: list[dict] = []
+    ws.broadcast = seen.append
 
     server._pin_session_model(ws)
 
     assert (ws.model_provider, ws.model_id) == ("prov-b", "model-9")
     assert isolated_store.get_model("s-explicit") == ("prov-b", "model-9")
+    assert seen == []   # 未固化: 无广播
 
 
 def test_pin_session_model_skips_invalid_active(isolated_store, monkeypatch):
@@ -453,9 +462,133 @@ def test_api_client_for_falls_back_when_provider_gone(
     ws = server.get_or_create_web_session("s-gone")
     ws.model_provider = "prov-deleted"
     ws.model_id = "model-x"
+    seen: list[dict] = []
+    ws.broadcast = seen.append
     resolved = server._api_client_for(ws)
     assert resolved is server.api_client
     assert (ws.model_provider, ws.model_id) == (None, None)
+    # 回归 20261030（显示 A 调用 B）: 回落必须广播, 载荷 = 全局 active,
+    # 否则前端还显示已删供应商的旧模型, 实际请求已换全局模型
+    assert seen == [{"type": "model_changed", "session_id": ws.session_id,
+                     "provider_id": "prov-a", "model_id": "model-1"}]
+
+
+def test_api_client_for_fallback_broadcast_idempotent(
+        client, isolated_store, monkeypatch):
+    """已是跟随态（无覆盖）的会话再走回落: 不重复广播。"""
+    monkeypatch.setattr(server, "_provider_cfg", {
+        "providers": [{"id": "prov-a", "enabled": True,
+                       "models": [{"id": "model-1"}]}],
+        "active": {"provider": "prov-a", "model": "model-1"},
+    })
+    ws = server.get_or_create_web_session("s-idem")
+    seen: list[dict] = []
+    ws.broadcast = seen.append
+    server._api_client_for(ws)
+    assert seen == []
+
+
+def test_create_session_pins_global_active_immediately(
+        client, isolated_store, monkeypatch):
+    """回归 20261030 根治: 新建会话创建瞬间就固化全局 active——"创建→首条
+    消息"空窗期内全局切换不再波及新会话。"""
+    monkeypatch.setattr(server, "_provider_cfg", {
+        "providers": [{"id": "prov-a", "enabled": True,
+                       "models": [{"id": "model-1"}]}],
+        "active": {"provider": "prov-a", "model": "model-1"},
+    })
+    resp = client.post("/api/sessions", json={})
+    assert resp.status_code == 200
+    sid = resp.json()["id"]
+    # 创建即落盘: 不等首条消息
+    assert isolated_store.get_model(sid) == ("prov-a", "model-1")
+
+
+def test_create_session_no_pin_when_global_invalid(
+        client, isolated_store, monkeypatch):
+    """全局 active 未配置/指向无效供应商时创建会话: 不落垃圾记录,
+    维持跟随语义（续聊时 _pin_session_model 兜底）。"""
+    monkeypatch.setattr(server, "_provider_cfg", {
+        "providers": [{"id": "prov-a", "enabled": True,
+                       "models": [{"id": "model-1"}]}],
+        "active": {},   # 未配置
+    })
+    resp = client.post("/api/sessions", json={})
+    sid = resp.json()["id"]
+    assert isolated_store.get_model(sid) == (None, None)
+
+    # active 指向已禁用供应商: 同样不落记录
+    monkeypatch.setattr(server, "_provider_cfg", {
+        "providers": [{"id": "prov-a", "enabled": False,
+                       "models": [{"id": "model-1"}]}],
+        "active": {"provider": "prov-a", "model": "model-1"},
+    })
+    resp = client.post("/api/sessions", json={})
+    sid2 = resp.json()["id"]
+    assert isolated_store.get_model(sid2) == (None, None)
+
+
+def test_backfill_pins_legacy_sessions_without_model_record(
+        client, isolated_store, monkeypatch):
+    """存量回填: 无模型记录的旧会话启动时按当前全局 active 固化一次;
+    已有记录的会话不动; 全局无效时回填为空操作。"""
+    monkeypatch.setattr(server, "_provider_cfg", {
+        "providers": [{"id": "prov-a", "enabled": True,
+                       "models": [{"id": "model-1"}]}],
+        "active": {"provider": "prov-a", "model": "model-1"},
+    })
+    # 造一个无记录会话（set_workdir 创建 jsonl 但不含模型记录——与真实
+    # "创建后未发消息"的会话同构）+ 一个有记录会话
+    isolated_store.set_workdir("legacy-1", ".")
+    isolated_store.set_model("legacy-2", "prov-b", "model-9")
+
+    n = server._backfill_session_models()
+
+    assert n == 1
+    assert isolated_store.get_model("legacy-1") == ("prov-a", "model-1")
+    assert isolated_store.get_model("legacy-2") == ("prov-b", "model-9")   # 不动
+
+    # 全局无效: 回填空操作
+    monkeypatch.setattr(server, "_provider_cfg", {
+        "providers": [{"id": "prov-a", "enabled": True,
+                       "models": [{"id": "model-1"}]}],
+        "active": {},
+    })
+    isolated_store.set_workdir("legacy-3", ".")
+    assert server._backfill_session_models() == 0
+    assert isolated_store.get_model("legacy-3") == (None, None)
+
+
+def test_apply_provider_config_broadcasts_to_following_sessions(
+        client, isolated_store, monkeypatch):
+    """回归 20261030 复现路径: 草稿态全局切模型 → 存量"跟随全局"的会话
+    实际请求立即换成新全局模型。必须广播 model_changed, 否则前端显示
+    旧回显值（glm-openai）, 实际调用新全局模型（4.7）——显示与执行脱节。
+    有显式模型记录的会话不受全局影响, 不广播。"""
+    monkeypatch.setattr(server, "_provider_cfg", {
+        "providers": [{"id": "prov-a", "enabled": True,
+                       "models": [{"id": "model-1"}, {"id": "model-2"}]}],
+        "active": {"provider": "prov-a", "model": "model-1"},
+    })
+    follower = server.get_or_create_web_session("s-follower")   # 无记录 = 跟随
+    pinned = server.get_or_create_web_session("s-pinned")
+    pinned.model_provider, pinned.model_id = "prov-a", "model-2"   # 有自己的模型
+    seen_f: list[dict] = []
+    seen_p: list[dict] = []
+    follower.broadcast = seen_f.append
+    pinned.broadcast = seen_p.append
+
+    server._apply_provider_config({
+        "providers": [{"id": "prov-a", "enabled": True,
+                       "models": [{"id": "model-1"}, {"id": "model-2"}]}],
+        "active": {"provider": "prov-a", "model": "model-2"},
+    })
+
+    # 跟随态会话: 广播新全局模型
+    assert seen_f == [{"type": "model_changed", "session_id": "s-follower",
+                       "provider_id": "prov-a", "model_id": "model-2"}]
+    # 已固化/显式记录的会话: 不广播（不受全局影响）
+    assert seen_p == []
 
 
 def test_api_config_for_session_follows_session_model(

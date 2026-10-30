@@ -339,6 +339,21 @@ def _apply_provider_config(cfg: dict) -> None:
         pass
     else:
         _probe_active_provider()
+    # 全局 active 变更的可见性: "跟随全局"的会话（runtime._model=None,
+    # 通常是还没有模型记录的存量会话）从这一刻起实际请求的就是新全局
+    # 模型——不发广播, 前端还显示旧回显值, 就是"显示 A 调用 B"
+    # （20261030 实测: 草稿态切 4.7 → 切到老会话续聊, 实际用的 4.7）。
+    # 只通知跟随态的会话: 有显式模型记录/固化值的会话不受全局影响。
+    active = cfg.get("active") or {}
+    if active.get("provider") and active.get("model"):
+        for ws in list(_sessions.values()):
+            if ws.model_provider is None and ws.model_id is None:
+                ws.broadcast({
+                    "type": "model_changed",
+                    "session_id": ws.session_id,
+                    "provider_id": str(active["provider"]),
+                    "model_id": str(active["model"]),
+                })
 
 
 def _rebuild_utility_client() -> None:
@@ -386,10 +401,22 @@ def _api_client_for(web_session):
     prov = next((p for p in _provider_cfg.get("providers", [])
                  if p.get("id") == cfg_provider), None)
     if not prov or not prov.get("enabled"):
-        # 供应商被删/禁用: 回落全局 client, 清掉无效覆盖
+        # 供应商被删/禁用: 回落全局 client, 清掉无效覆盖。回落必须广播:
+        # 此前是静默的——UI 还显示已删供应商的旧模型, 实际请求已换全局
+        # active 的模型（显示 A 调用 B, 20261030 实测）。幂等: 记录本来
+        # 就是空（已是跟随态）时不重复发。
+        had_override = web_session.model_provider is not None
         web_session.model_provider = None
         web_session.model_id = None
         web_session.api_client = None
+        if had_override:
+            active_now = _provider_cfg.get("active") or {}
+            web_session.broadcast({
+                "type": "model_changed",
+                "session_id": web_session.session_id,
+                "provider_id": active_now.get("provider"),
+                "model_id": active_now.get("model"),
+            })
         return api_client
     protocol = _protocol_of(prov)
     base_url = _normalize_base_url(prov.get("base_url"), protocol=protocol) or None
@@ -999,6 +1026,51 @@ def _pin_session_model(web_session: WebSession) -> None:
     web_session.model_id = str(active["model"])
     store.set_model(web_session.session_id,
                     web_session.model_provider, web_session.model_id)
+    # 固化即广播: 固化发生在首条用户消息的处理途中, 此前该会话在前端的
+    # 模型显示多半是"跟随全局"的回显值——全局切换后旧值就错了。不发这条,
+    # 用户看到的是显示 A、调用 B（20261030 实测）。
+    web_session.broadcast({
+        "type": "model_changed",
+        "session_id": web_session.session_id,
+        "provider_id": web_session.model_provider,
+        "model_id": web_session.model_id,
+    })
+
+
+def _backfill_session_models() -> int:
+    """存量无模型记录的会话按当前全局 active 回填（启动时一次）。
+
+    "创建即固化"（api_create_session）之前建的会话可能一直没有模型记录:
+    固化机制要等首条消息, 空窗期内被全局切换波及过、或固化时全局无效的
+    会话永远缺记录。回填让"全局切换只影响之后新建的会话"对所有存量会话
+    立即成立。跟随语义本身仍保留: 空窗期后依然可能出现无记录会话（如
+    固化时全局无效）, 这类会话续聊时 _pin_session_model 兜底。
+    返回回填的会话数（供启动日志）。"""
+    active = _provider_cfg.get("active") or {}
+    prov = next((p for p in _provider_cfg.get("providers", [])
+                 if p.get("id") == active.get("provider") and p.get("enabled")), None)
+    if prov is None or not any(m.get("id") == active.get("model")
+                               for m in (prov.get("models") or [])):
+        return 0   # 全局无效: 维持跟随语义, 不落垃圾记录
+    n = 0
+    for sid in store.list_sessions():
+        if store.get_model(sid) == (None, None):
+            store.set_model(sid, str(active["provider"]), str(active["model"]))
+            n += 1
+    return n
+
+
+def _startup_backfill_models() -> None:
+    try:
+        n = _backfill_session_models()
+        if n:
+            print(f"[aulos] backfilled session models: {n} session(s) "
+                  f"pinned to global active", flush=True)
+    except Exception as exc:   # 回填失败不挡启动
+        print(f"[aulos] session model backfill skipped: {exc}", flush=True)
+
+
+app.router.add_event_handler("startup", _startup_backfill_models)
 
 
 def load_runtime_for(web_session: WebSession) -> None:
@@ -1922,6 +1994,17 @@ async def api_create_session(payload: Optional[dict] = Body(None)):
     # 播放音乐都要审批。用户仍可在会话里手动降档（记录追加式, 后写覆盖）。
     if (payload or {}).get("pet"):
         store.set_permission_mode(sid, "danger-full-access", plan=False)
+    # 创建即固化模型（回归 20261030）: 此前模型要等首条消息才固化全局
+    # active, 空窗期（创建→首条消息）内全局切换会波及这个会话——它没有
+    # 自己的记录, 一直在"跟随全局"。创建瞬间把当前全局 active 钉进去,
+    # 之后全局切换只影响更新的会话。active 未配置/供应商无效时不落垃圾
+    # 记录, 维持跟随语义（同 _pin_session_model 的守卫）。
+    active = _provider_cfg.get("active") or {}
+    prov = next((p for p in _provider_cfg.get("providers", [])
+                 if p.get("id") == active.get("provider") and p.get("enabled")), None)
+    if prov is not None and any(m.get("id") == active.get("model")
+                                for m in (prov.get("models") or [])):
+        store.set_model(sid, str(active["provider"]), str(active["model"]))
     _pending_sessions.add(sid)
     return {"id": sid, "workdir": workdir}
 

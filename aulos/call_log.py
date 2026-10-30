@@ -46,16 +46,20 @@ def _append_log(record: dict) -> None:
 
 def log_model_call(session: Optional[str], iteration: int,
                    thinking_level: Optional[str], duration_s: float,
-                   usage, messages=None) -> None:
+                   usage, messages=None, model: Optional[str] = None) -> None:
     """追加一行调用记录。usage 鸭子类型: 只要求带 context_tokens() 与
     input/output/cache 字段（runtime.TokenUsage 的口径）。messages 可选:
-    传入本次请求的消息视图时, 额外记录前缀指纹供缓存击穿归因。"""
+    传入本次请求的消息视图时, 额外记录前缀指纹供缓存击穿归因。
+    model 可选: 本次请求实际下发的模型名（per-call 覆盖值或 client 默认）
+    ——多会话共享 client 的场景里, 不记它就无法事后审计"这个会话实际
+    用的是哪个模型"（显示值与执行值脱节的排查实录 20261030）。"""
     try:
         record = {
             "ts": datetime.now().isoformat(timespec="milliseconds"),
             "session": session,
             "iter": iteration,
             "thinking": thinking_level,
+            "model": model,
             "duration_s": round(duration_s, 3),
             "context_tokens": usage.context_tokens(),
             "input_tokens": usage.input_tokens,

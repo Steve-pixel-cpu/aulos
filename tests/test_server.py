@@ -758,6 +758,10 @@ def test_ws_user_with_attachments_persists_blocks(client, isolated_store):
                 ],
             })
             reply = json.loads(ws.receive_text())
+            # 首条消息可能先触发 _pin_session_model 的 model_changed 固化
+            # 广播（无模型记录的会话）, 跳过它取真正的轮次回执
+            if reply["type"] == "model_changed":
+                reply = json.loads(ws.receive_text())
     finally:
         server._start_turn = original
         server._sessions.clear()
@@ -789,6 +793,10 @@ def test_ws_user_image_only_not_dropped(client, isolated_store):
             })
             ws.send_json({"type": "nope"})   # 探测: user 分支不应回错误
             reply = json.loads(ws.receive_text())
+            # 首条消息可能先触发 _pin_session_model 的 model_changed 固化
+            # 广播（无模型记录的会话）, 跳过它取探测消息的回包
+            if reply["type"] == "model_changed":
+                reply = json.loads(ws.receive_text())
     finally:
         server._start_turn = original
         server._sessions.clear()
