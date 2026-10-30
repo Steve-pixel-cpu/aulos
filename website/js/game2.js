@@ -246,6 +246,15 @@
     this.load.image('trees', 'assets/mc/tree_user.png?v=s2');
     this.load.image('trees2', 'assets/mc/tree_user2.png?v=s2');
     this.load.image('trees3', 'assets/mc/tree_user3.png?v=s2');
+    /* showcase art (tools/prep_landmarks.py trims + sharpens 枫树.png /
+       建筑.png): maple joins the tree variant pool, building is the
+       landmark structure (worldgen 5b) */
+    this.load.image('maple', 'assets/big/maple.png?v=m1');
+    this.load.image('building', 'assets/big/building.png?v=m1');
+    /* celestial art (USER): drawSky blits this sun and moon
+       instead of the baked gradient discs */
+    this.load.image('sunImg', 'assets/mc/sun.png?v=c1');
+    this.load.image('moonImg', 'assets/mc/moon_hard.png?v=c2');
     /* foreground bushes (16px pixel shrubs, USER: 太大/色块 fix) */
     BUSH_SET.forEach(function (b) {
       this.load.image('bush' + b.i, 'assets/mc/bush_px' + b.i + '.png?v=b2');
@@ -580,6 +589,22 @@
       console.warn('[dig] webglcontextrestored');
     });
 
+    /* ---- landmark buildings (worldgen 5b) ----
+       The showcase BUILDING art on rare flat-grass clearings. Anchored
+       like the trees (base sunk half a tile into the surface row) but
+       one depth step further back, so trees/bushes layered after it
+       always draw in front. Non-interactive scenery. */
+    if (world.landmarks && world.landmarks.length) {
+      for (var li = 0; li < world.landmarks.length; li++) {
+        var lm = world.landmarks[li];
+        this.add.image(lm.x * TILE + TILE / 2, (lm.y + 0.5) * TILE,
+          'building')
+          .setOrigin(0.5, 1)
+          .setDisplaySize(564, 620)   /* native 997x1096, ~19 tiles tall */
+          .setDepth(-1.6);
+      }
+    }
+
     /* ---- whole-tree sprite layer ----
        worldgen records tree placements; each is a 96x96 cell from the
        trees sheet, bottom-anchored at (x*TILE + TILE/2, y*TILE + TILE) so
@@ -596,12 +621,13 @@
            (USER: 和方块重叠了 — the previous base sat exactly on the
            tile top edge and collided visually with surface blocks). */
         /* variant table: sprite N -> texture + display size. The 3
-           hand-keyed trees only — the treeSet slices moved to the
-           mid-ground band (USER: "这种树有点糊适合做中景"). */
+           hand-keyed trees + the ChatGPT maple (showcase art, pre-
+           sharpened; treeSet slices stayed in the mid-ground band). */
         var VARIANTS = [
           { key: 'trees',  w: 560, h: 580 },
           { key: 'trees2', w: 470, h: 555 },
-          { key: 'trees3', w: 500, h: 590 }
+          { key: 'trees3', w: 500, h: 590 },
+          { key: 'maple',  w: 400, h: 590 }
         ];
         var v = VARIANTS[tr.sprite % VARIANTS.length];
         /* trunk base sits INSIDE the surface tile (USER: 树底部扎进泥
@@ -694,7 +720,17 @@
        (window/fullscreen). setFollowOffsetY() re-pins it on every resize
        path; the backdrop refit uses the same 0.10/0.60 pair, so the
        coincidence holds at ANY window size. */
-    this.cameras.main.startFollow(this.player, true, 0.25, 0.25, 0, 0);
+    /* vertical-clamp anchor (USER: 地表线以上跳跃时镜头不跟随): the
+       camera follows this invisible point instead of the player. Its Y
+       holds the LOCAL surface line while the player is airborne above
+       it — small jumps never bob the camera (mainstream platformer
+       feel); sustained altitude (>32% of screen above ground, towers /
+       superjumps) hands off smoothly to the player, and everything at
+       or below the surface follows exactly as before. The follow-offset
+       / horizon-coincidence math below is untouched — only the focus
+       point changed source. */
+    this.camAnchor = this.add.zone(this.player.x, this.player.y, 1, 1);
+    this.cameras.main.startFollow(this.camAnchor, true, 0.25, 0.25, 0, 0);
     /* USER: 人物在屏幕上的位置再往下一点 — offset +10% -> +22% (player
        rests at ~72% screen height instead of ~60%) */
     this.setFollowOffsetY = function () {
@@ -1103,7 +1139,10 @@
       }
       if (!found) { return; }   /* solid rock all around: skip this roll */
     } else {
-      by = fly ? p.y - 120 - Math.random() * 80 : surfacePx(S, bx) - 20;
+      /* walkers spawn ON the surface line (was -20: a visible drop at
+         spawn read as 脚没着地); a couple px of clearance so the spawn
+         box never starts embedded in the grass */
+      by = fly ? p.y - 120 - Math.random() * 80 : surfacePx(S, bx) - 6;
       /* FLYING surface spawns: keep clear of tree canopies — scan a
          small spiral for open air like the cave path. */
       if (fly) {
@@ -1165,33 +1204,29 @@
     if (kind === 'bigmonster' || kind === 'andromalius' || kind === 'gnu' ||
         kind === 'shadow' || kind === 'tentaclebig' || kind === 'bigworm' ||
         kind === 'bhydra' || kind === 'dlord') {
-      b.body.setSize(frameW, frameH);             /* reset to frame first */
-      b.body.setSize(Math.max(24, frameW * baseScale * 0.7),
-                     Math.max(24, frameH * baseScale * 0.8));
-      /* center the smaller hitbox on the sprite */
-      b.body.setOffset(
-        (frameW - b.body.width) / 2 / baseScale * 1,
-        (frameH - b.body.height) / baseScale);
+      /* body rect in UNSCALED texture px: updateBounds() multiplies the
+         source size by the sprite scale at runtime, so passing
+         size*scale here double-scaled the box — the body bottom sat
+         ~50px below the sprite's feet and every zombie/skeleton
+         RESTED 1.5 tiles in the air (USER: "僵尸和骷髅，目前还是悬空
+         的"). 70%/80% of the frame, centered by setSize's default. */
+      b.body.setSize(frameW * 0.7, frameH * 0.8);
       b.setMaxVelocity(90, 420);                  /* no tunneling falls */
     }
     /* UNDEAD (zombie/skeleton): tall narrow sheets (24x41 / 24x48) at
-       2.6x. setSize() centers the body on the sprite by default — the
-       display center sits at the sheet's transparent midriff, so the
-       body hung in mid-air while the sprite's feet (drawn lower) were
-       inside the floor tile: the collider lifted them off the ground
-       and they fell through. Fix: a NARROW body (legs-width, feet as
-       the collision base) manually offset in SCREEN pixels with
-       center=false — head/shoulders may overhang, feet never lie. */
+       2.6x. setSize() expects UNSCALED texture px (updateBounds applies
+       the sprite scale at runtime) — the first version passed
+       legW*scale here, double-scaling the box: the body bottom reached
+       ~50px past the sprite's feet, so resting lifted the feet ~1.5
+       tiles into the air (USER: "僵尸和骷髅…悬空的"). Narrow legs box
+       (feet as the collision base), offset in texture px from the frame
+       top-left: x centered, y = sheet bottom minus legs height — head/
+       shoulders may overhang, feet never lie. */
     if (kind === 'zombie' || kind === 'skeleton') {
       var ud = kind === 'zombie'
         ? { texW: 24, texH: 41, legW: 10, legH: 12 }   /* feet block src px */
         : { texW: 24, texH: 48, legW: 10, legH: 14 };
-      var bw2 = ud.legW * baseScale, bh2 = ud.legH * baseScale;
-      b.body.setSize(bw2, bh2, false);            /* false: skip auto-center */
-      /* body position = sprite.pos + scale*(offset - displayOrigin)
-         (cf. phaser Body.updateFromGameObject) — offset is in TEXTURE
-         px, scaled at runtime. Narrow legs box anchored bottom-center:
-         x centered, y = sheet bottom minus legs height. */
+      b.body.setSize(ud.legW, ud.legH, false);    /* false: skip auto-center */
       b.body.setOffset(
         (ud.texW - ud.legW) / 2,
         ud.texH - ud.legH);
@@ -1828,15 +1863,18 @@
         }
       } else if (k === 'slime') {
         /* slime: hop toward the player — no crawling. Grounded = wind
-           up; airborne = travel arc. Slower but tanks one extra hit
-           via knockback instead of death (see bullet overlap). */
+           up; airborne = travel arc. Hop impulse kept moderate (-240 ≈
+           1.7 tiles): at -300 the slime spent most of its life airborne
+           and read as "feet never touching the ground" (USER). Slower
+           but tanks one extra hit via knockback instead of death (see
+           bullet overlap). */
         if (dist < 460) {
           if (b.body.blocked.down) {
             var dirS = dx < 0 ? -1 : 1;
-            b.setVelocity(dirS * (70 + Math.random() * 40), -300);
+            b.setVelocity(dirS * (70 + Math.random() * 40), -240);
           }
         } else if (b.body.blocked.down && Math.random() < 0.2) {
-          b.setVelocity((Math.random() < 0.5 ? -1 : 1) * 60, -220);
+          b.setVelocity((Math.random() < 0.5 ? -1 : 1) * 60, -200);
         }
       } else if (k === 'bugW') {
         /* winged bug: short powered hops — glides toward the player,
@@ -2135,7 +2173,11 @@
      sun height so caves stay dark while the surface dims at night. */
   var DAY_LEN = CFG.dayLen;       /* seconds per full day (configurable) */
   var dayT = -1;                  /* set from hash in startGame(); 0.06 dawn */
-var dayCount = 0;               /* nights elapsed — drives moon phase (8-day cycle) */
+var dayCount = 0;               /* nights elapsed — dusk increments it; now
+                                   only feeds the blood-moon "never two
+                                   nights in a row" bookkeeping (moon
+                                   phases were dropped, USER: "不用做月
+                                   相了") */
   var SKY_STOPS = [               /* [t, top, bottom] colors */
     [0.00, 0x1a2440, 0x3a3a5c],   /* pre-dawn */
     [0.08, 0x7a9ec9, 0xd9b98a],   /* sunrise */
@@ -2883,108 +2925,46 @@ var dayCount = 0;               /* nights elapsed — drives moon phase (8-day c
 
 
 
-  /* ---- celestial sprites (sun + 8 moon phases), baked ONCE to offscreen
-     canvases and blitted by drawSky every frame: the sun gets stacked
-     radial glows + a gradient core; the moon a sphere-shaded, cratered
-     disc whose LIT portion is a true lune (two-arc clip path) — the old
-     flat-color "bite" circle punched a hole that mismatched the gradient
-     behind it. ---- */
-  var _celSprites = null;
-  function moonLunePath(x, cx, cy, r, p) {
-    /* lit-region path for phase p∈[0,1): 0=new, .25=first quarter, .5=full.
-       Waxing = lit on the right (northern-hemisphere convention, same as
-       the old bite table). Ellipse-arc terminator: rx sweeps r→0→r across
-       the quarter, traversed through the correct side per crescent/
-       gibbous so the enclosed area is exactly the lit lune. */
-    x.beginPath();
-    if (p <= 0.5) {
-      x.arc(cx, cy, r, -Math.PI / 2, Math.PI / 2, false);  /* right half */
-      var t = p * 4;
-      if (t < 1) {   /* crescent: terminator bulges left */
-        x.ellipse(cx, cy, r * Math.cos(t * Math.PI / 2), r, 0,
-          Math.PI / 2, Math.PI * 1.5, false);
-      } else {       /* gibbous: terminator bulges right */
-        x.ellipse(cx, cy, r * Math.cos((t - 1) * Math.PI / 2), r, 0,
-          Math.PI / 2, -Math.PI / 2, true);
-      }
-    } else {
-      x.arc(cx, cy, r, -Math.PI / 2, Math.PI / 2, true);   /* left half */
-      var tt = (p - 0.5) * 4;
-      if (tt < 1) {  /* gibbous: terminator bulges right */
-        x.ellipse(cx, cy, r * Math.cos(tt * Math.PI / 2), r, 0,
-          Math.PI / 2, -Math.PI / 2, true);
-      } else {       /* crescent: terminator bulges left */
-        x.ellipse(cx, cy, r * Math.cos((tt - 1) * Math.PI / 2), r, 0,
-          Math.PI / 2, Math.PI * 1.5, false);
-      }
-    }
-    x.closePath();
-  }
-  function bakeCelestials() {
-    if (_celSprites) { return _celSprites; }
-    var sp = { sun: null, moon: [] };
-    /* SUN — three stacked radial glows, then a warm gradient core */
+  /* ---- celestial sprites (USER art) -----------------------------------
+     sun.png / moon.png are loaded as textures in preload (trimmed +
+     sharpened by tools/prep_landmarks.py). drawSky blits them at the
+     same arc positions the baked versions used: sun ~34px radius, moon
+     ~24px, so day/night arc, blood-moon tint sizes and the HUD banner
+     clearance all stay exactly as tuned. NO moon phases (USER: "不用
+     做月相了") and NO halo (USER: "月亮贴图去掉包裹的光圈") — the
+     texture always shows in full. */
+  var _celCanvas = null;
+  function bakeCelestials(S) {
+    if (_celCanvas) { return _celCanvas; }
+    var sunSrc = S.textures.get('sunImg').getSourceImage();
+    var moonSrc = S.textures.get('moonImg').getSourceImage();
+    var sp = { sun: null, moon: null };
+    /* SUN — the art blitted once into a padded canvas (keep its own
+       glow, no extra baked halo). */
     (function () {
-      var SZ = 120, c = document.createElement('canvas');
+      var PAD = 44;                      /* room for a faint warm glow */
+      var SZ = 34 * 2 + PAD * 2;
+      var c = document.createElement('canvas');
       c.width = c.height = SZ;
       var x = c.getContext('2d');
-      var cx = SZ / 2, cy = SZ / 2, r = 17;
-      [[54, 0.16], [38, 0.26], [26, 0.38]].forEach(function (g) {
-        var gr = x.createRadialGradient(cx, cy, r * 0.4, cx, cy, g[0]);
-        gr.addColorStop(0, 'rgba(255,214,120,' + g[1] + ')');
-        gr.addColorStop(1, 'rgba(255,214,120,0)');
-        x.fillStyle = gr;
-        x.fillRect(0, 0, SZ, SZ);
-      });
-      var core = x.createRadialGradient(cx - 4, cy - 4, 2, cx, cy, r);
-      core.addColorStop(0, '#fff9e3');
-      core.addColorStop(0.55, '#ffe08a');
-      core.addColorStop(1, '#ffb457');
-      x.fillStyle = core;
-      x.beginPath();
-      x.arc(cx, cy, r, 0, Math.PI * 2);
-      x.fill();
+      var gr = x.createRadialGradient(SZ / 2, SZ / 2, 20, SZ / 2, SZ / 2, PAD + 20);
+      gr.addColorStop(0, 'rgba(255,214,120,0.30)');
+      gr.addColorStop(1, 'rgba(255,214,120,0)');
+      x.fillStyle = gr;
+      x.fillRect(0, 0, SZ, SZ);
+      x.drawImage(sunSrc, PAD, PAD, SZ - PAD * 2, SZ - PAD * 2);
       sp.sun = c;
     })();
-    /* MOON — one sprite per night of the 8-day cycle: 0 = new moon
-       (faint halo only), 4 = full. Disc shaded top-left like a sphere,
-       five fixed craters, all clipped to the phase's lit lune. */
-    var CRATERS = [[-4, -3, 2.2], [2.6, -4.4, 1.5], [4, 3, 2.5],
-                   [-2.2, 4.4, 1.7], [0.4, 0.6, 1.1]];
-    for (var ph = 0; ph < 8; ph++) {
-      var SZM = 72, cm = document.createElement('canvas');
+    /* MOON — the art alone: full texture, every night. */
+    (function () {
+      var MR = 24;                       /* disc radius on the sky */
+      var SZM = MR * 2 + 8;              /* small margin for AA edge */
+      var cm = document.createElement('canvas');
       cm.width = cm.height = SZM;
-      var mx = cm.getContext('2d');
-      var mcx = SZM / 2, mcy = SZM / 2, mr = 12;
-      var halo = mx.createRadialGradient(mcx, mcy, mr * 0.5, mcx, mcy, 30);
-      halo.addColorStop(0, 'rgba(214,228,255,' + (ph === 0 ? 0.12 : 0.26) + ')');
-      halo.addColorStop(1, 'rgba(214,228,255,0)');
-      mx.fillStyle = halo;
-      mx.fillRect(0, 0, SZM, SZM);
-      if (ph > 0) {
-        mx.save();
-        moonLunePath(mx, mcx, mcy, mr, ph / 8);
-        mx.clip();
-        var disc = mx.createRadialGradient(
-          mcx - mr * 0.35, mcy - mr * 0.35, mr * 0.15, mcx, mcy, mr);
-        disc.addColorStop(0, '#f6f8fc');
-        disc.addColorStop(0.55, '#dde4f1');
-        disc.addColorStop(1, '#b6c1d9');
-        mx.fillStyle = disc;
-        mx.beginPath();
-        mx.arc(mcx, mcy, mr, 0, Math.PI * 2);
-        mx.fill();
-        mx.fillStyle = 'rgba(148,160,188,0.5)';
-        CRATERS.forEach(function (cr) {
-          mx.beginPath();
-          mx.arc(mcx + cr[0], mcy + cr[1], cr[2], 0, Math.PI * 2);
-          mx.fill();
-        });
-        mx.restore();
-      }
-      sp.moon.push(cm);
-    }
-    _celSprites = sp;
+      cm.getContext('2d').drawImage(moonSrc, 4, 4, MR * 2, MR * 2);
+      sp.moon = cm;
+    })();
+    _celCanvas = sp;
     return sp;
   }
 
@@ -3068,12 +3048,12 @@ var dayCount = 0;               /* nights elapsed — drives moon phase (8-day c
       else { ang = ((dayT - 0.5) / 0.5) * Math.PI; }
       var cxS = w * (0.08 + 0.84 * (ang / Math.PI));
       var cyS = h * 0.30 - Math.sin(ang) * h * 0.24;
-      var cel = bakeCelestials();
+      var cel = bakeCelestials(S);
       if (isDay) {
-        ctx.drawImage(cel.sun, cxS - 60, cyS - 60);
+        ctx.drawImage(cel.sun, cxS - cel.sun.width / 2, cyS - cel.sun.height / 2);
       } else {
-        var phase = dayCount % 8;
-        ctx.drawImage(cel.moon[phase], cxS - 36, cyS - 36);
+        var mc2 = cel.moon;
+        ctx.drawImage(mc2, cxS - mc2.width / 2, cyS - mc2.height / 2);
       }
     }
 
@@ -3254,40 +3234,12 @@ var dayCount = 0;               /* nights elapsed — drives moon phase (8-day c
         ts._fx = d.fx; ts._srcW = img ? img.width : 1280;
         ts._srcH = srcH;
         if (d.n === 'clouds') { S.cloudsBand = ts; }  /* wind drift hook */
-        /* GREEN EXTENSION (legacy Admurin bands only): a solid green
-           skirt welded to the band's bottom edge (USER: "远景的草地需要
-           往下延生一点绿的，不然有间隙"). The Admurin art's bottom rows
-           are semi-transparent and the terrain below varies, so bright
-           sky / cave wall could peek through the fringe. The skirt uses
-           the band art's own bottom-row green (forest_2 #3f8d4c
-           sampled), extends 5 tiles down with a 3-tile alpha fade to 0
-           — hands off invisibly to the textured caveFill behind. Same
-           transform as its parent band: scrollFactor 1, one tile
-           deeper, so it can never detach. The pixelforge band is opaque
-           full-height art — no gap possible, but the skirt is harmless
-           behind it (one tile deeper), so no branch is needed.
-           tree_band does NOT get one (USER: "树底部的绿色条带不要") —
-           its trunks root behind the terrain, no green fill wanted. */
-        if (d.top == null && d.n !== 'tree_band') {
-          var skTex = 'bkd_green_ext';
-          if (!S.textures.exists(skTex)) {
-            var gc = document.createElement('canvas');
-            gc.width = 8; gc.height = 8;
-            var gx2 = gc.getContext('2d');
-            gx2.fillStyle = '#3f8d4c';
-            gx2.fillRect(0, 0, 8, 8);
-            S.textures.addCanvas(skTex, gc);
-          }
-          var ext = S.add.tileSprite(
-            0, surfPx2 + 32, (WORLD_W * 32) / sc, 160, skTex)
-            .setOrigin(0, 0)
-            .setScale(sc)
-            .setScrollFactor(1)
-            .setDepth(-3.9)                 /* behind ALL bands */
-            .setAlpha(0.9);
-          ext._parent = ts;
-          ts._greenExt = ext;
-        }
+        /* GREEN EXTENSION REMOVED entirely (USER: "中景下面的绿色裙边
+           需要去掉"). It was a legacy patch for the old Admurin bands'
+           semi-transparent bottom rows; the current yuanjing band has an
+           opaque grass base and the textured caveFill + sky-canvas wall
+           fill cover everything below the bands, so the flat green skirt
+           only read as a colored strip in valleys. */
         layers.push(ts);
         /* layers arrive ASYNC (image onload) — the create-time
            refitBackdrop() ran before any layer existed; rebuild
@@ -3304,7 +3256,7 @@ var dayCount = 0;               /* nights elapsed — drives moon phase (8-day c
           _bkTex.img[d.n] = im;
           make(im);
         };
-        im.src = 'assets/scenery/bg/' + d.n + '.png?v=sky10';
+        im.src = 'assets/scenery/bg/' + d.n + '.png?v=sky13';
       }
     });
     return layers;
@@ -3355,7 +3307,7 @@ var dayCount = 0;               /* nights elapsed — drives moon phase (8-day c
           _bkGround = 'rgb(' + p2[0] + ',' + p2[1] + ',' + p2[2] + ')';
         }
       };
-      im.src = 'assets/scenery/bg/' + d.n + '.png?v=sky10';
+      im.src = 'assets/scenery/bg/' + d.n + '.png?v=sky13';
       _bkTex.img[d.n] = im;          /* shown until the bake lands */
     });
   }
@@ -3844,6 +3796,20 @@ var dayCount = 0;               /* nights elapsed — drives moon phase (8-day c
   MainScene.prototype.update = function (time, delta) {
     if (!this.player) { return; }
     var dt = delta / 1000;
+    /* camera vertical clamp (see camAnchor in create): hold the LOCAL
+       surface line while airborne above it. Branches are continuous at
+       the thresholds, so the handoff never pops. */
+    if (this.camAnchor) {
+      var pcCol = Math.max(0, Math.min(WORLD_W - 1,
+        Math.round(this.player.x / TILE)));
+      var surfW = world.surfaceY[pcCol] * TILE;
+      var above = surfW - this.player.y;      /* + = feet above ground */
+      var aboveMargin = this.scale.height * 0.32;
+      this.camAnchor.x = this.player.x;
+      this.camAnchor.y = above > aboveMargin ? this.player.y + aboveMargin
+        : above > 0 ? surfW
+        : this.player.y;
+    }
     dayT = (dayT + dt / DAY_LEN) % 1;
     var spd = 190;
     var mv = (window.__digAutoWalk || this.keysA.D.isDown || this.cursors.right.isDown ? 1 : 0) -
@@ -3951,19 +3917,8 @@ var dayCount = 0;               /* nights elapsed — drives moon phase (8-day c
       this.cloudsBand.tilePositionX += dt * 6;   /* ~6px/s breeze */
     }
 
-    /* green extension fade: full strength at the surface, gone by the
-       time the camera is ~6 tiles underground (cave depth), so caves
-       never show a green smear under the tree line */
-    if (this.backdrop && this.backdrop.length) {
-      var camDepth = cam.scrollY + this.scale.height * 0.5
-        - (PLAYER_SURFACE_Y || 96 * 32);
-      var gAlpha = Math.max(0, Math.min(0.9,
-        0.9 * (1 - camDepth / (6 * 32))));
-      for (var gbi = 0; gbi < this.backdrop.length; gbi++) {
-        var gb = this.backdrop[gbi];
-        if (gb._greenExt) { gb._greenExt.setAlpha(gAlpha); }
-      }
-    }
+    /* green extension fade REMOVED with the skirt itself (USER: "中景
+       下面的绿色裙边需要去掉") — no _greenExt objects exist anymore */
     /* BACKDROP: map-bound world objects (scrollFactor 1) — they ride
        the SAME camera transform as the terrain tiles, so nothing to
        drive per-frame: no tilePositionX scrolling (that would move the

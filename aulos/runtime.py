@@ -1975,7 +1975,10 @@ class ConversationRuntime:
                     session=self._log_tag, iteration=iterations,
                     thinking_level=effective_level,
                     duration_s=time.perf_counter() - _call_started,
-                    usage=token_usage, messages=self._model_view())
+                    usage=token_usage, messages=self._model_view(),
+                    # getattr: client 是鸭子类型（测试 ScriptedClient 等无 .model）
+                    model=self._model
+                    or getattr(self._api_client, "model", None))
             curr_session.messages.append(message)
 
             if flow_interrupted:
