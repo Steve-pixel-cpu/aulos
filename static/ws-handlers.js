@@ -2145,15 +2145,16 @@ function fmtTokens(n) {
 }
 
 /* ===== 上下文容量卡: 输入卡顶部, 显示当前会话上下文占用与缓存命中率 =====
- * 口径: 自最近一次 compact（或页面加载）起, 累计输入侧 token
- * (input + cache_creation + cache_read) 对比配置的 context_window;
- * 命中率 = 累计 cache_read / 累计输入侧。数据源 turn_done.usage,
- * context_compacted 清零重计。 */
+ * 占用口径: 最近一轮的输入侧 token 对比配置的 context_window——每轮
+ * prompt 已含全部历史, 取最新值即当前上下文大小(不跨轮累加, 否则重复
+ * 计数)。Anthropic input 不含缓存段取 input+cache, OpenAI 已含取
+ * input, 两者取大兼容。命中率 = 累计 cache_read / 累计输入侧(跨轮)。
+ * 数据源 turn_done.usage, context_compacted 清零重计。 */
 const ctxStats = { in: 0, cached: 0, window: 0, sid: null };
 const CTX_WARN_RATIO = 0.75;   // 与后端压缩阈值口径对齐, 进度条变警示色
 /* 累计值按会话持久化(localStorage): 刷新/切会话后环形按钮立即恢复显示,
  * 不必等新一轮 turn_done。压缩清零时同步清存储。 */
-const CTX_STORE_KEY = "xc-ctx-stats-v1";
+const CTX_STORE_KEY = "xc-ctx-stats-v2";   // v1 是旧口径(跨轮累加)的膨胀值, 换 key 直接作废
 
 function ctxStoreLoad(sid) {
   try {
@@ -2202,15 +2203,19 @@ function ctxSwitchSession(sid) {
 }
 window.ctxSwitchSession = ctxSwitchSession;   // app.js selectSession/startDraft 调用
 
-function updateCtxCard(usage, contextWindow) {
+function updateCtxCard(usage, contextWindow, cacheInInput) {
   if (!usage || typeof usage !== "object") return;
   const inp = usage.input_tokens || 0;
   const cc = usage.cache_creation_input_tokens || 0;
   const cr = usage.cache_read_input_tokens || 0;
-  const inputSide = inp + cc + cr;
+  // 占用取最近一轮的输入侧(每轮 prompt 已含全部历史, 跨轮累加会重复
+  // 计数→出现过 821%)。缓存字段语义按协议区分(后端下发 cache_in_input):
+  // openai 的 input(prompt_tokens)已含缓存读 → 占用 = input;
+  // anthropic 的 input 与缓存段互斥 → 占用 = input + cc + cr
+  const inputSide = cacheInInput ? inp : inp + cc + cr;
   if (!inputSide) return;                       // 全零轮（打断等）: 保持旧值
-  ctxStats.in += inputSide;
-  ctxStats.cached += cr;
+  ctxStats.in = inputSide;
+  ctxStats.cached = cr;                         // 命中率取最近一轮(缓存语义随协议/轮次变化)
   if (typeof contextWindow === "number" && contextWindow > 0) {
     ctxStats.window = contextWindow;            // 后端每轮下发, 拿到就刷新
   }
@@ -2362,7 +2367,7 @@ function onTurnDone(msg) {
     else if (early) removeStoppedTag(run); // 停止点恰逢自然完成: 撤提前标签
     if (run) run.stopTagged = false;       // 本轮收口完毕: 去重旗复位
     addUsageNote(msg.usage);
-    updateCtxCard(msg.usage, msg.context_window);   // 上下文容量卡累计刷新
+    updateCtxCard(msg.usage, msg.context_window, msg.cache_in_input);   // 上下文容量卡刷新
     if (!msg.interrupted && msg.budget_exhausted) addBudgetNote(msg.usage);
     else if (!msg.interrupted && msg.iterations_exhausted) {
       addNoteBubble("warn", t("ws_handlers.097", { p0: msg.iterations }));

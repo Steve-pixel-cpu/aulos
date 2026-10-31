@@ -1515,6 +1515,10 @@ def _spawn_turn_thread(web_session: WebSession, text: str,
                 },
                 # 配置的上下文窗口大小: 前端「上下文容量」卡片算占比用
                 "context_window": runtime_config.context_window(),
+                # 缓存字段语义: openai 协议 input(prompt_tokens)已含缓存读
+                # (cache_read 拆自 prompt_tokens_details.cached_tokens),
+                # anthropic 协议 input 与缓存段互斥相加——前端算占用按此区分
+                "cache_in_input": _protocol_of(_active_provider_dict() or {}) == "openai",
             })
             # 计划实施完成终态: 本轮批准过的计划随正常收口回写 completed 并
             # 广播 plan_completed（前端把计划卡推进"已完成"）。放在 turn_done
