@@ -3121,7 +3121,7 @@ function rainSfx(level) {
     if (_celCanvas) { return _celCanvas; }
     var sunSrc = S.textures.get('sunImg').getSourceImage();
     var moonSrc = S.textures.get('moonImg').getSourceImage();
-    var sp = { sun: null, moon: null };
+    var sp = { sun: null, moon: null, moonBlood: null };
     /* SUN — the art blitted once into a padded canvas (keep its own
        glow, no extra baked halo). */
     (function () {
@@ -3139,6 +3139,12 @@ function rainSfx(level) {
       sp.sun = c;
     })();
     /* MOON — the art alone: full texture, every night. */
+    /* BLOOD MOON variant (USER: 血月的这个贴图没换啊): the old blood
+       moon was just two faint red circles drawn OVER the blue-grey
+       moon art — the disc itself never changed. Bake a real
+       recoloured copy: moon art, 'multiply' a crimson layer (keeps
+       crater texture, flips palette to blood red), clip to the
+       moon's alpha shape, then a soft red halo. */
     (function () {
       var MR = 24;                       /* disc radius on the sky */
       var SZM = MR * 2 + 8;              /* small margin for AA edge */
@@ -3146,6 +3152,23 @@ function rainSfx(level) {
       cm.width = cm.height = SZM;
       cm.getContext('2d').drawImage(moonSrc, 4, 4, MR * 2, MR * 2);
       sp.moon = cm;
+      var cb = document.createElement('canvas');
+      cb.width = cb.height = SZM;
+      var xb = cb.getContext('2d');
+      xb.drawImage(moonSrc, 4, 4, MR * 2, MR * 2);
+      xb.globalCompositeOperation = 'multiply';
+      xb.fillStyle = 'rgb(255,64,48)';
+      xb.fillRect(0, 0, SZM, SZM);
+      xb.globalCompositeOperation = 'destination-in';
+      xb.drawImage(moonSrc, 4, 4, MR * 2, MR * 2);
+      xb.globalCompositeOperation = 'source-over';
+      var grB = xb.createRadialGradient(SZM / 2, SZM / 2, MR * 0.6,
+        SZM / 2, SZM / 2, SZM / 2);
+      grB.addColorStop(0, 'rgba(255,70,50,0.35)');
+      grB.addColorStop(1, 'rgba(255,70,50,0)');
+      xb.fillStyle = grB;
+      xb.fillRect(0, 0, SZM, SZM);
+      sp.moonBlood = cb;
     })();
     _celCanvas = sp;
     return sp;
@@ -3289,6 +3312,10 @@ function rainSfx(level) {
         ctx.globalAlpha = celA;
         if (isDay) {
           ctx.drawImage(cel.sun, cxS - cel.sun.width / 2, cyS - cel.sun.height / 2);
+        } else if (S.bloodMoon && dayT > 0.5) {
+          /* 血月: 换用重烘的红色贴图 (crater 纹理保留, 整盘血红) */
+          var mb = cel.moonBlood;
+          ctx.drawImage(mb, cxS - mb.width / 2, cyS - mb.height / 2);
         } else {
           var mc2 = cel.moon;
           ctx.drawImage(mc2, cxS - mc2.width / 2, cyS - mc2.height / 2);
@@ -3298,13 +3325,15 @@ function rainSfx(level) {
     }
 
     /* BLOOD MOON wash: during a blood-moon night the sky goes deep
-       red and the moon disc tints blood-red (Terraria signature) */
+       red (the moon DISC itself is swapped to the baked blood-red
+       texture in the celestial block above — v5 只叠两个小红圆,
+       贴图本体没变, USER: 血月的这个贴图没换啊) */
     if (S.bloodMoon && dayT > 0.5 && dayT < 0.99) {
       ctx.fillStyle = 'rgba(140,20,24,0.30)';
       ctx.fillRect(0, 0, w, h);
       /* blood-moon banner BELOW the crystal counter (which owns w/2,34 —
-         USER: "血月之夜和水晶计数的UI重叠了"); also dodges the moon disc,
-         which peaks at cyS≈h*0.06 + 26px glow. 62px is clear of both. */
+         USER: "血月之夜和水晶计数的UI重叠了"); also dodges the moon disc.
+         62px is clear of both. */
       ctx.font = 'bold 15px sans-serif';
       ctx.textAlign = 'center';
       ctx.lineWidth = 3; ctx.strokeStyle = '#000';
@@ -3312,18 +3341,6 @@ function rainSfx(level) {
       ctx.strokeText('☂ 血 月 之 夜', w / 2, 62);
       ctx.fillText('☂ 血 月 之 夜', w / 2, 62);
       ctx.textAlign = 'left';
-      {
-        /* red halo + a disc-sized tint so the cratered moon itself
-           reads blood-red, not just ringed */
-        ctx.fillStyle = 'rgba(255,60,50,0.30)';
-        ctx.beginPath();
-        ctx.arc(cxS, cyS, 26, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = 'rgba(255,84,64,0.32)';
-        ctx.beginPath();
-        ctx.arc(cxS, cyS, 12, 0, Math.PI * 2);
-        ctx.fill();
-      }
     }
 
     /* stars fade in as the sun sets */
