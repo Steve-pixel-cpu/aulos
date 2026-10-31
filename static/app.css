@@ -1349,15 +1349,36 @@
     border-color: var(--accent-border);
     box-shadow: var(--shadow-lg), 0 0 0 3px var(--accent-soft);
   }
-  /* 上下文容量卡: 输入卡顶部内嵌小卡, 首轮 turn_done 有数据才显示。
-   * 两行「标签+数值」夹一条细进度条; 占用 >75% 进度条转警示色 */
+  /* 上下文容量: 环形进度图标(嵌在 comp-row, 模型切换控件左侧) + 点击
+   * 弹出的卡片(popover, 悬浮输入卡上方)。图标环形填充比例=占用百分比;
+   * 首轮 turn_done 有数据才显示图标, 点图标开/关卡片。
+   * 占用 >75% 环与进度条同转警示色 */
+  #btn-ctx {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 28px; height: 28px; padding: 0; flex: none;
+    border: none; background: none; border-radius: 8px; color: var(--text-3);
+  }
+  #btn-ctx:hover { background: var(--hover); color: var(--text-2); }
+  #btn-ctx[hidden] { display: none; }
+  #btn-ctx .ctx-ring-bg { stroke: var(--surface-3); stroke-width: 2.6; }
+  #btn-ctx .ctx-ring {
+    stroke: var(--accent); stroke-width: 2.6;
+    stroke-dasharray: 47.1;              /* 2πr, r=7.5 */
+    stroke-dashoffset: 47.1;             /* 0 占用=空环, JS 按 pct 减 */
+  }
+  #btn-ctx.warn { color: var(--warn); }
+  #btn-ctx.warn .ctx-ring { stroke: var(--warn); }
   #ctx-card {
+    position: absolute; left: 12px; right: 12px;
+    bottom: calc(100% + 8px);              /* 悬浮: 输入卡上缘外 8px */
     border: 1px solid var(--border); border-radius: var(--r-lg);
-    background: var(--surface-2);
-    padding: 8px 12px 9px; margin: 0 0 8px;
+    background: var(--pop-bg);
+    -webkit-backdrop-filter: blur(12px) saturate(1.4); backdrop-filter: blur(12px) saturate(1.4);
+    box-shadow: var(--shadow-md);
+    padding: 9px 13px 10px;
     display: none;
   }
-  #ctx-card[data-show] { display: block; }
+  #ctx-card.open { display: block; animation: rise .18s cubic-bezier(.16, 1, .3, 1); }
   .ctx-row {
     display: flex; align-items: baseline; justify-content: space-between;
     font-size: calc(12px * var(--fs-ui)); color: var(--text-3);

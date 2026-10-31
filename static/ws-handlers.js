@@ -2174,8 +2174,10 @@ function resetCtxCard() {
 
 function renderCtxCard() {
   const card = document.getElementById("ctx-card");
+  const btn = document.getElementById("btn-ctx");
   if (!card || !ctxStats.in || !ctxStats.window) {   // 无数据/无窗口: 隐藏
-    if (card) card.hidden = true, card.removeAttribute("data-show");
+    if (card) card.classList.remove("open");
+    if (btn) btn.hidden = true;
     return;
   }
   const pct = ctxStats.in / ctxStats.window;
@@ -2189,9 +2191,33 @@ function renderCtxCard() {
   const hit = ctxStats.in ? ctxStats.cached / ctxStats.in : 0;
   document.getElementById("ctx-hit").textContent =
     (hit * 100).toFixed(1) + "%";
-  card.hidden = false;
-  card.setAttribute("data-show", "1");
+  // 环形图标: dashoffset 按占用比例减(47.1=整环), 超 75% 转警示色
+  const CIRC = 2 * Math.PI * 7.5;
+  const ring = document.getElementById("ctx-ring");
+  ring.style.strokeDashoffset =
+    (CIRC * (1 - Math.min(pct, 1))).toFixed(2);
+  btn.classList.toggle("warn", pct > CTX_WARN_RATIO);
+  btn.hidden = false;
 }
+
+/* 点环形图标开/关卡片; 点卡片与图标之外的区域关闭 */
+(() => {
+  const btn = document.getElementById("btn-ctx");
+  const card = document.getElementById("ctx-card");
+  if (!btn || !card) return;
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const open = card.classList.toggle("open");
+    btn.setAttribute("aria-expanded", String(open));
+  });
+  card.addEventListener("click", (e) => e.stopPropagation());
+  document.addEventListener("click", () => {
+    if (card.classList.contains("open")) {
+      card.classList.remove("open");
+      btn.setAttribute("aria-expanded", "false");
+    }
+  });
+})();
 
 /* 轮次用量行: turn_done 带来本轮 token 消耗, 渲染成一条淡色小字。
  * 全零（断线显形/被打断在首个请求前）时不渲染——没有信息量的行是噪音。 */
