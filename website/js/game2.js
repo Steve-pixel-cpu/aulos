@@ -2338,7 +2338,7 @@ function bgmUpdate(S) {
     /* storm duck: 雷响时 BGM 压低 (flash 活跃期) */
     var tk = bgm.tracks[want];
     if (tk && rain.flash > 0.05) {
-      S.sound.get(want).setVolume(0.06);
+      S.sound.get(want).setVolume(0.03);
     }
     return;
   }
@@ -2367,7 +2367,7 @@ function bgmUpdate(S) {
   if (stale) { try { stale.stop(); stale.destroy(); } catch (e) {} }
   var t = S.sound.add(want, { loop: true, volume: 0 });
   t.play();
-  var inVol = 0.16;
+  var inVol = 0.08;   /* v8.4 USER: 白天声音还是太大 — 0.16→0.08 */
   var inT = S.time.addEvent({
     delay: 50, repeat: 29, callback: function () {
       try { t.setVolume(Math.min(inVol, t.volume + inVol / 30)); } catch (e) {}
