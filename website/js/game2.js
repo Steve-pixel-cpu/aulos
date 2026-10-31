@@ -2338,7 +2338,7 @@ function bgmUpdate(S) {
     /* storm duck: 雷响时 BGM 压低 (flash 活跃期) */
     var tk = bgm.tracks[want];
     if (tk && rain.flash > 0.05) {
-      S.sound.get(want).setVolume(0.12);
+      S.sound.get(want).setVolume(0.06);
     }
     return;
   }
@@ -2353,7 +2353,7 @@ function bgmUpdate(S) {
   /* fade in new */
   var t = S.sound.add(want, { loop: true, volume: 0 });
   t.play();
-  S.tweens.add({ targets: t, volume: 0.35, duration: 1500 });
+  S.tweens.add({ targets: t, volume: 0.16, duration: 1500 });   /* v8.1 USER: 背景音小点 */
   bgm.tracks[want] = true;
   bgm.cur = want;
 }
