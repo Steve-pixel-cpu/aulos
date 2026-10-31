@@ -283,6 +283,19 @@ def _active_provider_dict() -> Optional[dict]:
                  if p.get("id") == active.get("provider")), None)
 
 
+def _session_provider_dict(web_session) -> Optional[dict]:
+    """会话实际生效的供应商条目: 会话级覆盖优先, 无覆盖回落全局 active。
+    与 _resolve_client 的回落逻辑同口径——usage 聚合语义(cache_in_input)
+    必须按真正发请求的协议判定, 用全局 active 会在「会话覆盖 A 协议、
+    全局是 B 协议」时给错(实测 kithara 会话 glm-anthropic + 全局
+    glm-openAI → cache_in_input 误判 true, 命中率 30338%)。"""
+    cfg_provider = web_session.model_provider
+    active = _provider_cfg.get("active") or {}
+    target = cfg_provider or active.get("provider")
+    return next((p for p in _provider_cfg.get("providers", [])
+                 if p.get("id") == target), None)
+
+
 def _apply_provider_config(cfg: dict) -> None:
     """把 active 指向的启用供应商应用到 api_client, 并重挂浏览器镜像观察者。
 
@@ -1521,8 +1534,9 @@ def _spawn_turn_thread(web_session: WebSession, text: str,
                 "context_window": runtime_config.context_window(),
                 # 缓存字段语义: openai 协议 input(prompt_tokens)已含缓存读
                 # (cache_read 拆自 prompt_tokens_details.cached_tokens),
-                # anthropic 协议 input 与缓存段互斥相加——前端算占用按此区分
-                "cache_in_input": _protocol_of(_active_provider_dict() or {}) == "openai",
+                # anthropic 协议 input 与缓存段互斥相加——前端算占用按此区分。
+                # 按会话实际生效的供应商判定(覆盖优先), 非全局 active
+                "cache_in_input": _protocol_of(_session_provider_dict(web_session) or {}) == "openai",
             })
             # 计划实施完成终态: 本轮批准过的计划随正常收口回写 completed 并
             # 广播 plan_completed（前端把计划卡推进"已完成"）。放在 turn_done
