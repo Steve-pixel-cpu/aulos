@@ -2208,14 +2208,17 @@ function updateCtxCard(usage, contextWindow, cacheInInput) {
   const inp = usage.input_tokens || 0;
   const cc = usage.cache_creation_input_tokens || 0;
   const cr = usage.cache_read_input_tokens || 0;
-  // 占用取最近一轮的输入侧(每轮 prompt 已含全部历史, 跨轮累加会重复
-  // 计数→出现过 821%)。缓存字段语义按协议区分(后端下发 cache_in_input):
-  // openai 的 input(prompt_tokens)已含缓存读 → 占用 = input;
-  // anthropic 的 input 与缓存段互斥 → 占用 = input + cc + cr
+  // 占用与命中率同源: turn_done.usage 是最近一次 API 调用的单次用量
+  // (后端 latest_call_usage——每次调用输入都携带全量历史, 单次才是
+  // "此刻上下文多大"; 旧版用 turn 级累加器, 多工具轮分子累加 N 次/
+  // 分母单次, 命中率曾算出 1029%)。缓存字段语义按协议区分(后端下发
+  // cache_in_input): openai 的 input(prompt_tokens)已含缓存读 →
+  // 占用 = input; anthropic 的 input 与缓存段互斥 → 占用 = input+cc+cr;
+  // 命中率 = cache_read / 输入侧(同一次请求, 分子分母同源不超 100%)
   const inputSide = cacheInInput ? inp : inp + cc + cr;
   if (!inputSide) return;                       // 全零轮（打断等）: 保持旧值
   ctxStats.in = inputSide;
-  ctxStats.cached = cr;                         // 命中率取最近一轮(缓存语义随协议/轮次变化)
+  ctxStats.cached = cr;
   if (typeof contextWindow === "number" && contextWindow > 0) {
     ctxStats.window = contextWindow;            // 后端每轮下发, 拿到就刷新
   }

@@ -1498,7 +1498,11 @@ def _spawn_turn_thread(web_session: WebSession, text: str,
             except Exception:
                 pass
             needs_title = not web_session.titled
-            u = summary.usage
+            # 上下文容量卡口径: 最近一次 API 调用的单次用量(latest_call)
+            # ——每次调用的输入都携带全量历史, 单次才是"此刻上下文多大"。
+            # turn 级累加器(summary.usage)把多工具轮的 N 次请求相加,
+            # 前端缓存命中率曾算出 1029%(分子累加 N 次/分母单次)
+            u = web_session.runtime.usage().latest_call_usage()
             emitter({
                 "type": "turn_done",
                 "interrupted": web_session.stop_requested,
