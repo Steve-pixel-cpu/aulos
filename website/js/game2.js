@@ -2270,25 +2270,32 @@ function rainTick(dt, S) {
     var pSurf = world.surfaceY[pCol] * TILE;
     if (S.player.y > pSurf + 8) { return; }        /* underground: no rain */
     var vw = cam.width, vh = cam.height;
-    var n = Math.round(64 * (CFG.rainIntensity / 100) * lvl);
+    var n = Math.round(150 * (CFG.rainIntensity / 100) * lvl);
     var tNow = (typeof performance !== 'undefined' ? performance.now() : 0);
-    g.lineStyle(1, 0xc8d7eb, 0.42 * lvl);
-    g.beginPath();
-    for (var i = 0; i < n; i++) {
-      /* hash-scatter: stable per-index, animated by time — the
-         streak wraps back to the top after crossing the view */
-      var sx = ((i * 233.7 + tNow * 0.42 * (0.7 + (i % 5) * 0.14)) % (vw + 60)) - 30;
-      var sy = ((i * 149.3 + tNow * (0.52 + (i % 7) * 0.05)) % (vh + 90)) - 45;
-      var wx = cam.scrollX + sx, wy = cam.scrollY + sy;
-      var col = Math.max(0, Math.min(WORLD_W - 1, Math.floor(wx / TILE)));
-      var foot = world.surfaceY[col] * TILE - cam.scrollY;
-      var len = 13 + (i % 6) * 2;
-      var y2 = Math.min(sy + len, foot);
-      if (y2 <= sy) { continue; }                  /* already past surface */
-      g.moveTo(sx, sy);
-      g.lineTo(sx - len * 0.28, y2);
+    /* 两档亮度: 亮芯 (宽 2px, 更不透明) 为主, 偶有高亮滴 (每 9 条 1 条,
+       3px) — 单靠 1px 淡线在亮天空下几乎看不见 (v1 教训: 雨线不明显) */
+    for (var pass = 0; pass < 2; pass++) {
+      g.lineStyle(pass === 0 ? 2 : 3, 0xdfe9f7,
+        (pass === 0 ? 0.55 : 0.75) * lvl);
+      g.beginPath();
+      for (var i = pass; i < n; i += 2) {
+        /* hash-scatter: stable per-index, animated by time — the
+           streak wraps back to the top after crossing the view.
+           速度系数提到 ~0.9: 雨要有「落」的速度感, 不能像飘 (v1 太慢) */
+        var spd = 0.9 + (i % 5) * 0.13;
+        var sx = ((i * 233.7 + tNow * 0.5 * spd) % (vw + 60)) - 30;
+        var sy = ((i * 149.3 + tNow * spd * 0.95) % (vh + 90)) - 45;
+        var wx = cam.scrollX + sx, wy = cam.scrollY + sy;
+        var col = Math.max(0, Math.min(WORLD_W - 1, Math.floor(wx / TILE)));
+        var foot = world.surfaceY[col] * TILE - cam.scrollY;
+        var len = 18 + (i % 6) * 3;              /* 18-33px: 更长才读得出雨 */
+        var y2 = Math.min(sy + len, foot);
+        if (y2 <= sy) { continue; }              /* already past surface */
+        g.moveTo(sx, sy);
+        g.lineTo(sx - len * 0.28, y2);
+      }
+      g.strokePath();
     }
-    g.strokePath();
   }
 
   function cssColor(c) {
@@ -3050,11 +3057,11 @@ function rainTick(dt, S) {
     /* RAIN WASH (USER: 下雨): grey-blue调制 — push top/bot toward a
        desaturated slate by rain.level; far streak mist below. */
     if (rain.level > 0.01) {
-      var RAIN_TOP = 0x4a5568, RAIN_BOT = 0x5a6478;
+      var RAIN_TOP = 0x3e4859, RAIN_BOT = 0x4e5868;
       sky = {
-        top: lerpColor(sky.top, RAIN_TOP, rain.level * 0.65),
-        bot: lerpColor(sky.bot, RAIN_BOT, rain.level * 0.55),
-        dayness: sky.dayness * (1 - rain.level * 0.25)
+        top: lerpColor(sky.top, RAIN_TOP, rain.level * 0.8),
+        bot: lerpColor(sky.bot, RAIN_BOT, rain.level * 0.7),
+        dayness: sky.dayness * (1 - rain.level * 0.35)
       };
     }
     var grad = ctx.createLinearGradient(0, 0, 0, h);
@@ -3066,16 +3073,16 @@ function rainTick(dt, S) {
        cheap parallax hint of weather before the near layer in the
        Phaser scene; seeded by frame time so it shimmers */
     if (rain.level > 0.05) {
-      var nFar = Math.round(34 * rain.level);
-      ctx.strokeStyle = 'rgba(200,215,235,0.16)';
-      ctx.lineWidth = 1;
+      var nFar = Math.round(90 * rain.level);
+      ctx.strokeStyle = 'rgba(215,228,246,0.28)';
+      ctx.lineWidth = 1.5;
       ctx.beginPath();
       var tNow = (typeof performance !== 'undefined' ? performance.now() : 0);
       for (var fi = 0; fi < nFar; fi++) {
         /* deterministic per-index pseudo-random — no re-seed jitter */
-        var fx = ((fi * 137.5 + (tNow * 0.28)) % (w + 80)) - 40;
-        var fy = ((fi * 89.7 + (tNow * 0.55)) % (h * 0.62));
-        var flen = 11 + (fi % 7) * 1.6;
+        var fx = ((fi * 137.5 + (tNow * 0.45)) % (w + 80)) - 40;
+        var fy = ((fi * 89.7 + (tNow * 0.85)) % (h * 0.62));
+        var flen = 14 + (fi % 7) * 2.4;
         ctx.moveTo(fx, fy);
         ctx.lineTo(fx - flen * 0.28, fy + flen);
       }
