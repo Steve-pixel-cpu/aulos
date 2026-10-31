@@ -1778,8 +1778,12 @@ async def favicon():
 APPEARANCE_DIR = USER_DIR / "appearance"
 _ICON_LIVE = APPEARANCE_DIR / "icon.png"
 _BG_LIVE = APPEARANCE_DIR / "bg-user.png"
+# 动态壁纸（视频）: 与静态壁纸同目录双轨, mp4/webm 二选一（后传者胜）
+_BGV_LIVE = APPEARANCE_DIR / "bg-video.mp4"
+_BGV_LIVE_WEBM = APPEARANCE_DIR / "bg-video.webm"
 _ICON_DEFAULT = STATIC_DIR / "icon-default.png"
 _ICON_RE = re.compile(r"^data:image/(png|jpeg|webp);base64,(.+)$", re.S)
+_BGV_RE = re.compile(r"^data:video/(mp4|webm);base64,(.+)$", re.S)
 
 
 def _migrate_legacy_appearance() -> None:
@@ -1868,6 +1872,8 @@ async def api_post_icon(request: dict):
 
 # --- 背景图片: 设置 → 外观 可上传; 存用户目录, 经 GET /api/bg 读取 ---
 _BG_MAX = 20 * 1024 * 1024
+# --- 动态壁纸（视频）: 同目录双轨, 上限放宽到 80MB ---
+_BGV_MAX = 80 * 1024 * 1024
 
 
 def _bg_ver() -> int:
@@ -1875,6 +1881,72 @@ def _bg_ver() -> int:
         return int(_BG_LIVE.stat().st_mtime)
     except OSError:
         return 0
+
+
+def _bgv_live() -> "Path | None":
+    """当前生效的视频壁纸文件（mp4 优先, 无则 webm, 都没有返回 None）。
+
+    两个格式文件不会共存——写入前先清对方; 双保险兜底防御手工摆放。"""
+    if _BGV_LIVE.exists():
+        return _BGV_LIVE
+    if _BGV_LIVE_WEBM.exists():
+        return _BGV_LIVE_WEBM
+    return None
+
+
+def _bgv_clear_files() -> None:
+    """删除全部视频壁纸文件（Windows 文件占用重试, 照 /api/bg 模式）。"""
+    for path in (_BGV_LIVE, _BGV_LIVE_WEBM):
+        for _ in range(4):
+            try:
+                path.unlink(missing_ok=True)
+                break
+            except PermissionError:
+                time.sleep(0.05)
+
+
+def _bgv_ver() -> int:
+    live = _bgv_live()
+    if live is None:
+        return 0
+    try:
+        return int(live.stat().st_mtime)
+    except OSError:
+        return 0
+
+
+@app.get("/api/bg-video", include_in_schema=False)
+async def api_get_bg_video():
+    """动态壁纸视频: 未设置时 404（前端以 bg_video_ver=0 为"无"口径）。"""
+    live = _bgv_live()
+    if live is None:
+        raise HTTPException(status_code=404, detail=t("server.058"))
+    return FileResponse(live, headers={"Cache-Control": "no-cache"})
+
+
+@app.post("/api/bg-video")
+async def api_post_bg_video(request: dict):
+    """data 为 dataURL（video/mp4|webm）时写入视频壁纸, null 删除; 返回新版本号。"""
+    data = request.get("data")
+    if data is None:
+        _bgv_clear_files()
+    else:
+        m = _BGV_RE.match(str(data))
+        if not m:
+            raise HTTPException(status_code=400, detail=t("server.059"))
+        raw = base64.b64decode(m.group(2))
+        if len(raw) > _BGV_MAX:
+            raise HTTPException(status_code=400, detail=t("server.060"))
+        APPEARANCE_DIR.mkdir(parents=True, exist_ok=True)
+        # 先清另一格式的旧文件再写入, 保证任一时刻只有一份
+        target = _BGV_LIVE if m.group(1) == "mp4" else _BGV_LIVE_WEBM
+        other = _BGV_LIVE_WEBM if target is _BGV_LIVE else _BGV_LIVE
+        other.unlink(missing_ok=True)
+        try:
+            target.write_bytes(raw)
+        except PermissionError:
+            raise HTTPException(status_code=409, detail=t("server.007"))
+    return {"ok": True, "ver": _bgv_ver()}
 
 
 @app.get("/api/bg", include_in_schema=False)

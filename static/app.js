@@ -364,6 +364,9 @@ function resolvedTheme() {
 /* 背景图开关状态: 启动早期就会经 syncBgLayers 读到, 必须先于此初始化 */
 const BG_KEY = "xc-bg";
 let bgVer = 0;
+/* 动态壁纸（视频）: 同构双轨。xc-bgv 标记同被首帧预绘脚本抢读 */
+const BGV_KEY = "xc-bgv";
+let bgvVer = 0;
 function applyFx() {
   syncBgLayers();
 }
@@ -1493,6 +1496,7 @@ async function loadSettings() {
     try { localStorage.setItem("xc-lang", s.language || "zh"); } catch (e) {}   // 卫星页(pet/stats)与首帧 <html lang> 的镜像源
     if (window.__resyncSettingsDropdowns) window.__resyncSettingsDropdowns();   // 设置下拉 label 现取 t() 刷新(构造时固化了 zh 快照)
     if (window.__langDd) window.__langDd.setValue(s.language || "zh");
+    if (window.__bootAnimChk) window.__bootAnimChk.checked = s.bootAnim !== false;   // 旧服务端无此字段: 缺省开
     applyI18n();   // 二期 data-i18n 落地后开始真正改写 DOM; 现在是空扫描
     state.providerCfg = await pr.json();
     loadUtilityProvider();   // side-call 小模型设置（下拉项依赖供应商列表）
@@ -1534,6 +1538,8 @@ async function loadSettings() {
     if (s.icon_ver) { iconVer = s.icon_ver; applyIconEverywhere(iconUrl()); }
     if (s.bg_ver) { bgVer = s.bg_ver; syncBgLayers(); }
     else syncBgLayers();   // 服务端无壁纸: 走一遍以清掉本地残留标记的效果
+    if (s.bg_video_ver != null) { bgvVer = s.bg_video_ver; syncVideoLayer(); }
+    else syncVideoLayer();   // 同上: 清掉本地标记残留的效果
     // 标题栏版本徽标: 桌面壳优先（打包后的后端不带 pyproject.toml, 服务端读不到）,
     // 服务端值兜底（浏览器/源码运行）。都拿不到就藏着, 不留空壳。
     const ver = $("tb-version");
@@ -1849,6 +1855,37 @@ $("btn-add-provider").onclick = () => {
 const bgUrl = () => "/api/bg" + (bgVer ? `?v=${bgVer}` : "");
 function bgPref() { return localStorage.getItem(BG_KEY) === "1"; }
 
+/* ---------- 动态壁纸（视频）: 与静态壁纸同构的双轨层 ---------- */
+const bgvUrl = () => "/api/bg-video" + (bgvVer ? `?v=${bgvVer}` : "");
+function bgvPref() { return localStorage.getItem(BGV_KEY) === "1"; }
+let _bgvSeq = 0;   // 会话序号: 丢弃慢于新一轮同步的旧 video 事件
+
+function syncVideoLayer() {
+  const vid = $("bg-video");
+  if (!vid) return;
+  const seq = ++_bgvSeq;
+  const on = bgvPref() && bgvVer > 0;
+  if (!on) {
+    vid.pause();
+    vid.removeAttribute("src");   // removeAttribute 而非置空串: 避免触发 error 事件
+    vid.load();
+    delete document.documentElement.dataset.bgv;
+    return;
+  }
+  // canplay 后才亮标记: 元数据/首帧未就绪时不闪黑块
+  vid.oncanplay = () => {
+    if (seq !== _bgvSeq || !bgvPref()) return;
+    document.documentElement.dataset.bgv = "1";
+    vid.play().catch(() => {});   // muted 已满足自动播放策略; 失败静默
+  };
+  vid.onerror = () => {
+    if (seq !== _bgvSeq) return;
+    delete document.documentElement.dataset.bgv;   // 回落: 视频坏则露静态壁纸
+  };
+  vid.src = bgvUrl();
+  vid.load();
+}
+
 function syncBgLayers() {
   const on = bgPref() && bgVer > 0;
   const bi = $("bg-bright"); if (bi) bi.disabled = !on;   // 无壁纸时滑块无意义
@@ -1870,6 +1907,7 @@ function syncBgLayers() {
 /* 启动装载: 本地标记开启才发请求拿壁纸（版本号稍后由 /api/settings 校准,
  * 校准值若不同, loadSettings 里会再跑一遍本函数换新地址） */
 syncBgLayers();
+syncVideoLayer();
 /* 自动取色: localStorage 只有 hex 无图（持久化的原始图不落前端）,
  * 开关开启且缺 hex 时拉一次壁纸现算。setTimeout 延到脚本求值完成后:
  * ACCENT_AUTO_* 常量声明在文件后部, 此处直接引用会踩 TDZ */
@@ -1933,6 +1971,49 @@ $("btn-bg-clear").onclick = async () => {
     refreshAutoAccent(null);   // 壁纸已清: 自动取色失效, 回落手动强调色
     toast(t("app.104"));
   } catch (e) { toast(t("app.105") + e.message); }
+};
+
+$("btn-bgv-upload").onclick = () => $("bgv-file").click();
+$("bgv-file").addEventListener("change", () => {
+  const file = $("bgv-file").files[0];
+  $("bgv-file").value = "";   // 清空: 允许重复选择同一文件
+  if (!file) return;
+  if (file.size > 80 * 1024 * 1024) { toast(t("app.161")); return; }
+  const rd = new FileReader();
+  rd.onload = async () => {
+    const data = String(rd.result || "");
+    if (!/^data:video\/(mp4|webm);base64,/.test(data)) {
+      toast(t("app.162"));
+      return;
+    }
+    try {
+      const r = await fetch("/api/bg-video", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ data }),
+      });
+      if (!r.ok) throw new Error((await r.json()).detail || "HTTP " + r.status);
+      bgvVer = (await r.json()).ver;
+      localStorage.setItem(BGV_KEY, "1");   // 上传即启用
+      syncVideoLayer();
+      toast(t("app.163"));
+    } catch (e) { toast(t("app.164") + e.message); }
+  };
+  rd.readAsDataURL(file);
+});
+$("btn-bgv-clear").onclick = async () => {
+  try {
+    const r = await fetch("/api/bg-video", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ data: null }),
+    });
+    if (!r.ok) throw new Error((await r.json()).detail || "HTTP " + r.status);
+    bgvVer = 0;
+    localStorage.removeItem(BGV_KEY);
+    syncVideoLayer();
+    toast(t("app.165"));
+  } catch (e) { toast(t("app.166") + e.message); }
 };
 
 /* ---------- 设置 → 外观: 应用图标上传 / 恢复默认 ---------- */

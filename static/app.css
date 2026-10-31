@@ -191,6 +191,15 @@
   }
   :root[data-bg="1"] #bg-scrim { display: block; background: var(--bg-scrim); }
 
+  /* 动态壁纸视频层: z-index -2 垫在遮罩之下, 全屏 cover;
+   * 显隐由 data-bgv 标记驱动（首帧预绘脚本抢设防闪帧, app.js 校准后接管） */
+  #bg-video {
+    display: none; position: fixed; inset: 0;
+    width: 100%; height: 100%; object-fit: cover;
+    z-index: -2; pointer-events: none;
+  }
+  :root[data-bgv="1"] #bg-video { display: block; }
+
   * { box-sizing: border-box; margin: 0; padding: 0; }
   input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
   html, body { height: 100%; }
