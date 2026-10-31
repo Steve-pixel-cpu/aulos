@@ -1349,19 +1349,16 @@
     border-color: var(--accent-border);
     box-shadow: var(--shadow-lg), 0 0 0 3px var(--accent-soft);
   }
-  /* 上下文容量: 环形进度图标(嵌在 comp-row, 模型切换控件左侧) + 点击
-   * 弹出的卡片(.dd-pop 同款 popover, fixed 定位到按钮上方)。图标环形
-   * 填充比例=占用百分比; 常驻显示, 点图标开/关卡片。
-   * 占用 >75% 环与进度条同转警示色 */
+  /* 上下文容量: 环形进度图标(嵌在 comp-row, 模型切换控件左侧), 无边框
+   * 纯圆环——空环底轨 + accent 弧按占用比例填充, 常驻显示; 点图标在
+   * 上方弹出 .dd-pop 同款卡片。占用 >75% 环转警示色 */
   #btn-ctx {
     display: inline-flex; align-items: center; justify-content: center;
-    width: 30px; height: 30px; padding: 0; flex: none;
-    border: 1px solid var(--border-strong); background: var(--surface);
-    border-radius: 10px; color: var(--text-2);
-    transition: border-color .15s, background .15s;
+    width: 28px; height: 28px; padding: 0; flex: none;
+    border: none; background: none; border-radius: 8px; color: var(--text-2);
   }
-  #btn-ctx:hover { background: var(--hover); border-color: var(--accent-border); }
-  #btn-ctx.open { border-color: var(--accent-border); background: var(--accent-soft); }
+  #btn-ctx:hover { background: var(--hover); }
+  #btn-ctx.open { background: var(--hover); }
   #btn-ctx svg { width: 18px; height: 18px; }
   #btn-ctx .ctx-ring-bg { stroke: var(--surface-3); stroke-width: 3; }
   #btn-ctx .ctx-ring {
@@ -1369,7 +1366,6 @@
     stroke-dasharray: 47.1;              /* 2πr, r=7.5 */
     stroke-dashoffset: 47.1;             /* 0 占用=空环, JS 按 pct 减 */
   }
-  #btn-ctx.warn { color: var(--warn); }
   #btn-ctx.warn .ctx-ring { stroke: var(--warn); }
   /* 卡片: 复用下拉菜单 .dd-pop 的浮层观感(fixed+blur+shadow-pop),
    * JS 定位到按钮上方与 dd 弹出同款 */
