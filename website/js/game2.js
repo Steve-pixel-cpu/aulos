@@ -257,6 +257,15 @@
        instead of the baked gradient discs */
     this.load.image('sunImg', 'assets/mc/sun.png?v=c1');
     this.load.image('moonImg', 'assets/mc/moon_hard.png?v=c2');
+    /* thunder samples (v7.1, USER: 去网上找点雷雨的音效) — CC0 from
+       BigSoundBank (public domain, no attribution required). 6 takes:
+       随机挑一道 + 随机 detune, 不重复感 */
+    this.load.audio('thunder0', 'assets/sfx/thunder1.mp3');
+    this.load.audio('thunder1', 'assets/sfx/thunder2.mp3');
+    this.load.audio('thunder2', 'assets/sfx/thunder3.mp3');
+    this.load.audio('thunder3', 'assets/sfx/thunder4.mp3');
+    this.load.audio('thunder4', 'assets/sfx/thunder5.mp3');
+    this.load.audio('thunder5', 'assets/sfx/thunder6.mp3');
     /* foreground bushes (16px pixel shrubs, USER: 太大/色块 fix) */
     BUSH_SET.forEach(function (b) {
       this.load.image('bush' + b.i, 'assets/mc/bush_px' + b.i + '.png?v=b2');
@@ -2205,27 +2214,50 @@ var rain = { level: 0, target: 0, until: 0, strength: 1,
    the CRACK itself is noise() low-fft rumble delayed 0.3-1.4s
    (distance feel) with a quieter echo. */
 var STORM_MIN_STRENGTH = 1.25;
-function thunderCrack(strength) {
-  try {
-    var c = ac();
-    if (!c) { return; }
-    /* 主轰鸣: 低频长噪声, 音量随强度 */
-    var delay = 0.3 + Math.random() * 1.1;         /* 距离感 */
-    window.setTimeout(function () {
-      try {
+function thunderCrack(strength, scene) {
+  /* v7.2 (USER: 去网上找点雷雨的音效): 播真实采样 — 6 道 CC0 雷
+     (BigSoundBank), 随机挑一道 + 随机 detune ±8%, 音量随强度 0.9..1.4
+     (采样本身响, 无需合成大增益)。采样未就绪 (Phaser 声音锁/加载中)
+     回退 v7.1 的合成噪声。Duck 雨声逻辑两路共用: 雷响瞬间压雨声到
+     30%, 1.2s 平滑恢复 — 现实听觉掩蔽的反相操作 */
+  var TH_N = 6;
+  var delay = 0.3 + Math.random() * 1.1;         /* 距离感 */
+  var pick = 'thunder' + Math.floor(Math.random() * TH_N);
+  var vGame = (scene && scene.sound && scene.sound.get) ? scene.sound.get(pick) : null;
+  var g0 = 0.11 * rain.level * (rain.strength || 1);
+  function duck(nowS) {
+    try {
+      var c2 = ac();
+      if (!c2 || !rainSfxNode) { return; }
+      var gn = rainSfxNode.gain.gain;
+      gn.cancelScheduledValues(nowS);
+      gn.setValueAtTime(g0 * 0.3, nowS);
+      gn.setTargetAtTime(g0, nowS + 0.5, 0.35);
+    } catch (e) {}
+  }
+  window.setTimeout(function () {
+    try {
+      if (vGame) {
+        var vol = 0.9 + 0.5 * (strength - 1);    /* 0.9..1.4 × 采样原声 */
+        vGame.setDetune ? vGame.setDetune((Math.random() * 160 - 80)) : 0;
+        vGame.setVolume ? vGame.setVolume(vol) : vGame.setGain(vol);
+        vGame.play();
         var c2 = ac();
-        if (!c2) { return; }
-        var vol = 0.16 + 0.14 * (strength - 1);    /* 0.19..0.27 */
-        noise(1.4, vol, 220 + Math.random() * 90); /* 220-310Hz 轰 */
-        /* 回声: 0.5s 后一次更弱更低的余响 */
+        if (c2) { duck(c2.currentTime); }
+      } else {
+        /* 回退: 合成噪声 (Phaser audio 解锁失败/加载中) */
+        var vol2 = 0.5 + 0.2 * (strength - 1);
+        noise(1.6, vol2, 200 + Math.random() * 100);
         window.setTimeout(function () {
-          noise(0.9, vol * 0.45, 140 + Math.random() * 60);
-        }, 480);
-      } catch (e) {}
-    }, delay * 1000);
-  } catch (e) {}
+          try { noise(1.1, vol2 * 0.5, 130 + Math.random() * 70); } catch (e) {}
+        }, 520);
+        var c3 = ac();
+        if (c3) { duck(c3.currentTime); }
+      }
+    } catch (e) {}
+  }, delay * 1000);
 }
-function stormTick(dt) {
+function stormTick(dt, S) {
   if (!rain.storm || rain.level < 0.5) {
     rain.flash = Math.max(0, rain.flash - dt * 4);   /* 衰减 */
     return;
@@ -2234,7 +2266,7 @@ function stormTick(dt) {
   if (now >= rain.nextBolt) {
     rain.flash = 0.55 + 0.45 * Math.random();        /* 亮度随场次 */
     rain.nextBolt = now + 4 + Math.random() * 7;     /* 4-11s */
-    thunderCrack(rain.strength);
+    thunderCrack(rain.strength, S);
   }
   /* double-flicker 衰减: 快掉到 40% 再慢掉到 0 (闪电的频闪感) */
   if (rain.flash > 0.4) { rain.flash -= dt * 3.5; }
@@ -2464,6 +2496,13 @@ function rainSfx(level, strength) {
         }
       }
       g.strokePath();
+    }
+    /* FULL-SCREEN FLASH (v7.1, USER: 整个画面都要屏闪): sky canvas
+       的白层只亮了天空 — 地下/近景没感觉。rainG 在场景最上层
+       (depth 90), 把同一 flash 画成全屏白罩, 游戏画面一起闪 */
+    if (rain.flash > 0.02) {
+      g.fillStyle(0xe9f1ff, rain.flash * 0.42);
+      g.fillRect(0, 0, vw + 2, vh + 2);
     }
   }
 
@@ -4142,7 +4181,7 @@ function rainSfx(level, strength) {
     }
     dayT = (dayT + dt / DAY_LEN) % 1;
     rainTick(dt, this);        /* weather events (MC-style, above) */
-    stormTick(dt);             /* lightning flash decay + bolt schedule */
+    stormTick(dt, this);       /* lightning flash decay + bolt schedule */
     rainSfx(rain.level, rain.strength);  /* 声随雨势: 音量+音色都跟 strength */
     var spd = 190;
     var mv = (window.__digAutoWalk || this.keysA.D.isDown || this.cursors.right.isDown ? 1 : 0) -
