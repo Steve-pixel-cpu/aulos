@@ -2335,7 +2335,7 @@ var rainSfxNode = null;   /* {gain, filter} */
 var bgm = { cur: null, tracks: {} };
 /* 每轨响度校准 (v9.2, USER: 白天50%过大、夜晚过小 — 两条母带
    响度差很多): gain 乘在滑杆值上, 白天压低 / 夜晚抬高 */
-var BGM_GAIN = { bgmSurface: 0.6, bgmNight: 1.55, bgmCave: 1.0, bgmRain: 0.9 };
+var BGM_GAIN = { bgmSurface: 0.42, bgmNight: 1.55, bgmCave: 1.0, bgmRain: 0.9 };   /* v9.3 USER: 白天还得压 — 0.6→0.42 */
 function bgmUpdate(S) {
   if (!S || !S.sound || !S.sound.add) { return; }
   /* desired track */
