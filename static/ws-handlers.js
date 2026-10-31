@@ -2149,8 +2149,58 @@ function fmtTokens(n) {
  * (input + cache_creation + cache_read) 对比配置的 context_window;
  * 命中率 = 累计 cache_read / 累计输入侧。数据源 turn_done.usage,
  * context_compacted 清零重计。 */
-const ctxStats = { in: 0, cached: 0, window: 0 };
+const ctxStats = { in: 0, cached: 0, window: 0, sid: null };
 const CTX_WARN_RATIO = 0.75;   // 与后端压缩阈值口径对齐, 进度条变警示色
+/* 累计值按会话持久化(localStorage): 刷新/切会话后环形按钮立即恢复显示,
+ * 不必等新一轮 turn_done。压缩清零时同步清存储。 */
+const CTX_STORE_KEY = "xc-ctx-stats-v1";
+
+function ctxStoreLoad(sid) {
+  try {
+    const all = JSON.parse(localStorage.getItem(CTX_STORE_KEY) || "{}");
+    return all[sid] || null;
+  } catch (e) { return null; }
+}
+
+function ctxStoreSave() {
+  if (!ctxStats.sid) return;
+  try {
+    const all = JSON.parse(localStorage.getItem(CTX_STORE_KEY) || "{}");
+    // 只保留最近 50 个会话的读数, 防无限膨胀
+    const keys = Object.keys(all);
+    if (keys.length >= 50 && !all[ctxStats.sid]) {
+      delete all[keys[0]];
+    }
+    all[ctxStats.sid] = { in: ctxStats.in, cached: ctxStats.cached,
+                          window: ctxStats.window };
+    localStorage.setItem(CTX_STORE_KEY, JSON.stringify(all));
+  } catch (e) { /* 存储失败静默: 只影响刷新后恢复 */ }
+}
+
+function ctxStoreClear() {
+  if (!ctxStats.sid) return;
+  try {
+    const all = JSON.parse(localStorage.getItem(CTX_STORE_KEY) || "{}");
+    delete all[ctxStats.sid];
+    localStorage.setItem(CTX_STORE_KEY, JSON.stringify(all));
+  } catch (e) { /* 同上 */ }
+}
+
+/* 切会话/进草稿时调用: 恢复该会话的累计读数(无则隐藏环形按钮) */
+function ctxSwitchSession(sid) {
+  ctxStats.sid = sid || null;
+  ctxStats.in = 0; ctxStats.cached = 0; ctxStats.window = 0;
+  if (sid) {
+    const saved = ctxStoreLoad(sid);
+    if (saved) {
+      ctxStats.in = saved.in || 0;
+      ctxStats.cached = saved.cached || 0;
+      ctxStats.window = saved.window || 0;
+    }
+  }
+  renderCtxCard();
+}
+window.ctxSwitchSession = ctxSwitchSession;   // app.js selectSession/startDraft 调用
 
 function updateCtxCard(usage, contextWindow) {
   if (!usage || typeof usage !== "object") return;
@@ -2164,11 +2214,13 @@ function updateCtxCard(usage, contextWindow) {
   if (typeof contextWindow === "number" && contextWindow > 0) {
     ctxStats.window = contextWindow;            // 后端每轮下发, 拿到就刷新
   }
+  ctxStoreSave();
   renderCtxCard();
 }
 
 function resetCtxCard() {
   ctxStats.in = 0; ctxStats.cached = 0;
+  ctxStoreClear();
   renderCtxCard();
 }
 

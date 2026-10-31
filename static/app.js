@@ -781,6 +781,7 @@ async function selectSession(id) {
   state.draftPlan = null;
   state.sessionId = id;
   localStorage.setItem("xc-cur-session", id);   // 桌宠悬浮窗直连 WS 回退时用
+  if (window.ctxSwitchSession) window.ctxSwitchSession(id);   // 上下文容量读数切到该会话
   $("pane").classList.remove("empty-view");   // 真实会话: 输入卡回到常规底部布局
   renderDraftChrome();                        // 顺带清掉草稿态的工作区条/建议 chips
   const run = runOf(id);
@@ -1018,6 +1019,7 @@ function startDraft(draftDir = null) {
   saveCurrentInput();          // 离开原会话: 保存其未发送输入
   state.draft = true;
   state.sessionId = null;
+  if (window.ctxSwitchSession) window.ctxSwitchSession(null);   // 草稿态: 无读数, 环形按钮隐藏
   state.draftDir = draftDir;   // 侧栏项目行 + 进入: 首条消息据此把会话归入该项目
   markActiveSession();
   refreshDocTitle();
