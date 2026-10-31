@@ -431,11 +431,21 @@ const CHECK_SVG = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" s
  * 幂等: 每个 pre 只跑一次(data-dec 挡在外层);
  * 展开方向: 高度变化发生在 wrap 上, scrollHeight 由 pre 提供 */
 const CODE_COLLAPSE_MAX = 420;
+/* 对单个已装饰的 code-wrap 执行折叠判定并落地限高。
+ * 量不到高度(游离列无布局盒, scrollHeight 恒 0, 见 bubbles.js 同款教训)
+ * 时按字符数兜底: >2000 字符视作超长, 打开面板后点展开可正常收放 */
+function applyCodeCollapse(wrap, pre) {
+  const tall = pre.scrollHeight > 0
+    ? pre.scrollHeight > CODE_COLLAPSE_MAX + 80       // 80px 缓冲避免"刚超一点就折叠"
+    : pre.textContent.length > 2000;
+  if (!tall) return false;
+  wrap.classList.add("folded");
+  pre.style.maxHeight = CODE_COLLAPSE_MAX + "px";
+  return true;
+}
 function setupCollapse(wrap, pre) {
   requestAnimationFrame(() => {
-    if (pre.scrollHeight <= CODE_COLLAPSE_MAX + 80) return;  // 短块不折叠, 80px 缓冲避免"刚超一点就折叠"的尴尬
-    wrap.classList.add("folded");
-    pre.style.maxHeight = CODE_COLLAPSE_MAX + "px";
+    if (!applyCodeCollapse(wrap, pre)) return;
     if (wrap.querySelector(".code-expand")) return;  // 流式重建 DOM 后重复保护
     const btn = document.createElement("button");
     btn.type = "button";
@@ -449,14 +459,30 @@ function setupCollapse(wrap, pre) {
       open = !open;
       wrap.classList.toggle("open", open);
       btn.classList.toggle("open", open);
+      // 内联 maxHeight 必须同步切换: 类规则 .code-wrap.open pre {max-height:none}
+      // 压不过内联样式, 只 toggle 类的话展开永远无效（镜像 bubbles.js applyTextFold）
+      pre.style.maxHeight = open ? "none" : CODE_COLLAPSE_MAX + "px";
       btn.querySelector("span").textContent = open ? t("app.014") : t("app.015");
     });
     wrap.appendChild(btn);
   });
 }
+/* 流式收口折叠: 对气泡内所有「流式期间只装饰未折叠」的代码块补折叠。
+ * 流式中每条 delta 都全量重建 DOM, 若此时折叠: 限高→全高→限高随 delta
+ * 反复横跳(max-height .3s 过渡), 页面高度振荡=子代理面板抖动的根源。
+ * 故 decorateCode 打 data-collapse-pending, 收口(flushAssistantBubble)
+ * 在 DOM 定型后统一补折叠。 */
+function collapsePendingCode(root) {
+  if (!root || !root.querySelectorAll) return;
+  root.querySelectorAll(".code-wrap[data-collapse-pending]").forEach(wrap => {
+    wrap.removeAttribute("data-collapse-pending");
+    const pre = wrap.querySelector("pre");
+    if (pre) setupCollapse(wrap, pre);
+  });
+}
 const CHEVRON_SVG = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
 
-function decorateCode(root) {
+function decorateCode(root, streaming = false) {
   if (!root || !root.querySelectorAll) return;
   root.querySelectorAll("pre:not([data-dec])").forEach(pre => {
     pre.setAttribute("data-dec", "1");
@@ -472,6 +498,8 @@ function decorateCode(root) {
     const wrap = document.createElement("div");
     wrap.className = "code-wrap";
     wrap.dataset.lang = (lang || "text").toLowerCase();
+    // 流式输出中: 只装饰不折叠, 标记待收口（避免每 delta 限高↔全高振荡）
+    if (streaming) wrap.setAttribute("data-collapse-pending", "1");
     const head = document.createElement("div");
     head.className = "code-head";
     head.innerHTML =
@@ -495,7 +523,7 @@ function decorateCode(root) {
     pre.replaceWith(wrap);
     wrap.appendChild(head);
     wrap.appendChild(pre);
-    setupCollapse(wrap, pre);
+    if (!streaming) setupCollapse(wrap, pre);   // 流式中跳过, 收口时 collapsePendingCode 统一补
   });
 }
 

@@ -2486,8 +2486,10 @@
   margin-bottom: 6px;
 }
 #sa-close:hover { color: var(--text-1); background: var(--hover); }
-/* 面板体: 内部对话流滚动区; 列搬进来后去掉主列的定宽居中 */
-#sa-body { flex: 1; overflow-y: auto; min-height: 0; }
+/* 面板体: 内部对话流滚动区; 列搬进来后去掉主列的定宽居中。
+ * scrollbar-gutter: stable——流式内容跨越溢出阈值时原生滚动条(9px)
+ * 出现/消失会导致列宽反复跳变(md 代码块流式输出抖动的来源之一) */
+#sa-body { flex: 1; overflow-y: auto; min-height: 0; scrollbar-gutter: stable; }
 #sa-body .sa-stream.hosted {
   width: auto; margin: 0; padding: 14px 16px 18px;
 }

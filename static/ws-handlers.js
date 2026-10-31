@@ -190,7 +190,7 @@ function onTextDelta(msg, sid) {
   }
   run.curBubble._raw += msg.text;
   run.curBubble.innerHTML = renderMd(run.curBubble._raw);
-  decorateCode(run.curBubble);
+  decorateCode(run.curBubble, true);   // streaming: 不折叠(防高度振荡), 收口补
   decorateTables(run.curBubble);
   scrollToBottom();
 }
@@ -201,6 +201,8 @@ function flushAssistantBubble(run) {
   if (run.curBubble && !run.curBubble._raw) {
     run.curBubble.closest(".msg").remove();   // 空气泡（模型直接调工具）: 移除
   }
+  // DOM 定型后统一补折叠（流式中 decorateCode(_, true) 只装饰未折叠）
+  if (run.curBubble) collapsePendingCode(run.curBubble);
   run.curBubble = null;
 }
 
@@ -1294,6 +1296,7 @@ function onSubagentEvent(msg, sid) {
   // 侧栏模式: 用户贴底时才跟随(上翻让位, 交给 wheel/scroll 监听切换)
   if (_saOpenAgent === msg.agent_id && sid === state.sessionId && saNearBottom) {
     const body = $("sa-body");
+    window.tipIgnoreNextScroll?.(120);   // 对齐主列 scrollToBottom: 程序化滚动不误杀 tooltip
     body.scrollTop = body.scrollHeight;
   }
 }
