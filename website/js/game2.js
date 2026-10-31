@@ -2343,8 +2343,12 @@ function bgmUpdate(S) {
   /* desired track */
   var pCol = Math.max(0, Math.min(WORLD_W - 1, Math.floor(S.player.x / TILE)));
   var surf = world.surfaceY[pCol] * TILE;
-  var under = S.player.y > surf + TILE * 2;
-  var raining = rain.level > 0.25;             /* 雨起 25% 即切雨环境声 */
+  /* v9.6 (USER: 洞穴bgm只在看不到地表才能播放): 「下洞」不再按玩
+     家深度 (脚低于地表 2 格就切), 改按视野——玩家所处列的地表线
+     滚出屏幕顶 (footRow < 0, 看不到天空了) 才算真·进洞。贴近洞
+     口向下看得到地表时仍是地表 BGM。 */
+  var footRow2 = surf - S.cameras.main.scrollY;
+  var under = footRow2 < -8;                   /* 地表线滚出屏顶 8px 缓冲 */
   var want = under ? 'bgmCave'
     : raining ? 'bgmRain'
     : (dayT > 0.5 && dayT < 0.99 ? 'bgmNight' : 'bgmSurface');
