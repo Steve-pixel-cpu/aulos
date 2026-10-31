@@ -257,6 +257,11 @@
        landmark structure (worldgen 5b) */
     this.load.image('maple', 'assets/big/maple.png?v=m1');
     this.load.image('building', 'assets/big/building.png?v=m1');
+    /* v10 (USER: 接入 松树 木制公告亭 喷泉) — same prep pipeline as
+       maple/building (trim + sharpen) */
+    this.load.image('pine', 'assets/big/pine.png?v=p1');
+    this.load.image('notice', 'assets/big/notice.png?v=p1');
+    this.load.image('fountain', 'assets/big/fountain.png?v=p1');
     /* celestial art (USER): drawSky blits this sun and moon
        instead of the baked gradient discs */
     this.load.image('sunImg', 'assets/mc/sun.png?v=c1');
@@ -621,12 +626,18 @@
        one depth step further back, so trees/bushes layered after it
        always draw in front. Non-interactive scenery. */
     if (world.landmarks && world.landmarks.length) {
+      var LM_ART = {
+        building: { key: 'building', w: 564, h: 620 },   /* native 997x1096 */
+        notice:   { key: 'notice',   w: 340, h: 380 },   /* native 882x986, ~12 tiles */
+        fountain: { key: 'fountain', w: 330, h: 286 }    /* native 1051x911, ~9 tiles */
+      };
       for (var li = 0; li < world.landmarks.length; li++) {
         var lm = world.landmarks[li];
+        var art = LM_ART[lm.kind || 'building'];
         this.add.image(lm.x * TILE + TILE / 2, (lm.y + 0.5) * TILE,
-          'building')
+          art.key)
           .setOrigin(0.5, 1)
-          .setDisplaySize(564, 620)   /* native 997x1096, ~19 tiles tall */
+          .setDisplaySize(art.w, art.h)
           .setDepth(-1.6);
       }
     }
@@ -652,7 +663,8 @@
            tr.sprite 取模自动重映射, worldgen 数据不用动。 */
         var VARIANTS = [
           { key: 'trees',  w: 560, h: 580 },
-          { key: 'maple',  w: 400, h: 590 }
+          { key: 'maple',  w: 400, h: 590 },
+          { key: 'pine',   w: 380, h: 610 }   /* v10 松树: 瘦高针叶 */
         ];
         var v = VARIANTS[tr.sprite % VARIANTS.length];
         /* trunk base sits INSIDE the surface tile (USER: 树底部扎进泥

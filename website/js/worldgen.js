@@ -432,11 +432,42 @@
         if (Math.abs(trees[lt2].x - (lx + 6)) < 10) { treeNear = true; break; }
       }
       if (treeNear) { continue; }
-      landmarks.push({ x: lx + 6, y: surfaceY[lx + 6] });
+      landmarks.push({ x: lx + 6, y: surfaceY[lx + 6], kind: 'building' });
       lx += 160;
     }
     if (!landmarks.length && bestLx >= 0) {
-      landmarks.push({ x: bestLx + 6, y: surfaceY[bestLx + 6] });
+      landmarks.push({ x: bestLx + 6, y: surfaceY[bestLx + 6], kind: 'building' });
+    }
+    /* v10 (USER: 接入 松树 木制公告亭 喷泉): notice + fountain 各至多
+       1 座, 平草清空地判定同上 (间隔更大避免拥挤), kind 字段驱动
+       game2 选贴图。pine 走树池 (VARIANTS), 不在此处。 */
+    var KINDS = [['notice', 260], ['fountain', 300]];
+    for (var ki = 0; ki < KINDS.length; ki++) {
+      var kName = KINDS[ki][0], kGap = KINDS[ki][1];
+      var placed = false, bLx = -1, bVar = 1e9;
+      for (var nx = 60; nx < W - 90; nx += 11) {
+        if (Math.abs(nx - 32) < 40 || Math.abs(nx - (W - 40)) < 40) { continue; }
+        var vN = 0, okN = true;
+        for (var nw = nx; nw < nx + 10; nw++) {
+          if (biomeOf[nw] !== 0) { okN = false; break; }
+          vN += Math.abs(surfaceY[nw] - surfaceY[nx]);
+          if (tile[surfaceY[nw] * W + nw] !== TILE.GRASS) { okN = false; break; }
+        }
+        if (!okN) { continue; }
+        var lmNear = false;
+        for (var ln2 = 0; ln2 < landmarks.length; ln2++) {
+          if (Math.abs(landmarks[ln2].x - (nx + 5)) < 18) { lmNear = true; break; }
+        }
+        if (lmNear) { continue; }
+        if (vN < bVar && !placed) { bVar = vN; bLx = nx; }
+        if (vN > 2) { continue; }
+        landmarks.push({ x: nx + 5, y: surfaceY[nx + 5], kind: kName });
+        placed = true;
+        break;
+      }
+      if (!placed && bLx >= 0) {
+        landmarks.push({ x: bLx + 5, y: surfaceY[bLx + 5], kind: kName });
+      }
     }
     /* hay bales: occasional farmland meadow patches on flat grass */
     for (var hx0 = 20; hx0 < W - 20; hx0 += 60 + Math.floor(rand() * 80)) {
