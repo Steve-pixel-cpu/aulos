@@ -2355,7 +2355,7 @@ function bgmUpdate(S) {
         /* 雨环境声 (bgmRain) 是雨天主氛围: 不被 flash duck, 音量
            ×1.6 (环境声需要存在感); 旋律 BGM 照旧被雷 duck */
         var v = (want === 'bgmRain')
-          ? base * 1.6
+          ? base * 0.9   /* v9.1 USER: 雨声目前太大 — 1.6→0.9 */
           : (rain.flash > 0.05 ? base * 0.35 : base);
         inst.setVolume(v);
       }
