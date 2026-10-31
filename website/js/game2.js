@@ -2333,6 +2333,9 @@ var rainSfxNode = null;   /* {gain, filter} */
    fixed 0.35 base (BGM must sit under rain/thunder SFX). Storm adds
    a slight duck so BGM doesn't fight the thunder. */
 var bgm = { cur: null, tracks: {} };
+/* 每轨响度校准 (v9.2, USER: 白天50%过大、夜晚过小 — 两条母带
+   响度差很多): gain 乘在滑杆值上, 白天压低 / 夜晚抬高 */
+var BGM_GAIN = { bgmSurface: 0.6, bgmNight: 1.55, bgmCave: 1.0, bgmRain: 0.9 };
 function bgmUpdate(S) {
   if (!S || !S.sound || !S.sound.add) { return; }
   /* desired track */
@@ -2348,14 +2351,13 @@ function bgmUpdate(S) {
        同步 — 拖动滑杆即时生效, 不用等切轨。storm duck: 雷响时
        压到滑杆值的 35% */
     var tk = bgm.tracks[want];
-    var base = CFG.bgmVolume / 100 * 1.6;      /* 8% → 0.128; 100% → 1.6 满量 */
+    var base = CFG.bgmVolume / 100 * 1.6 * (BGM_GAIN[want] || 1);
     if (tk) {
       var inst = S.sound.get(want);
       if (inst) {
-        /* 雨环境声 (bgmRain) 是雨天主氛围: 不被 flash duck, 音量
-           ×1.6 (环境声需要存在感); 旋律 BGM 照旧被雷 duck */
+        /* 雨环境声是雨天主氛围: 不被 flash duck; 旋律 BGM 照旧被雷 duck */
         var v = (want === 'bgmRain')
-          ? base * 0.9   /* v9.1 USER: 雨声目前太大 — 1.6→0.9 */
+          ? base
           : (rain.flash > 0.05 ? base * 0.35 : base);
         inst.setVolume(v);
       }
@@ -2387,7 +2389,7 @@ function bgmUpdate(S) {
   if (stale) { try { stale.stop(); stale.destroy(); } catch (e) {} }
   var t = S.sound.add(want, { loop: true, volume: 0 });
   t.play();
-  var inVol = CFG.bgmVolume / 100 * 1.6;
+  var inVol = CFG.bgmVolume / 100 * 1.6 * (BGM_GAIN[want] || 1);
   var inT = S.time.addEvent({
     delay: 50, repeat: 29, callback: function () {
       try { t.setVolume(Math.min(inVol, t.volume + inVol / 30)); } catch (e) {}
