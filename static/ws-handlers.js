@@ -2227,11 +2227,17 @@ function resetCtxCard() {
 function renderCtxCard() {
   const card = document.getElementById("ctx-card");
   const btn = document.getElementById("btn-ctx");
-  if (!card || !ctxStats.in || !ctxStats.window) {   // 无数据/无窗口: 隐藏
-    if (card) card.classList.remove("open");
-    if (btn) btn.hidden = true;
+  if (!card || !btn) return;
+  const empty = document.getElementById("ctx-empty");
+  if (!ctxStats.in || !ctxStats.window) {   // 无数据: 按钮常驻(空环), 卡片显占位文案
+    card.classList.remove("open");
+    btn.setAttribute("aria-expanded", "false");
+    if (empty) empty.hidden = false;
+    card.querySelectorAll(".ctx-row, .ctx-bar").forEach(el => { el.style.display = "none"; });
     return;
   }
+  if (empty) empty.hidden = true;
+  card.querySelectorAll(".ctx-row, .ctx-bar").forEach(el => { el.style.display = ""; });
   const pct = ctxStats.in / ctxStats.window;
   const pctText = "（" + (pct * 100).toFixed(1) + "%）";
   document.getElementById("ctx-usage").textContent =

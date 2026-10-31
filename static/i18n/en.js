@@ -762,6 +762,7 @@ window.I18N_STRINGS_EN = {
   "ws_handlers.118": "Completed",
   "ws_handlers.119": "Context",
   "ws_handlers.120": "Avg cache hit rate",
+  "ws_handlers.121": "Shown after the current turn completes",
   "index.attr001": "Show sidebar",
   "index.attr002": "Minimize",
   "index.attr003": "Maximize",
