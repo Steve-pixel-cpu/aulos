@@ -1350,33 +1350,37 @@
     box-shadow: var(--shadow-lg), 0 0 0 3px var(--accent-soft);
   }
   /* 上下文容量: 环形进度图标(嵌在 comp-row, 模型切换控件左侧) + 点击
-   * 弹出的卡片(popover, 悬浮输入卡上方)。图标环形填充比例=占用百分比;
-   * 首轮 turn_done 有数据才显示图标, 点图标开/关卡片。
+   * 弹出的卡片(.dd-pop 同款 popover, fixed 定位到按钮上方)。图标环形
+   * 填充比例=占用百分比; 常驻显示, 点图标开/关卡片。
    * 占用 >75% 环与进度条同转警示色 */
   #btn-ctx {
     display: inline-flex; align-items: center; justify-content: center;
-    width: 28px; height: 28px; padding: 0; flex: none;
-    border: none; background: none; border-radius: 8px; color: var(--text-3);
+    width: 30px; height: 30px; padding: 0; flex: none;
+    border: 1px solid var(--border-strong); background: var(--surface);
+    border-radius: 10px; color: var(--text-2);
+    transition: border-color .15s, background .15s;
   }
-  #btn-ctx:hover { background: var(--hover); color: var(--text-2); }
-  #btn-ctx[hidden] { display: none; }
-  #btn-ctx .ctx-ring-bg { stroke: var(--surface-3); stroke-width: 2.6; }
+  #btn-ctx:hover { background: var(--hover); border-color: var(--accent-border); }
+  #btn-ctx.open { border-color: var(--accent-border); background: var(--accent-soft); }
+  #btn-ctx svg { width: 18px; height: 18px; }
+  #btn-ctx .ctx-ring-bg { stroke: var(--surface-3); stroke-width: 3; }
   #btn-ctx .ctx-ring {
-    stroke: var(--accent); stroke-width: 2.6;
+    stroke: var(--accent); stroke-width: 3;
     stroke-dasharray: 47.1;              /* 2πr, r=7.5 */
     stroke-dashoffset: 47.1;             /* 0 占用=空环, JS 按 pct 减 */
   }
   #btn-ctx.warn { color: var(--warn); }
   #btn-ctx.warn .ctx-ring { stroke: var(--warn); }
+  /* 卡片: 复用下拉菜单 .dd-pop 的浮层观感(fixed+blur+shadow-pop),
+   * JS 定位到按钮上方与 dd 弹出同款 */
   #ctx-card {
-    position: absolute; left: 12px; right: 12px;
-    bottom: calc(100% + 8px);              /* 悬浮: 输入卡上缘外 8px */
-    border: 1px solid var(--border); border-radius: var(--r-lg);
+    position: fixed; z-index: 300; min-width: 240px;
+    display: none; flex-direction: column; padding: 10px 13px;
     background: var(--pop-bg);
-    -webkit-backdrop-filter: blur(12px) saturate(1.4); backdrop-filter: blur(12px) saturate(1.4);
-    box-shadow: var(--shadow-md);
-    padding: 9px 13px 10px;
-    display: none;
+    -webkit-backdrop-filter: blur(18px) saturate(1.5); backdrop-filter: blur(18px) saturate(1.5);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg); box-shadow: var(--shadow-pop);
+    animation: rise .18s cubic-bezier(.16, 1, .3, 1);
   }
   #ctx-card.open { display: block; animation: rise .18s cubic-bezier(.16, 1, .3, 1); }
   .ctx-row {
@@ -1967,8 +1971,8 @@
   .pill > svg { flex: none; }
   .pill.mode { color: var(--accent); }
   .pill.mode > svg { margin-left: 3px; }
-  .pill.effort { color: var(--accent); }
-  .pill.effort .effort-ic { flex: none; margin-left: 3px; color: var(--accent); }
+  .pill.effort { color: var(--text-2); }
+  .pill.effort .effort-ic { flex: none; margin-left: 3px; color: var(--text-3); }
   .pill.effort .dd { color: var(--text-2); }
   .pill .model-name { font-size: calc(12.5px * var(--fs-ui)); color: var(--text-2); padding: 0 4px; }
 

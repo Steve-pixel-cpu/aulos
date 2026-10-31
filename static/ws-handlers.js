@@ -2258,22 +2258,39 @@ function renderCtxCard() {
   btn.hidden = false;
 }
 
-/* 点环形图标开/关卡片; 点卡片与图标之外的区域关闭 */
+/* 点环形图标开/关卡片; 卡片 fixed 定位到按钮上方(dd 弹出同款);
+ * 点卡片与图标之外的区域关闭 */
 (() => {
   const btn = document.getElementById("btn-ctx");
   const card = document.getElementById("ctx-card");
   if (!btn || !card) return;
+  function place() {
+    const r = btn.getBoundingClientRect();
+    const W = card.offsetWidth, H = card.offsetHeight;
+    const left = Math.max(10, Math.min(r.right - W, window.innerWidth - W - 10));
+    card.style.left = left + "px";
+    card.style.top = Math.max(10, r.top - 8 - H) + "px";   // 按钮上方 8px
+  }
   btn.addEventListener("click", (e) => {
     e.stopPropagation();
     const open = card.classList.toggle("open");
+    btn.classList.toggle("open", open);
     btn.setAttribute("aria-expanded", String(open));
+    if (open) {
+      card.style.visibility = "hidden";       // 先隐藏量尺寸再定位, 防闪烁
+      requestAnimationFrame(() => { place(); card.style.visibility = ""; });
+    }
   });
   card.addEventListener("click", (e) => e.stopPropagation());
   document.addEventListener("click", () => {
     if (card.classList.contains("open")) {
       card.classList.remove("open");
+      btn.classList.remove("open");
       btn.setAttribute("aria-expanded", "false");
     }
+  });
+  window.addEventListener("resize", () => {
+    if (card.classList.contains("open")) place();
   });
 })();
 
