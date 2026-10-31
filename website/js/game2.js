@@ -2342,22 +2342,12 @@ function bgmUpdate(S) {
     }
     return;
   }
-  /* fade out old */
-  if (bgm.cur && bgm.tracks[bgm.cur]) {
-    var old = S.sound.get(bgm.cur);
-    if (old && old.isPlaying) {
-      S.tweens.add({ targets: old, volume: 0, duration: 1500,
-        onComplete: function () { try { old.stop(); } catch (e) {} } });
-    }
-  }
-  /* fade in new — v8.3 (USER: 晚上的bgm没有切换): 旧实现对 Sound
-     实例做 volume tween + fade-out 完才 stop。真凶: Phaser 的
-     tween 目标需要 getter/setter, Sound 实例上 volume tween 表面
-     跑完, 但场景 update 里 bgmUpdate 每帧重入, cur 已提前置新值
-     — 旧轨 stop 靠 tween onComplete, 一旦 tween 被同帧多次创建
-     或目标失效就永远不停, 新轨 add 后旧轨还在响 → 听感「没切换」
-     (两首都是中世纪旋律, 混着放更难察觉)。重写: 手动 rAF 淡出
-     (确定性, 不依赖 tween), add 前先 stop+destroy 同 key 旧实例 */
+  /* fade out old — v8.3 确定性淡出 (下方 time.addEvent); 旧的
+     tweens.add(volume) 已删: tween 在 1500ms 内更新被 destroy 的
+     Sound 实例会抛 "Cannot set properties of null" (v321 报错)。
+     fade-out 旧实现对 Sound 实例做 volume tween + fade-out 完才
+     stop——bgmUpdate 每帧重入时 tween 失效旧轨就不停, 新旧两首
+     中世纪旋律混着放 → 听感「没切换」, 故改手动衰减 */
   if (bgm.cur && bgm.tracks[bgm.cur]) {
     var old = S.sound.get(bgm.cur);
     if (old) {
