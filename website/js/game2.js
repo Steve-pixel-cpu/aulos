@@ -275,6 +275,10 @@
     this.load.audio('bgmSurface', 'assets/sfx/bgm_day_medieval.mp3');
     this.load.audio('bgmNight', 'assets/sfx/bgm_night_medieval.mp3');
     this.load.audio('bgmCave', 'assets/sfx/bgm_cave.mp3');
+    /* rain ambience (v9, USER: 雨天bgm不搭): 下雨时旋律 BGM 让位,
+       切纯雨声环境 loop (CC0, OpenGameArt "Rain (loopable)") —
+       雨声+雷声已构成雨天氛围, 中世纪旋律叠上去会打架 */
+    this.load.audio('bgmRain', 'assets/sfx/rain_amb.ogg');
     /* foreground bushes (16px pixel shrubs, USER: 太大/色块 fix) */
     BUSH_SET.forEach(function (b) {
       this.load.image('bush' + b.i, 'assets/mc/bush_px' + b.i + '.png?v=b2');
@@ -2335,7 +2339,10 @@ function bgmUpdate(S) {
   var pCol = Math.max(0, Math.min(WORLD_W - 1, Math.floor(S.player.x / TILE)));
   var surf = world.surfaceY[pCol] * TILE;
   var under = S.player.y > surf + TILE * 2;
-  var want = under ? 'bgmCave' : (dayT > 0.5 && dayT < 0.99 ? 'bgmNight' : 'bgmSurface');
+  var raining = rain.level > 0.25;             /* 雨起 25% 即切雨环境声 */
+  var want = under ? 'bgmCave'
+    : raining ? 'bgmRain'
+    : (dayT > 0.5 && dayT < 0.99 ? 'bgmNight' : 'bgmSurface');
   if (bgm.cur === want) {
     /* v8.5 (USER: 放到配置里): 音量跟随 CFG.bgmVolume 滑杆, 每帧
        同步 — 拖动滑杆即时生效, 不用等切轨。storm duck: 雷响时
@@ -2345,7 +2352,12 @@ function bgmUpdate(S) {
     if (tk) {
       var inst = S.sound.get(want);
       if (inst) {
-        inst.setVolume(rain.flash > 0.05 ? base * 0.35 : base);
+        /* 雨环境声 (bgmRain) 是雨天主氛围: 不被 flash duck, 音量
+           ×1.6 (环境声需要存在感); 旋律 BGM 照旧被雷 duck */
+        var v = (want === 'bgmRain')
+          ? base * 1.6
+          : (rain.flash > 0.05 ? base * 0.35 : base);
+        inst.setVolume(v);
       }
     }
     return;
