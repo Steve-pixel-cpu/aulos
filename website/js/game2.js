@@ -44,6 +44,8 @@
     rainIntensity: 100,   /* % rain density — scales streak count on screen */
     bgmVolume: 8,         /* % BGM volume (USER: 背景音可以小点→做成配置;
                              100 = 原曲满音量, 默认 8 很轻) */
+    rainVolume: 60,       /* % 雨环境声音量 (v9.4 USER: 雨声音量也需可以
+                             调节; 独立于 BGM 滑杆) */
     brightness: 42,       /* % night brightness floor (USER: 夜晚太黑可调亮) */
     caveBright: 100,      /* % cave ambient tint scale (USER: 洞穴太黑可调亮) */
     bulletSpeed: 780,
@@ -2351,7 +2353,10 @@ function bgmUpdate(S) {
        同步 — 拖动滑杆即时生效, 不用等切轨。storm duck: 雷响时
        压到滑杆值的 35% */
     var tk = bgm.tracks[want];
-    var base = CFG.bgmVolume / 100 * 1.6 * (BGM_GAIN[want] || 1);
+    /* bgmRain 走独立雨声音量滑杆; 其余轨走 BGM 滑杆 × 轨校准 */
+    var base = (want === 'bgmRain')
+      ? CFG.rainVolume / 100 * 1.6
+      : CFG.bgmVolume / 100 * 1.6 * (BGM_GAIN[want] || 1);
     if (tk) {
       var inst = S.sound.get(want);
       if (inst) {
@@ -2389,7 +2394,9 @@ function bgmUpdate(S) {
   if (stale) { try { stale.stop(); stale.destroy(); } catch (e) {} }
   var t = S.sound.add(want, { loop: true, volume: 0 });
   t.play();
-  var inVol = CFG.bgmVolume / 100 * 1.6 * (BGM_GAIN[want] || 1);
+  var inVol = (want === 'bgmRain')
+    ? CFG.rainVolume / 100 * 1.6
+    : CFG.bgmVolume / 100 * 1.6 * (BGM_GAIN[want] || 1);
   var inT = S.time.addEvent({
     delay: 50, repeat: 29, callback: function () {
       try { t.setVolume(Math.min(inVol, t.volume + inVol / 30)); } catch (e) {}
@@ -4793,6 +4800,7 @@ function rainSfx(level, strength) {
     { k: 'rainChance',      label: '下雨概率(%/天)',    min: 0,  max: 100, step: 5 },
     { k: 'rainIntensity',   label: '雨量(%)',           min: 10, max: 200, step: 10 },
     { k: 'bgmVolume',       label: '背景音量(%)',       min: 0,  max: 100, step: 2 },
+    { k: 'rainVolume',      label: '雨声音量(%)',       min: 0,  max: 100, step: 2 },
     { k: 'brightness',      label: '夜晚亮度(%)',       min: 20, max: 100, step: 2 },
     { k: 'caveBright',      label: '洞穴亮度(%)',       min: 40, max: 200, step: 5 },
     { k: 'bulletSpeed',     label: '子弹速度',          min: 300, max: 1400, step: 20 },
