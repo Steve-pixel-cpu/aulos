@@ -1513,6 +1513,8 @@ def _spawn_turn_thread(web_session: WebSession, text: str,
                     "cache_creation_input_tokens": u.cache_creation_input_tokens,
                     "cache_read_input_tokens": u.cache_read_input_tokens,
                 },
+                # 配置的上下文窗口大小: 前端「上下文容量」卡片算占比用
+                "context_window": runtime_config.context_window(),
             })
             # 计划实施完成终态: 本轮批准过的计划随正常收口回写 completed 并
             # 广播 plan_completed（前端把计划卡推进"已完成"）。放在 turn_done

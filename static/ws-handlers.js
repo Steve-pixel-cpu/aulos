@@ -137,7 +137,7 @@ function handleServerMessage(msg, sid) {
     case "turn_queued_user":   onTurnQueuedUser(msg, sid); break;
     case "turn_queue_cleared": onQueueCleared(sid); break;
     case "await_output":       onAwaitOutput(msg, state.sessionId); break;
-    case "context_compacted":  addCompactNotice(msgCol(), true); break;
+    case "context_compacted":  addCompactNotice(msgCol(), true); resetCtxCard(); break;
     case "rate_limited_retry": onRateLimitedRetry(msg, sid); break;
     case "turn_interrupting":  onTurnInterrupting(msg, sid); break;
     case "permission_request": onPermissionRequest(msg, sid); break;
@@ -2144,6 +2144,55 @@ function fmtTokens(n) {
   return String(n);
 }
 
+/* ===== 上下文容量卡: 输入卡顶部, 显示当前会话上下文占用与缓存命中率 =====
+ * 口径: 自最近一次 compact（或页面加载）起, 累计输入侧 token
+ * (input + cache_creation + cache_read) 对比配置的 context_window;
+ * 命中率 = 累计 cache_read / 累计输入侧。数据源 turn_done.usage,
+ * context_compacted 清零重计。 */
+const ctxStats = { in: 0, cached: 0, window: 0 };
+const CTX_WARN_RATIO = 0.75;   // 与后端压缩阈值口径对齐, 进度条变警示色
+
+function updateCtxCard(usage, contextWindow) {
+  if (!usage || typeof usage !== "object") return;
+  const inp = usage.input_tokens || 0;
+  const cc = usage.cache_creation_input_tokens || 0;
+  const cr = usage.cache_read_input_tokens || 0;
+  const inputSide = inp + cc + cr;
+  if (!inputSide) return;                       // 全零轮（打断等）: 保持旧值
+  ctxStats.in += inputSide;
+  ctxStats.cached += cr;
+  if (typeof contextWindow === "number" && contextWindow > 0) {
+    ctxStats.window = contextWindow;            // 后端每轮下发, 拿到就刷新
+  }
+  renderCtxCard();
+}
+
+function resetCtxCard() {
+  ctxStats.in = 0; ctxStats.cached = 0;
+  renderCtxCard();
+}
+
+function renderCtxCard() {
+  const card = document.getElementById("ctx-card");
+  if (!card || !ctxStats.in || !ctxStats.window) {   // 无数据/无窗口: 隐藏
+    if (card) card.hidden = true, card.removeAttribute("data-show");
+    return;
+  }
+  const pct = ctxStats.in / ctxStats.window;
+  const pctText = "（" + (pct * 100).toFixed(1) + "%）";
+  document.getElementById("ctx-usage").textContent =
+    fmtTokens(ctxStats.in) + "/" + fmtTokens(ctxStats.window);
+  document.getElementById("ctx-pct").textContent = pctText;
+  const fill = document.getElementById("ctx-fill");
+  fill.style.width = Math.min(pct * 100, 100).toFixed(1) + "%";
+  fill.parentElement.classList.toggle("warn", pct > CTX_WARN_RATIO);
+  const hit = ctxStats.in ? ctxStats.cached / ctxStats.in : 0;
+  document.getElementById("ctx-hit").textContent =
+    (hit * 100).toFixed(1) + "%";
+  card.hidden = false;
+  card.setAttribute("data-show", "1");
+}
+
 /* 轮次用量行: turn_done 带来本轮 token 消耗, 渲染成一条淡色小字。
  * 全零（断线显形/被打断在首个请求前）时不渲染——没有信息量的行是噪音。 */
 function addUsageNote(usage) {
@@ -2212,6 +2261,7 @@ function onTurnDone(msg) {
     else if (early) removeStoppedTag(run); // 停止点恰逢自然完成: 撤提前标签
     if (run) run.stopTagged = false;       // 本轮收口完毕: 去重旗复位
     addUsageNote(msg.usage);
+    updateCtxCard(msg.usage, msg.context_window);   // 上下文容量卡累计刷新
     if (!msg.interrupted && msg.budget_exhausted) addBudgetNote(msg.usage);
     else if (!msg.interrupted && msg.iterations_exhausted) {
       addNoteBubble("warn", t("ws_handlers.097", { p0: msg.iterations }));

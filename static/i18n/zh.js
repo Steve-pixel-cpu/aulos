@@ -752,6 +752,8 @@ window.I18N_STRINGS_ZH = {
   "ws_handlers.116": "创建会话失败: ",
   "ws_handlers.117": "已过期 · 继续对话后重新规划",
   "ws_handlers.118": "已完成",
+  "ws_handlers.119": "上下文容量",
+  "ws_handlers.120": "平均缓存命中率",
   "index.attr001": "唤出侧栏",
   "index.attr002": "最小化",
   "index.attr003": "最大化",

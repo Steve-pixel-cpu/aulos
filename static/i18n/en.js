@@ -760,6 +760,8 @@ window.I18N_STRINGS_EN = {
   "ws_handlers.116": "Failed to create session: ",
   "ws_handlers.117": "Expired · will re-plan once the conversation resumes",
   "ws_handlers.118": "Completed",
+  "ws_handlers.119": "Context",
+  "ws_handlers.120": "Avg cache hit rate",
   "index.attr001": "Show sidebar",
   "index.attr002": "Minimize",
   "index.attr003": "Maximize",

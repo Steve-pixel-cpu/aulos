@@ -1349,6 +1349,30 @@
     border-color: var(--accent-border);
     box-shadow: var(--shadow-lg), 0 0 0 3px var(--accent-soft);
   }
+  /* 上下文容量卡: 输入卡顶部内嵌小卡, 首轮 turn_done 有数据才显示。
+   * 两行「标签+数值」夹一条细进度条; 占用 >75% 进度条转警示色 */
+  #ctx-card {
+    border: 1px solid var(--border); border-radius: var(--r-lg);
+    background: var(--surface-2);
+    padding: 8px 12px 9px; margin: 0 0 8px;
+    display: none;
+  }
+  #ctx-card[data-show] { display: block; }
+  .ctx-row {
+    display: flex; align-items: baseline; justify-content: space-between;
+    font-size: calc(12px * var(--fs-ui)); color: var(--text-3);
+  }
+  .ctx-val { color: var(--text-2); font-variant-numeric: tabular-nums; }
+  .ctx-pct { margin-left: 8px; color: var(--text-3); }
+  .ctx-bar {
+    height: 4px; border-radius: 999px; background: var(--surface-3);
+    margin: 6px 0 7px; overflow: hidden;
+  }
+  .ctx-fill {
+    height: 100%; width: 0; border-radius: inherit;
+    background: var(--accent); transition: width .3s ease;
+  }
+  .ctx-bar.warn .ctx-fill { background: var(--warn); }
   #input {
     width: 100%; resize: none; border: none; background: none;
     color: var(--text); font-family: inherit; font-size: calc(14px * var(--fs-ui));
