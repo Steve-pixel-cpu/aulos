@@ -316,6 +316,8 @@ async def api_get_settings():
         "workspace": Path.cwd().name,
         "icon_ver": server._icon_ver(),
         "bg_ver": server._bg_ver(),
+        "bg_video_ver": server._bgv_ver(),
+        "bootAnim": _read_setting("bootAnim") is not False,   # 缺省开启; False=关闭
         "app_version": server._app_version(),   # 标题栏版本徽标; 空串 = 前端不显示
         # 界面/AI 回复语言（i18n）: zh | en, 缺省 zh
         "language": current_language(),
@@ -453,6 +455,17 @@ async def api_post_settings(request: dict):
         server.runtime_config.feature_config.browser_headless = raw_browser_headless
         _save_setting("browserHeadless", raw_browser_headless)
 
+    # 开机动画开关: 桌面壳下次启动时读取（loading 页全量动画 vs 极简 spinner）。
+    # 仅布尔; Web 端不感知此键也无害
+    raw_boot_anim = request.get("bootAnim")
+    if raw_boot_anim is not None:
+        if not isinstance(raw_boot_anim, bool):
+            raise HTTPException(
+                status_code=400,
+                detail=t("server_settings.045", {"p0": repr(raw_boot_anim)}),
+            )
+        _save_setting("bootAnim", raw_boot_anim)
+
     raw_browser_slow_mo = request.get("browser_slow_mo")
     if raw_browser_slow_mo is not None:
         if (not isinstance(raw_browser_slow_mo, int)
@@ -491,6 +504,19 @@ async def api_post_settings(request: dict):
         server._apply_provider_config(server._provider_cfg)
 
     return await api_get_settings()
+
+
+def _read_setting(key: str, default=None):
+    """读取单个用户级设置（~/.aulos/settings.json），缺文件/损坏返回 default。
+
+    与 _save_setting 对称: 都走 server.SETTINGS_FILE（测试 monkeypatch 该路径即可）。"""
+    try:
+        data = json.loads(server.SETTINGS_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return default
+    if not isinstance(data, dict):
+        return default
+    return data.get(key, default)
 
 
 def _save_setting(key: str, value) -> None:

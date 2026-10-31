@@ -27,6 +27,35 @@
   .t1 { font-size: 15px; }
   .t2 { font-size: 12px; color: #a8a29e; }
   html.dark .t2 { color: #6b6862; }
+
+  /* ---------- 全量开机动画（?boot=min 时整体不渲染, 见 body.min-mode） ---------- */
+  .boot-wrap { display: flex; flex-direction: column; align-items: center; gap: 22px; }
+  body.min-mode .boot-wrap { display: none; }
+  body.min-mode .spin,
+  body.min-mode .t1,
+  body.min-mode .t2 { display: block; }
+  .boot-logo {
+    width: 84px; height: 84px; border-radius: 22px;
+    box-shadow: 0 10px 34px rgb(180 83 9 / .28);
+    animation: boot-in .7s cubic-bezier(.22,1,.36,1) both, breath 2.6s ease-in-out 0.8s infinite;
+  }
+  .boot-logo.error { visibility: hidden; box-shadow: none; }  /* 图标缺失: 占位隐身, 布局不塌 */
+  @keyframes boot-in { from { opacity: 0; transform: scale(.6); } to { opacity: 1; transform: scale(1); } }
+  @keyframes breath { 0%,100% { box-shadow: 0 10px 34px rgb(180 83 9 / .28); } 50% { box-shadow: 0 10px 48px rgb(217 119 6 / .45); } }
+  html.dark .boot-logo { box-shadow: 0 10px 34px rgb(217 119 6 / .30); animation: boot-in .7s cubic-bezier(.22,1,.36,1) both, breath-dark 2.6s ease-in-out 0.8s infinite; }
+  @keyframes breath-dark { 0%,100% { box-shadow: 0 10px 34px rgb(217 119 6 / .30); } 50% { box-shadow: 0 10px 48px rgb(217 119 6 / .5); } }
+  .boot-title { font-size: 19px; font-weight: 600; letter-spacing: .06em; color: #44403c; animation: fade-up .6s ease .25s both; }
+  html.dark .boot-title { color: #e7e5e4; }
+  .boot-step { font-size: 12.5px; color: #a8a29e; min-height: 18px; animation: fade-up .6s ease .45s both; transition: opacity .3s; }
+  html.dark .boot-step { color: #6b6862; }
+  .boot-dots::after { content: ""; animation: dots 1.6s steps(4) infinite; }
+  @keyframes dots { 0% { content: ""; } 25% { content: "."; } 50% { content: ".."; } 75% { content: "..."; } }
+  @keyframes fade-up { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  /* 减弱动态效果: 回退极简 spinner（系统辅助功能偏好优先于用户开关） */
+  @media (prefers-reduced-motion: reduce) {
+    .boot-wrap { display: none; }
+  }
+
   /* 自绘标题栏: 与应用内同款（BRIDGE_JS 注入的 html.aulos-desktop 类） */
   #titlebar {
     display: none; position: fixed; top: 0; left: 0; right: 0;
@@ -55,7 +84,7 @@
 </head>
 <body>
   <div id="titlebar">
-    <img class="tb-icon" src="/api/icon" alt="" draggable="false"
+    <img class="tb-icon" src="/static/icon.png" alt="" draggable="false"
         onerror="this.onerror=null;this.src='/api/icon?v='+Date.now()">
     <span class="tb-name">Aulos</span>
     <div class="tb-controls">
@@ -70,9 +99,15 @@
       </button>
     </div>
   </div>
-  <div class="spin"></div>
-  <div class="t1">正在启动 Aulos…</div>
-  <div class="t2">首次启动需要初始化本地服务，通常几秒钟</div>
+  <div class="boot-wrap">
+    <img class="boot-logo" src="/static/icon-256.png" alt="" draggable="false"
+        onerror="this.classList.add('error')">
+    <div class="boot-title">Aulos</div>
+    <div class="boot-step" id="boot-step" data-step="0"></div>
+  </div>
+  <div class="spin" style="display:none"></div>
+  <div class="t1" style="display:none">正在启动 Aulos…</div>
+  <div class="t2" style="display:none">首次启动需要初始化本地服务，通常几秒钟</div>
   <script>
     // BRIDGE_JS 注入 aulos-desktop 类; 窗口控制按钮直接走命令
     if (window.__TAURI_INTERNALS__) {
@@ -103,6 +138,60 @@ document.addEventListener("DOMContentLoaded", () => {
     applyI18n();
   } catch (e) { console.warn("[i18n] page:", e); }
 });
+</script>
+<script>
+/* ---------- 开机动画模式切换与阶段文案 ----------
+ * main.rs 读 settings.json 的 bootAnim(缺省开): 关闭时以 ?boot=min 打开本页 →
+ * 藏动画区、亮极简 spinner(后端冷启动最长 60s, 页面不能空白)。
+ * 阶段文案按 elapsed 计时推进; 跳转时机仍由壳 ping 成功驱动, 天然自适应。 */
+(function () {
+  const min = new URLSearchParams(location.search).get("boot") === "min";
+  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const minimal = min || reduced;
+  if (minimal) {
+    document.body.classList.add("min-mode");
+    document.querySelectorAll(".spin,.t1,.t2").forEach(el => el.style.display = "");
+  }
+  // 阶段文案: 计时驱动(而非真实进度——壳侧跳转才是权威就绪信号)
+  // 词条经 i18n 字典取词, 英文模式(xc-lang)显示英文
+  const rawSteps = [
+    [0,   "loadpg.t004"],
+    [4,   "loadpg.t005"],
+    [9,   "loadpg.t006"],
+    [20,  "loadpg.t007"],
+  ];
+  const LG = () => { try { return localStorage.getItem("xc-lang") || "zh"; } catch (e) { return "zh"; } };
+  let LANG = null;
+  const STEPS = () => {
+    const lg = LG();
+    if (lg !== LANG) {
+      LANG = lg;
+      // i18n.js 未加载完成时 T 可能未定义 → 用 rawSteps 的 key 兜底显示
+      STEPS_CACHE = rawSteps.map(([sec, key]) => {
+        let msg = key;
+        try { if (typeof t === "function") msg = t(key); } catch (e) {}
+        return [sec, msg];
+      });
+    }
+    return STEPS_CACHE;
+  };
+  let STEPS_CACHE = null;
+  STEPS();
+  const el = document.getElementById("boot-step");
+  if (minimal || !el) return;
+  const t0 = Date.now();
+  const tick = () => {
+    const s = (Date.now() - t0) / 1000;
+    let text = STEPS()[0][1];
+    for (const [sec, msg] of STEPS()) if (s >= sec) text = msg;
+    el.textContent = text;
+    const dots = document.createElement("span");
+    dots.className = "boot-dots";
+    el.appendChild(dots);
+  };
+  tick();
+  setInterval(tick, 500);
+})();
 </script>
 </body>
 </html>

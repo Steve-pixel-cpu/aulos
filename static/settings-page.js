@@ -48,6 +48,15 @@ const langDd = makeDropdown($("sel-lang"), {
   },
 });
 window.__langDd = langDd;   // loadSettings 回显钩子（先例: __zenDd）
+
+/* 开机动画开关: 持久键 bootAnim（settings.json）, 桌面壳下次启动时读取。
+ * 失败: saveSettings 内 toast+回显真值, 这里再按返回值兜底回显 */
+const bootAnimChk = $("boot-anim-chk");
+if (bootAnimChk) bootAnimChk.onchange = async () => {
+  const s = await saveSettings({ bootAnim: bootAnimChk.checked });
+  if (s) bootAnimChk.checked = s.bootAnim !== false;
+};
+window.__bootAnimChk = bootAnimChk;   // loadSettings 回显钩子
 /* i18n: 语言注入后所有设置下拉统一重同步 —— 构造时 label 固化了当时的
  * 语言快照; loadSettings 拿到后端语言后调用本函数现取 t() 刷新 */
 window.__resyncSettingsDropdowns = () => {

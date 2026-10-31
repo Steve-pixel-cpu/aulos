@@ -37,6 +37,22 @@ static LANG_EN: LazyLock<bool> = LazyLock::new(|| {
         .unwrap_or(false)
 });
 
+// ==== 开机动画开关: settings.json 的 bootAnim(布尔, 缺省 true)。
+// 关闭时 loading 页以 ?boot=min 打开 → 极简 spinner 而非品牌动画。
+// 缺文件/解析失败/值非布尔一律按开（动画是缺省体验, 与后端口径一致） ====
+static BOOT_ANIM_OFF: LazyLock<bool> = LazyLock::new(|| {
+    let home = std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(std::path::PathBuf::from)
+        .unwrap_or_default();
+    let path = home.join(".aulos").join("settings.json");
+    std::fs::read_to_string(path).ok()
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+        .and_then(|v| v.get("bootAnim").and_then(|b| b.as_bool()))
+        .map(|on| !on)
+        .unwrap_or(false)
+});
+
 /// UI 文案双语选择: zh_en("中文", "English")
 fn zh_en(zh: &str, en: &str) -> String {
     if *LANG_EN { en.to_string() } else { zh.to_string() }
@@ -1537,7 +1553,13 @@ fn create_main_window(app: &AppHandle) -> Result<(), String> {
     // plugin:app 命令的 ACL 曾实测不放行, invoke 路线不可靠。
     let version = &app.package_info().version;
     let bridge_js = format!("window.__AULOS_VERSION__ = '{version}';\n{BRIDGE_JS}");
-    let builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("loading.html".into()))
+    // 开机动画开关: 关闭时以 ?boot=min 打开 loading 页（下次启动生效）
+    let loading_url = if *BOOT_ANIM_OFF {
+        "loading.html?boot=min"
+    } else {
+        "loading.html"
+    };
+    let builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::App(loading_url.into()))
         .title("Aulos")
         .decorations(false)   // 自绘标题栏: 高度可控, 主题跟随应用深浅色
         .inner_size(1440.0, 900.0)

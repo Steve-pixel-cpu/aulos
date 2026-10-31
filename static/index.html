@@ -7,18 +7,20 @@
 <title>Aulos</title>
 <link rel="icon" type="image/png" href="/api/icon">
 <script>/* 桌面壳经 ?token= 打开页面: 把令牌种成 cookie, 后续 API/静态资源请求自动携带 */ (function(){try{var t=new URLSearchParams(location.search).get("token");if(t)document.cookie="aulos_token="+encodeURIComponent(t)+"; path=/; max-age=31536000; SameSite=Strict";}catch(e){}})();</script>
-<script>/* 主题/壁纸在绘制前应用，避免闪白 (dark | light | system) */ (function(){var de=document.documentElement;/* i18n: 语言也抢在首帧前, <html lang> 与 app.js 写透的 xc-lang 对齐 */var lg=localStorage.getItem("xc-lang");de.lang=lg==="en"?"en":"zh-CN";de.dataset.lang=lg==="en"?"en":"zh";var p=localStorage.getItem("xc-theme")||"system";de.dataset.theme=p==="system"&&window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":(p==="dark"||p==="light")?p:"dark";var a=localStorage.getItem("xc-accent");if(a&&a!=="gray")de.dataset.accent=a;if(localStorage.getItem("xc-style")==="fluent")de.dataset.style="fluent";if(localStorage.getItem("xc-bg")==="1")de.dataset.bg="1";/* 代码高亮主题 / 聊天密度 / 禅模式: 同样抢在首帧前, 防刷新闪回默认 */var hl=localStorage.getItem("xc-hl");if(hl&&hl!=="auto")de.dataset.hl=hl;var dn=localStorage.getItem("xc-density");if(dn&&dn!=="comfortable")de.dataset.density=dn;var ms=localStorage.getItem("xc-msgstyle");if(ms&&ms!=="document")de.dataset.msgstyle=ms;if(localStorage.getItem("xc-zen")==="1")de.dataset.zen="1";/* 壁纸亮度: 与 app.js applyBgBrightness 同一套公式, 绘制前设好防闪回默认 */var b=parseFloat(localStorage.getItem("xc-bg-bright"));if(!isFinite(b)||b<0||b>100)b=50;de.style.setProperty("--bg-dim",(2-b/50).toFixed(4));de.style.setProperty("--bg-surf",(1-.26*Math.max(-1,Math.min(1,(b-50)/50))).toFixed(4));})();</script>
+<script>/* 主题/壁纸在绘制前应用，避免闪白 (dark | light | system) */ (function(){var de=document.documentElement;/* i18n: 语言也抢在首帧前, <html lang> 与 app.js 写透的 xc-lang 对齐 */var lg=localStorage.getItem("xc-lang");de.lang=lg==="en"?"en":"zh-CN";de.dataset.lang=lg==="en"?"en":"zh";var p=localStorage.getItem("xc-theme")||"system";de.dataset.theme=p==="system"&&window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":(p==="dark"||p==="light")?p:"dark";var a=localStorage.getItem("xc-accent");if(a&&a!=="gray")de.dataset.accent=a;if(localStorage.getItem("xc-style")==="fluent")de.dataset.style="fluent";if(localStorage.getItem("xc-bg")==="1")de.dataset.bg="1";if(localStorage.getItem("xc-bgv")==="1")de.dataset.bgv="1";/* 代码高亮主题 / 聊天密度 / 禅模式: 同样抢在首帧前, 防刷新闪回默认 */var hl=localStorage.getItem("xc-hl");if(hl&&hl!=="auto")de.dataset.hl=hl;var dn=localStorage.getItem("xc-density");if(dn&&dn!=="comfortable")de.dataset.density=dn;var ms=localStorage.getItem("xc-msgstyle");if(ms&&ms!=="document")de.dataset.msgstyle=ms;if(localStorage.getItem("xc-zen")==="1")de.dataset.zen="1";/* 壁纸亮度: 与 app.js applyBgBrightness 同一套公式, 绘制前设好防闪回默认 */var b=parseFloat(localStorage.getItem("xc-bg-bright"));if(!isFinite(b)||b<0||b>100)b=50;de.style.setProperty("--bg-dim",(2-b/50).toFixed(4));de.style.setProperty("--bg-surf",(1-.26*Math.max(-1,Math.min(1,(b-50)/50))).toFixed(4));})();</script>
 <!-- 渲染库本地化: jsdelivr 在国内时通时断, 同步 CDN 脚本一卡住, 整页解析
      阻塞、defer 的 app.js 永远不执行——表现为页面只剩骨架、点什么都没反应 -->
 <script src="/static/vendor/marked.umd.js"></script>
 <script src="/static/vendor/highlight.min.js"></script>
 <link rel="stylesheet" href="/static/vendor/katex.min.css">
 <script src="/static/vendor/katex.min.js"></script>
-<link rel="stylesheet" href="/static/app.css?v=20261021d"><link rel="stylesheet" href="/static/pet.css?v=20260925c">
+<link rel="stylesheet" href="/static/app.css?v=20261031p"><link rel="stylesheet" href="/static/pet.css?v=20260925c">
 </head>
 <body>
 
 <!-- 背景遮罩: z-index -1 垫底, 壁纸启用（见 app.css） -->
+<!-- 动态壁纸视频层: 垫在遮罩(-1)之下; 默认无源隐藏, 由 app.js syncVideoLayer 控制 -->
+<video id="bg-video" muted loop playsinline preload="none"></video>
 <div id="bg-scrim"></div>
 
 <!-- 禅模式左缘热区: 侧栏隐藏时显示, 悬停临时唤出侧栏（逻辑见 app.js applyZen） -->
@@ -220,6 +222,18 @@
   <div id="composer">
     <div id="input-card">
       <div id="ws-dock"></div>
+      <div id="ctx-card" hidden>
+        <div class="ctx-row">
+          <span class="ctx-label" data-i18n="ws_handlers.119">上下文容量</span>
+          <span class="ctx-val"><span id="ctx-usage"></span><span id="ctx-pct" class="ctx-pct"></span></span>
+        </div>
+        <div class="ctx-bar"><div class="ctx-fill" id="ctx-fill"></div></div>
+        <div class="ctx-row">
+          <span class="ctx-label" data-i18n="ws_handlers.120">平均缓存命中率</span>
+          <span class="ctx-val" id="ctx-hit"></span>
+        </div>
+        <div class="ctx-empty" id="ctx-empty" data-i18n="ws_handlers.121" hidden>本轮对话完成后显示用量</div>
+      </div>
       <div id="queue-cards"></div>
       <div id="attach-preview"></div>
       <textarea id="input" rows="1" placeholder="描述你的任务，附文件也行…" data-i18n-placeholder="index.attr009"></textarea>
@@ -238,6 +252,13 @@
           </button>
         </span>
         <span class="spacer"></span>
+        <button type="button" id="btn-ctx" data-tip="上下文容量" aria-expanded="false">
+          <svg viewBox="0 0 20 20" width="16" height="16">
+            <circle class="ctx-ring-bg" cx="10" cy="10" r="7.5" fill="none"/>
+            <circle class="ctx-ring" id="ctx-ring" cx="10" cy="10" r="7.5" fill="none"
+                    stroke-linecap="round" transform="rotate(-90 10 10)"/>
+          </svg>
+        </button>
         <span class="pill model" id="pill-model" data-tip="当前模型">
           <button type="button" class="dd" id="sel-model">
             <span class="dd-label">…</span>
@@ -245,7 +266,8 @@
           </button>
         </span>
         <span class="pill effort" data-tip="思考等级">
-          <span class="ring"></span>
+          <!-- 火花图标: 思考/灵感的视觉隐喻, 取代旧版无语义空心圆环 -->
+          <svg class="effort-ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v3M4.6 4.6l2.1 2.1M2 12h3M19.4 4.6l-2.1 2.1M22 12h-3"/><path d="M9.5 14.5a4.5 4.5 0 115 0c-.8.6-1.2 1.3-1.3 2.5h-2.4c-.1-1.2-.5-1.9-1.3-2.5z"/><path d="M10.5 20h3M11 22.5h2"/></svg>
           <button type="button" class="dd" id="sel-thinking">
             <span class="dd-label"><span data-i18n="index.t020">中</span></span>
             <span class="dd-chev"><svg width="9" height="6" viewBox="0 0 9 6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1 1l3.5 3.5L8 1"/></svg></span>
@@ -422,6 +444,22 @@
         <button type="button" class="icon-act" id="btn-bg-upload"><span data-i18n="index.t058">上传图片</span></button>
         <button type="button" class="icon-act" id="btn-bg-clear"><span data-i18n="index.t059">清除</span></button>
         <input type="file" id="bg-file" accept="image/png,image/jpeg,image/webp" hidden>
+      </div>
+      <div class="set-row">
+        <div class="set-info">
+          <div class="set-name"><span data-i18n="index.t207">动态壁纸</span></div>
+          <div class="set-desc"><span data-i18n="index.t208">上传视频作背景（MP4/WebM，限 80MB），与背景图片同时设置时优先显示视频</span></div>
+        </div>
+        <button type="button" class="icon-act" id="btn-bgv-upload"><span data-i18n="index.t209">上传视频</span></button>
+        <button type="button" class="icon-act" id="btn-bgv-clear"><span data-i18n="index.t059">清除</span></button>
+        <input type="file" id="bgv-file" accept="video/mp4,video/webm" hidden>
+      </div>
+      <div class="set-row">
+        <div class="set-info">
+          <div class="set-name"><span data-i18n="index.t210">开机动画</span></div>
+          <div class="set-desc"><span data-i18n="index.t211">启动时的品牌动画；关闭后显示极简加载指示（下次启动生效）</span></div>
+        </div>
+        <label class="prov-switch"><input type="checkbox" id="boot-anim-chk"><span class="track"></span></label>
       </div>
       <div class="set-row">
         <div class="set-info">
@@ -771,13 +809,13 @@
 <script src="/static/ui-dialogs.js?v=20261010a" defer></script>
 <script src="/static/tooltip.js?v=20261010a" defer></script>
 <script src="/static/notify.js?v=20261010a" defer></script>
-<script src="/static/app.js?v=20261021b" defer></script>
+<script src="/static/app.js?v=20261031o" defer></script>
 <script src="/static/settings-extras.js?v=20261010a" defer></script>
 <script src="/static/bubbles.js?v=20261010a" defer></script>
 <script src="/static/msg-extras.js?v=20261020a" defer></script>
-<script src="/static/ws-handlers.js?v=20261020d" defer></script>
+<script src="/static/ws-handlers.js?v=20261031o" defer></script>
 <script src="/static/sidebar.js?v=20261021b" defer></script>
-<script src="/static/settings-page.js?v=20261010a" defer></script>
+<script src="/static/settings-page.js?v=20261031a" defer></script>
 <script src="/static/desktop.js?v=20261020c" defer></script>
 <script src="/static/music.js?v=20261019c" defer></script>
 <script src="/static/pet.js?v=20260926a" defer></script>
