@@ -2320,9 +2320,10 @@ function rainSfx(level) {
     if (footRow < -40) { splashes.length = 0; return; }  /* 地表已滚出屏顶 */
     var vw = cam.width, vh = cam.height;
     var n = Math.round(150 * (CFG.rainIntensity / 100) * lvl);
-    /* near-surface? — 玩家在开阔处 (脚下 1.5 tile 内是地表) 时雨丝
-       在地表线折断 + 生成溅射; 下洞后地表在屏幕内仍可见 → nearSurf
-       改判"地表线是否在屏幕内" (footRow > 0), 洞口雨继续落到洞口 */
+    /* near-surface? — 雨的落点逐列取「第一个实心块」(isSolid), 不再
+       是单一 surfaceY 线 (v6, USER: 雨水不会下到洞穴里): 洞口/竖井
+       开口处雨会顺开口飘进来, 落到井底或洞内地面上; 实心地表照旧
+       折断。井很深时 (落点远超屏幕底) 雨丝自然画到屏底截止。 */
     var nearSurf = footRow > -40;
     /* prune expired splashes once per frame */
     for (var sp = splashes.length - 1; sp >= 0; sp--) {
@@ -2350,16 +2351,26 @@ function rainSfx(level) {
         var sy = ((ii * 149.3 + tNow * lSpd * 1.05) % (vh + 120)) - 60;
         var len = lLen + (ii % 5) * 3;
         var y2 = sy + len;
-        if (nearSurf) {                          /* 贴地: 雨落在外露地表为止 */
+        if (nearSurf) {                          /* 贴地: 雨落到第一块实心块为止 */
           var wx = cam.scrollX + sx;
           var col = Math.max(0, Math.min(WORLD_W - 1, Math.floor(wx / TILE)));
-          var foot = world.surfaceY[col] * TILE - cam.scrollY;
+          /* 逐列找第一个实心块 (含墙? 不含 — 墙不挡雨, 背景墙洞穴
+             也淋得到; 只挡 solid tile), 最多扫 40 格 (一屏深), 查
+             不到就落穿到屏底 (开井/深渊的读感) */
+          var fRow = Math.max(0, Math.floor((cam.scrollY + sy) / TILE));
+          var foot = vh + 60;                    /* default: fall through */
+          for (var scan = fRow, end2 = fRow + 40; scan < end2 && scan < WORLD_H; scan++) {
+            if (isSolid(col, scan)) {
+              foot = scan * TILE - cam.scrollY;
+              break;
+            }
+          }
           var hit = y2 >= foot && sy < foot;     /* crosses the ground line */
-          y2 = Math.min(y2, Math.max(foot, footRow - vh));
+          y2 = Math.min(y2, foot);
           if (y2 <= sy) { continue; }
           /* impact → a splash (v4: USER 不明显 — 提高触发率到 1/3,
              池上限 96, 带弹起小水珠) */
-          if (hit && splashes.length < 96 && (i % 3) === 0) {
+          if (hit && foot < vh && splashes.length < 96 && (i % 3) === 0) {
             splashes.push({ x: sx - (y2 - sy) * SLANT, y: y2, t0: tNow });
           }
         }
