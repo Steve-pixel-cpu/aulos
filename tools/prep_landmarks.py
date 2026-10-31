@@ -15,7 +15,8 @@ from PIL import Image, ImageFilter
 JOBS = [
     ('website/assets/mc/枫树.png', 'website/assets/big/maple.png', 'sharpen'),
     ('website/assets/mc/建筑.png', 'website/assets/big/building.png', 'sharpen'),
-    ('website/assets/mc/松树.png', 'website/assets/big/pine.png', 'sharpen'),
+    ('website/assets/mc/深绿色阔叶古树.png', 'website/assets/big/ancient.png', 'sharpen'),
+    ('website/assets/mc/tree_user.png', 'website/assets/big/tree1.png', 'sharpen'),
     ('website/assets/mc/木制公告亭.png', 'website/assets/big/notice.png', 'sharpen'),
     ('website/assets/mc/喷泉.png', 'website/assets/big/fountain.png', 'sharpen'),
     ('website/assets/mc/moon.png', 'website/assets/mc/moon_hard.png', 'harden'),

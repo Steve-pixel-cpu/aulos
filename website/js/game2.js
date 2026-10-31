@@ -249,7 +249,7 @@
        The ChatGPT treeSet slices are NOT surface trees — they read
        blurry up close (USER: "这种树有点糊适合做中景") and live as the
        mid-ground band assets/scenery/bg/tree_band.png (see BK_DEFS). */
-    this.load.image('trees', 'assets/mc/tree_user.png?v=s2');
+    this.load.image('trees', 'assets/big/tree1.png?v=t1');   /* v10.2: trim+sharpen 版 */
     /* trees2/trees3 (白桦) 已从 VARIANTS 移除 (v9.7), 不再加载 */
 
     /* showcase art (tools/prep_landmarks.py trims + sharpens 枫树.png /
@@ -259,7 +259,7 @@
     this.load.image('building', 'assets/big/building.png?v=m1');
     /* v10 (USER: 接入 松树 木制公告亭 喷泉) — same prep pipeline as
        maple/building (trim + sharpen) */
-    this.load.image('pine', 'assets/big/pine.png?v=p1');
+    this.load.image('ancient', 'assets/big/ancient.png?v=a1');
     this.load.image('notice', 'assets/big/notice.png?v=p1');
     this.load.image('fountain', 'assets/big/fountain.png?v=p1');
     /* celestial art (USER): drawSky blits this sun and moon
@@ -662,9 +662,9 @@
            白底黑纹), 移出池子; 只留 trees (深绿针叶) + maple (红枫)。
            tr.sprite 取模自动重映射, worldgen 数据不用动。 */
         var VARIANTS = [
-          { key: 'trees',  w: 560, h: 580 },
-          { key: 'maple',  w: 400, h: 590 },
-          { key: 'pine',   w: 380, h: 610 }   /* v10 松树: 瘦高针叶 */
+          { key: 'trees',    w: 560, h: 580 },   /* tree1: 针叶 (trim+锐化) */
+          { key: 'maple',    w: 400, h: 590 },   /* 红枫 */
+          { key: 'ancient',  w: 520, h: 640 }    /* v10.2 深绿阔叶古树: 大冠幅 */
         ];
         var v = VARIANTS[tr.sprite % VARIANTS.length];
         /* trunk base sits INSIDE the surface tile (USER: 树底部扎进泥
