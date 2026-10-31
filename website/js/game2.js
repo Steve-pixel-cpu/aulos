@@ -3004,6 +3004,15 @@ function rainSfx(level, strength) {
        CFG.brightness (USER: "把游戏亮度也弄成配置") moves the night
        FLOOR in % — 42 is the old default; 100 makes nights noon-bright. */
     var bMin = CFG.brightness / 100;
+    /* v9.5 (USER: 夜晚亮度在无月亮的雷雨夜应该最小值是0): 夜晚地面
+       亮度 floor 由「月照」决定 — 有月亮照 42% 的月亮光, 无月亮
+       (新月) 或雷雨乌云遮月时没有月光, floor 应为 0 (纯黑, 全靠
+       火把/灯)。月亮在场 = 夜晚 (dayT 0.5-0.99) 且非血月遮云且
+       非雷雨 (storm flash 亮的一瞬是闪电不是月光); 地下不受影响
+       (cave floor 独立)。雷雨判定: rain.storm && rain.level>0.3 */
+    var moonLit = !(dayT > 0.5 && dayT < 0.99) ||
+                  ((S && S.bloodMoon) || (rain.storm && rain.level > 0.3)) ? 0 : 1;
+    bMin *= moonLit;
     var bright = bMin + (1 - bMin) * day;      /* night floor .. 1 noon */
     var sR = Math.round(surf[0] * bright),
         sG = Math.round(surf[1] * bright),
