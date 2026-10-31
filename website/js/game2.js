@@ -2350,10 +2350,39 @@ function bgmUpdate(S) {
         onComplete: function () { try { old.stop(); } catch (e) {} } });
     }
   }
-  /* fade in new */
+  /* fade in new — v8.3 (USER: 晚上的bgm没有切换): 旧实现对 Sound
+     实例做 volume tween + fade-out 完才 stop。真凶: Phaser 的
+     tween 目标需要 getter/setter, Sound 实例上 volume tween 表面
+     跑完, 但场景 update 里 bgmUpdate 每帧重入, cur 已提前置新值
+     — 旧轨 stop 靠 tween onComplete, 一旦 tween 被同帧多次创建
+     或目标失效就永远不停, 新轨 add 后旧轨还在响 → 听感「没切换」
+     (两首都是中世纪旋律, 混着放更难察觉)。重写: 手动 rAF 淡出
+     (确定性, 不依赖 tween), add 前先 stop+destroy 同 key 旧实例 */
+  if (bgm.cur && bgm.tracks[bgm.cur]) {
+    var old = S.sound.get(bgm.cur);
+    if (old) {
+      var oVol = old.volume;
+      var fadeT = S.time.addEvent({
+        delay: 50, repeat: 29, callback: function () {
+          oVol *= 0.82;
+          try { old.setVolume(oVol); } catch (e) {}
+        }
+      });
+      S.time.delayedCall(1550, function () {
+        try { fadeT.remove(); old.stop(); old.destroy(); } catch (e) {}
+      });
+    }
+  }
+  var stale = S.sound.get(want);
+  if (stale) { try { stale.stop(); stale.destroy(); } catch (e) {} }
   var t = S.sound.add(want, { loop: true, volume: 0 });
   t.play();
-  S.tweens.add({ targets: t, volume: 0.16, duration: 1500 });   /* v8.1 USER: 背景音小点 */
+  var inVol = 0.16;
+  var inT = S.time.addEvent({
+    delay: 50, repeat: 29, callback: function () {
+      try { t.setVolume(Math.min(inVol, t.volume + inVol / 30)); } catch (e) {}
+    }
+  });
   bgm.tracks[want] = true;
   bgm.cur = want;
 }
