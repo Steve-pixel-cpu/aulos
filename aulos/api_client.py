@@ -449,12 +449,20 @@ class _TerminalEcho:
 
 
 def _collect_usage(acc: dict, usage) -> None:
-    """把 SDK 用量对象里非 None 的字段并进 acc（message_start 与 message_delta 各报一部分）。"""
-    for field in ("input_tokens", "output_tokens",
-                  "cache_creation_input_tokens", "cache_read_input_tokens"):
-        value = getattr(usage, field, None)
-        if value is not None:
-            acc[field] = value
+    """把 SDK 用量对象里非 None 的字段并进 acc（message_start 与 message_delta 各报一部分）。
+    输入侧字段(input/cache_*)只补缺不覆盖: message_start 报全量输入,
+    message_delta 的碎片值(部分兼容端点只回个位数 input)若覆盖会造出
+    input=308 / cache_read=16万 的错位账(前端命中率曾 52529%)。
+    输出 token 仍以 delta 为准（累计口径, start 时通常为 1）。"""
+    value = getattr(usage, "output_tokens", None)
+    if value is not None:
+        acc["output_tokens"] = value
+    for field in ("input_tokens", "cache_creation_input_tokens",
+                  "cache_read_input_tokens"):
+        if field not in acc:
+            value = getattr(usage, field, None)
+            if value is not None:
+                acc[field] = value
 
 
 def _map_to_retry_error(e: Exception) -> Optional[RetryApiError]:
