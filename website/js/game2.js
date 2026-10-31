@@ -48,6 +48,9 @@
                              调节; 独立于 BGM 滑杆) */
     brightness: 42,       /* % night brightness floor (USER: 夜晚太黑可调亮) */
     caveBright: 100,      /* % cave ambient tint scale (USER: 洞穴太黑可调亮) */
+    lightScale: 2,        /* light-map cells per tile, 1..4 (USER: "光照现在
+                             是一个 tile *2 的密度，改成可配置的，让用户能*4";
+                             4 = 更细腻的光斑边缘, 画布 2048x1024, 重进生效) */
     bulletSpeed: 780,
     shootCd: 170,         /* ms between shots */
     digRange: 6,          /* tiles */
@@ -582,9 +585,9 @@
     this.localY = function (y) { return y; };
 
     /* ---- world-space lightmap (the ACTUAL light engine) ----
-       A small canvas at 2x tile resolution (1024x512): 2x2 light
-       samples per tile, bilinearly sampled from the tile-level light
-       fields at compose time (LIGHT_SCALE below). The tile fields
+       A small canvas at Nx tile resolution (LIGHT_W x LIGHT_H, see
+     LIGHT_SCALE): SC x SC light samples per tile, bilinearly sampled
+       from the tile-level light fields at compose time. The tile fields
        (skyLight / torch RGB / emissive / solidBits) stay 1 per tile -
        only the painted map is finer, so point pools read round instead
        of diamond and emissive tiles get a half-tile soft edge. RGB
@@ -2953,23 +2956,41 @@ function rainSfx(level, strength) {
      20 Hz GC pressure). lightComp always holds the LATEST composed
      value of every pixel, so a zone blur can read correct unblurred
      inputs just outside its border: no seams. */
-  /* ---- 2x light-map subdivision ------------------------------------
+  /* ---- Nx light-map subdivision (CFG.lightScale, USER: "光照现在是
+     一个 tile *2 的密度，改成可配置的，让用户能*4") --------------------
      The light FIELDS stay tile-resolution (1 sample per tile); the
-     painted canvas is 2x2 cells per tile. Compose bilinearly samples
-     the tile fields at cell centers, then the solid-aware blur runs
-     on cells with radius 2*LIGHT_SCALE (=4 cells = 2 tiles), so the
-     blur footprint in WORLD units is unchanged from the 1x pipeline.
-     Higher factors only shrink tiles from 32px to 16/8px on screen
-     without gaining real smoothness - 2x is the sweet spot. */
-  var LIGHT_SCALE = 2;
-  var LIGHT_W = WORLD_W * LIGHT_SCALE, LIGHT_H = WORLD_H * LIGHT_SCALE;
+     painted canvas is SC x SC cells per tile (SC = CFG.lightScale,
+     clamped 1..4, default 2). Compose bilinearly samples the tile
+     fields at cell centers, then the solid-aware blur runs on cells
+     with radius 2*LIGHT_SCALE cells (= 2 tiles in WORLD units), so
+     the blur footprint is unchanged at every setting. 4x = 2048x1024
+     canvas (~+20MB RGBA) — still a few ms to build at boot. The
+     canvas is created once in create(), so changes take effect on
+     the next game entry (same re-enter semantics as other CFG
+     fields). */
+  var LIGHT_SCALE = 2, LIGHT_W = 0, LIGHT_H = 0;
+  /* syncLightScaleFromCFG: LIGHT_SCALE/LIGHT_W/LIGHT_H depend on
+     CFG.lightScale, which the settings panel can change between runs.
+     They were once script-load constants — but "重进游戏生效" re-enters
+     via startGame() WITHOUT reloading the script, so a load-time value
+     made every setting render identically (USER: "1和4好像区别不大").
+     Re-derive them at boot instead: startGame() calls this before the
+     Phaser.Game is constructed, so create() builds the light canvas at
+     the right size. */
+  function syncLightScaleFromCFG() {
+    LIGHT_SCALE = Math.max(1, Math.min(4, CFG.lightScale | 0 || 2));
+    LIGHT_W = WORLD_W * LIGHT_SCALE;
+    LIGHT_H = WORLD_H * LIGHT_SCALE;
+  }
+  syncLightScaleFromCFG();   /* initial value for the first boot */
   var BLUR_R = 2; /* solid-aware blur radius, in TILES (footprint is 2*BLUR_R+1 = 5) */
   /* bilinear sample of a Uint8 tile field at a cell center:
-     fx/fy in cells; gx/gy = the tile grid position (0.5-cell inset so
-     cell centers land mid-edge between tile centers). Returns the
-     plain (unweighted) sample when LIGHT_SCALE === 1. */
+     fx/fy in cells; gx/gy = the tile grid position (a half-cell inset
+     so cell centers land mid-edge between tile centers at any SC).
+     Returns the plain (unweighted) sample when LIGHT_SCALE === 1. */
   function sampleB(f, fx, fy, W, H) {
-    var gx = fx * 0.5 - 0.5, gy = fy * 0.5 - 0.5;
+    var inv = 1 / LIGHT_SCALE;
+    var gx = fx * inv - 0.5, gy = fy * inv - 0.5;
     var x0 = Math.floor(gx), y0 = Math.floor(gy);
     var ax = gx - x0, ay = gy - y0;
     var x1 = x0 + 1, y1 = y0 + 1;
@@ -2980,9 +3001,9 @@ function rainSfx(level, strength) {
     return (f[cy0 * W + cx0] * (1 - ax) + f[cy0 * W + cx1] * ax) * (1 - ay) +
            (f[cy1 * W + cx0] * (1 - ax) + f[cy1 * W + cx1] * ax) * ay;
   }
-  /* 2x mirror of solidBits (1 cell per 1/4 tile) for the solid-aware
+  /* Nx mirror of solidBits (1 cell per 1/SC tile) for the solid-aware
      blur. Rebuilt alongside rebuildSolidBits from the tile mask - a
-     solid tile always makes all 4 of its cells solid. */
+     solid tile always makes all SC x SC of its cells solid. */
   var solidBits2 = null;
   function rebuildSolidBits2(x0, y0, x1, y1) {
     if (!solidBits2) { solidBits2 = new Uint8Array(LIGHT_W * LIGHT_H); }
@@ -4745,6 +4766,7 @@ function rainSfx(level, strength) {
   /* ---- boot ---------------------------------------------------------- */
   function startGame() {
     if (!META) { setTimeout(startGame, 150); return; }
+    syncLightScaleFromCFG();   /* pick up CFG.lightScale set since last boot */
     if (game) { return; }   /* double-boot guard: game is nulled in leave() */
     /* A/B flags for flicker triage: #canvas forces the Canvas renderer,
        #nolight keeps WebGL but skips the Light2D pipeline. Default = the
@@ -4862,6 +4884,7 @@ function rainSfx(level, strength) {
     { k: 'rainVolume',      label: '雨声音量(%)',       min: 0,  max: 100, step: 2 },
     { k: 'brightness',      label: '夜晚亮度(%)',       min: 20, max: 100, step: 2 },
     { k: 'caveBright',      label: '洞穴亮度(%)',       min: 40, max: 200, step: 5 },
+    { k: 'lightScale',      label: '光照密度(x/tile)',  min: 1,  max: 4,  step: 1 },
     { k: 'bulletSpeed',     label: '子弹速度',          min: 300, max: 1400, step: 20 },
     { k: 'shootCd',         label: '射击间隔(ms)',      min: 80, max: 600, step: 10 },
     { k: 'digRange',        label: '挖掘距离(格)',      min: 3,  max: 12, step: 1 },
