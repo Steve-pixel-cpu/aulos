@@ -3265,18 +3265,23 @@ function rainSfx(level) {
       var ang, isDay = dayT < 0.5;
       if (isDay) { ang = (dayT / 0.5) * Math.PI; }
       else { ang = ((dayT - 0.5) / 0.5) * Math.PI; }
-      var cxS = w * (0.08 + 0.84 * (ang / Math.PI));
-      /* USER (设计澄清): 竖直坐标不该钉死屏幕——要世界锚定视差:
-         下洞 (相机下移) 太阳屏幕坐标上移, 跳起 (相机上移) 太阳下移,
-         "这样就有不动的效果" = 天体在世界里不动。实现: 太阳世界高度
-         = 地表上方 0.7 屏 + 昼弧小摆动, 屏幕坐标 = 世界Y - scrollY。
-         (v5 纯屏幕固定是错的; 更早的 sin 大弧 + 相机跟随才导致
-         "太阳跟着人上下跳" 的观感) */
+      /* USER: 圆弧轨迹不能消失, 且要延伸到屏幕外——
+         x: 从 -0.06w (屏外左) 升到 1.06w (屏外落), 日出/日落时天体
+            从屏幕外进出场, 不在屏幕内凭空出现/消失
+         y (USER: 目前正弦弧上上下下): sin() 让 y 先降后升 (y 向下
+            为正时先上后下再折返), 叠加相机滚动读起来就是抖动。
+            改为抛物线: u = ang/π ∈ 0..1, 高度 = 起点低 + (终点低-
+            起点低)*u - 4*拱高*u*(1-u)——标准的对称抛物线弧, 单调
+            升到正午再单调降, 全程无折返。世界锚定不变: 屏幕坐标
+            = 世界Y - scrollY, 下洞整条弧上移出屏, 跳起下移 */
+      var cxS = w * (-0.06 + 1.12 * (ang / Math.PI));
       var pcCol3 = Math.max(0, Math.min(WORLD_W - 1,
         Math.floor(S.player.x / TILE)));
       var surfW3 = world.surfaceY[pcCol3] * TILE;
-      var arcOff = Math.sin(ang) * h * 0.05;
-      var cyS = (surfW3 - h * 0.70 + arcOff) - cam.scrollY;
+      var u = ang / Math.PI;                     /* 0 日出 → 1 日落 */
+      var worldBaseY = surfW3 - h * 0.45;        /* 弧两端: 地表上 0.45 屏 */
+      var arch = h * 0.34;                       /* 弧顶比两端高 0.34 屏 */
+      var cyS = (worldBaseY - 4 * arch * u * (1 - u)) - cam.scrollY;
       var cel = bakeCelestials(S);
       /* 下雨渐隐 (USER: 下雨时太阳应该渐隐) — 雨越大越看不见天体 */
       var celA = 1 - rain.level * 0.92;
