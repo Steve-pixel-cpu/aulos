@@ -1762,6 +1762,10 @@
   .prov-switch {
     display: inline-flex; align-items: center; gap: 7px; flex: none;
     font-size: calc(12px * var(--fs-ui)); color: var(--text-2); cursor: pointer; user-select: none;
+    /* input 是 absolute(opacity:0), 必须以本 label 为定位基准:
+     * 缺 relative 时它逃逸到 #settings-page, 静态位置随开关行往下累积,
+     * 超出窗口底的部分把文档撑高(窗口下方滚出一截空白) */
+    position: relative;
   }
   .prov-switch input { position: absolute; opacity: 0; pointer-events: none; }
   .prov-switch .track {
