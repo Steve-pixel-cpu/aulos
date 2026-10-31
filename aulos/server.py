@@ -1781,6 +1781,9 @@ _BG_LIVE = APPEARANCE_DIR / "bg-user.png"
 # 动态壁纸（视频）: 与静态壁纸同目录双轨, mp4/webm 二选一（后传者胜）
 _BGV_LIVE = APPEARANCE_DIR / "bg-video.mp4"
 _BGV_LIVE_WEBM = APPEARANCE_DIR / "bg-video.webm"
+# 自定义开机动画视频: 同为视频双轨。启动时后端未起, 由壳经 aulosboot:// 读
+_BA_LIVE = APPEARANCE_DIR / "boot-anim.mp4"
+_BA_LIVE_WEBM = APPEARANCE_DIR / "boot-anim.webm"
 _ICON_DEFAULT = STATIC_DIR / "icon-default.png"
 _ICON_RE = re.compile(r"^data:image/(png|jpeg|webp);base64,(.+)$", re.S)
 _BGV_RE = re.compile(r"^data:video/(mp4|webm);base64,(.+)$", re.S)
@@ -1883,20 +1886,21 @@ def _bg_ver() -> int:
         return 0
 
 
-def _bgv_live() -> "Path | None":
-    """当前生效的视频壁纸文件（mp4 优先, 无则 webm, 都没有返回 None）。
+def _video_asset_live(live_mp4: "Path", live_webm: "Path") -> "Path | None":
+    """当前生效的视频资产文件（mp4 优先, 无则 webm, 都没有返回 None）。
 
-    两个格式文件不会共存——写入前先清对方; 双保险兜底防御手工摆放。"""
-    if _BGV_LIVE.exists():
-        return _BGV_LIVE
-    if _BGV_LIVE_WEBM.exists():
-        return _BGV_LIVE_WEBM
+    两个格式文件不会共存——写入前先清对方; 双保险兜底防御手工摆放。
+    /api/bg-video 与 /api/boot-anim 共用（同构双轨）。"""
+    if live_mp4.exists():
+        return live_mp4
+    if live_webm.exists():
+        return live_webm
     return None
 
 
-def _bgv_clear_files() -> None:
-    """删除全部视频壁纸文件（Windows 文件占用重试, 照 /api/bg 模式）。"""
-    for path in (_BGV_LIVE, _BGV_LIVE_WEBM):
+def _video_asset_clear(live_mp4: "Path", live_webm: "Path") -> None:
+    """删除视频资产两格式文件（Windows 文件占用重试, 照 /api/bg 模式）。"""
+    for path in (live_mp4, live_webm):
         for _ in range(4):
             try:
                 path.unlink(missing_ok=True)
@@ -1905,14 +1909,38 @@ def _bgv_clear_files() -> None:
                 time.sleep(0.05)
 
 
-def _bgv_ver() -> int:
-    live = _bgv_live()
+def _video_asset_ver(live_mp4: "Path", live_webm: "Path") -> int:
+    live = _video_asset_live(live_mp4, live_webm)
     if live is None:
         return 0
     try:
         return int(live.stat().st_mtime)
     except OSError:
         return 0
+
+
+def _video_asset_write(live_mp4: "Path", live_webm: "Path", ext: str, raw: bytes) -> None:
+    """写入视频资产（先清另一格式, 保证任一时刻只有一份）。"""
+    APPEARANCE_DIR.mkdir(parents=True, exist_ok=True)
+    target = live_mp4 if ext == "mp4" else live_webm
+    other = live_webm if target is live_mp4 else live_mp4
+    other.unlink(missing_ok=True)
+    try:
+        target.write_bytes(raw)
+    except PermissionError:
+        raise HTTPException(status_code=409, detail=t("server.007"))
+
+
+def _bgv_live() -> "Path | None":
+    return _video_asset_live(_BGV_LIVE, _BGV_LIVE_WEBM)
+
+
+def _bgv_clear_files() -> None:
+    _video_asset_clear(_BGV_LIVE, _BGV_LIVE_WEBM)
+
+
+def _bgv_ver() -> int:
+    return _video_asset_ver(_BGV_LIVE, _BGV_LIVE_WEBM)
 
 
 @app.get("/api/bg-video", include_in_schema=False)
@@ -1937,16 +1965,40 @@ async def api_post_bg_video(request: dict):
         raw = base64.b64decode(m.group(2))
         if len(raw) > _BGV_MAX:
             raise HTTPException(status_code=400, detail=t("server.060"))
-        APPEARANCE_DIR.mkdir(parents=True, exist_ok=True)
-        # 先清另一格式的旧文件再写入, 保证任一时刻只有一份
-        target = _BGV_LIVE if m.group(1) == "mp4" else _BGV_LIVE_WEBM
-        other = _BGV_LIVE_WEBM if target is _BGV_LIVE else _BGV_LIVE
-        other.unlink(missing_ok=True)
-        try:
-            target.write_bytes(raw)
-        except PermissionError:
-            raise HTTPException(status_code=409, detail=t("server.007"))
+        _video_asset_write(_BGV_LIVE, _BGV_LIVE_WEBM, m.group(1), raw)
     return {"ok": True, "ver": _bgv_ver()}
+
+
+# --- 自定义开机动画视频: 设置→外观 上传; 启动时壳经 aulosboot:// 协议读取 ---
+_BA_MAX = 50 * 1024 * 1024
+_BA_RE = _BGV_RE   # 格式约束与壁纸视频一致（video/mp4|webm dataURL）
+
+
+def _ba_live() -> "Path | None":
+    return _video_asset_live(_BA_LIVE, _BA_LIVE_WEBM)
+
+
+def _ba_ver() -> int:
+    return _video_asset_ver(_BA_LIVE, _BA_LIVE_WEBM)
+
+
+@app.post("/api/boot-anim")
+async def api_post_boot_anim(request: dict):
+    """data 为 dataURL（video/mp4|webm）时写入开机动画, null 删除; 返回新版本号。
+
+    无 GET 端点: 启动时后端未起, 壳经自定义协议 aulosboot:// 直接读文件。"""
+    data = request.get("data")
+    if data is None:
+        _video_asset_clear(_BA_LIVE, _BA_LIVE_WEBM)
+    else:
+        m = _BA_RE.match(str(data))
+        if not m:
+            raise HTTPException(status_code=400, detail=t("server.061"))
+        raw = base64.b64decode(m.group(2))
+        if len(raw) > _BA_MAX:
+            raise HTTPException(status_code=400, detail=t("server.062"))
+        _video_asset_write(_BA_LIVE, _BA_LIVE_WEBM, m.group(1), raw)
+    return {"ok": True, "ver": _ba_ver()}
 
 
 @app.get("/api/bg", include_in_schema=False)

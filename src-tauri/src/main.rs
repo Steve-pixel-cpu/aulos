@@ -53,6 +53,42 @@ static BOOT_ANIM_OFF: LazyLock<bool> = LazyLock::new(|| {
         .unwrap_or(false)
 });
 
+// ==== 自定义开机动画视频: aulosboot:// 协议读取 ~/.aulos/appearance/ 下的
+// boot-anim.mp4|webm（后端未起时 loading 页就要拿到视频, 只能壳侧供）。
+// 页面经 <video src="aulosboot://boot-anim.mp4"> 探测: 200=有自定义动画,
+// 404=用内置 CSS 动画。Windows 上 origin 表现为 http://aulosboot.localhost ====
+fn boot_anim_video_response(request: http::Request<Vec<u8>>) -> http::Response<Vec<u8>> {
+    // 路径仅认两个固定文件名, 不拼接用户输入（无路径穿越面）
+    let name = request.uri().path().trim_start_matches('/');
+    let (path, mime) = match name {
+        "boot-anim.mp4" => ("boot-anim.mp4", "video/mp4"),
+        "boot-anim.webm" => ("boot-anim.webm", "video/webm"),
+        _ => {
+            return http::Response::builder()
+                .status(http::StatusCode::NOT_FOUND)
+                .body(Vec::new())
+                .unwrap();
+        }
+    };
+    let home = std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(std::path::PathBuf::from)
+        .unwrap_or_default();
+    match std::fs::read(home.join(".aulos").join("appearance").join(path)) {
+        Ok(bytes) => http::Response::builder()
+            .header(http::header::CONTENT_TYPE, mime)
+            .header(http::header::CACHE_CONTROL, "no-cache")
+            // <video> 跨源播放需要 CORS 头（Windows 上 origin 是 http://tauri.localhost）
+            .header(http::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+            .body(bytes)
+            .unwrap(),
+        Err(_) => http::Response::builder()
+            .status(http::StatusCode::NOT_FOUND)
+            .body(Vec::new())
+            .unwrap(),
+    }
+}
+
 /// UI 文案双语选择: zh_en("中文", "English")
 fn zh_en(zh: &str, en: &str) -> String {
     if *LANG_EN { en.to_string() } else { zh.to_string() }
@@ -1404,6 +1440,10 @@ fn main() {
     }
     builder
         .manage(())
+        // 自定义开机动画视频源: 后端未起时 loading 页经此读用户上传的动画
+        .register_uri_scheme_protocol("aulosboot", |_ctx, request| {
+            boot_anim_video_response(request)
+        })
         .invoke_handler(tauri::generate_handler![
             pick_folder,
             read_clipboard_text,
@@ -1451,12 +1491,17 @@ fn main() {
                         app.exit(1);
                         return;
                     }
-                    // 就绪后把窗口从 loading 页导航到真正的应用地址
+                    // 就绪信号: 优先通知 loading 页"后端好了"——自定义开机动画
+                    // 播完才跳转（页面里 __aulosNavigate 收到即跳; 无自定义动画
+                    // 或页面没挂监听时 1s 兜底直跳, 行为与旧直跳等价）。
                     if let Some(win) = app.get_webview_window("main") {
-                        let _ = win.eval(&format!(
-                            "location.replace('{}')",
+                        let nav = format!("window.__aulosReady && window.__aulosReady('{}')", app_url(&token));
+                        let _ = win.eval(&nav);
+                        let fallback = format!(
+                            "setTimeout(() => {{ if (!window.__aulosNavigated) location.replace('{}'); }}, 1000)",
                             app_url(&token)
-                        ));
+                        );
+                        let _ = win.eval(&fallback);
                     }
                 });
             }

@@ -183,5 +183,7 @@ STRINGS = {
     "server.058": "Dynamic wallpaper not set",
     "server.059": "Unsupported wallpaper video format (MP4/WebM only)",
     "server.060": "Wallpaper video exceeds the 80MB limit",
+    "server.061": "Unsupported boot animation format (MP4/WebM only)",
+    "server.062": "Boot animation exceeds the 50MB limit",
     "server_settings.045": "Boot animation toggle must be a boolean, got {p0}",
 }

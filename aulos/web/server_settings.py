@@ -317,6 +317,8 @@ async def api_get_settings():
         "icon_ver": server._icon_ver(),
         "bg_ver": server._bg_ver(),
         "bg_video_ver": server._bgv_ver(),
+        "boot_anim_ver": server._ba_ver(),
+        "bg_video_ver": server._bgv_ver(),
         "bootAnim": _read_setting("bootAnim") is not False,   # 缺省开启; False=关闭
         "app_version": server._app_version(),   # 标题栏版本徽标; 空串 = 前端不显示
         # 界面/AI 回复语言（i18n）: zh | en, 缺省 zh

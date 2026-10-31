@@ -14,7 +14,7 @@
 <script src="/static/vendor/highlight.min.js"></script>
 <link rel="stylesheet" href="/static/vendor/katex.min.css">
 <script src="/static/vendor/katex.min.js"></script>
-<link rel="stylesheet" href="/static/app.css?v=20261031p"><link rel="stylesheet" href="/static/pet.css?v=20260925c">
+<link rel="stylesheet" href="/static/app.css?v=20261101a"><link rel="stylesheet" href="/static/pet.css?v=20260925c">
 </head>
 <body>
 
@@ -457,9 +457,12 @@
       <div class="set-row">
         <div class="set-info">
           <div class="set-name"><span data-i18n="index.t210">开机动画</span></div>
-          <div class="set-desc"><span data-i18n="index.t211">启动时的品牌动画；关闭后显示极简加载指示（下次启动生效）</span></div>
+          <div class="set-desc"><span data-i18n="index.t211">上传自定义视频作开机动画（MP4/WebM，限 50MB，静音循环至后端就绪）；关闭后显示极简加载指示（下次启动生效）</span></div>
         </div>
+        <button type="button" class="icon-act" id="btn-ba-upload"><span data-i18n="index.t212">自定义</span></button>
+        <button type="button" class="icon-act" id="btn-ba-clear"><span data-i18n="index.t059">清除</span></button>
         <label class="prov-switch"><input type="checkbox" id="boot-anim-chk"><span class="track"></span></label>
+        <input type="file" id="ba-file" accept="video/mp4,video/webm" hidden>
       </div>
       <div class="set-row">
         <div class="set-info">
@@ -809,7 +812,7 @@
 <script src="/static/ui-dialogs.js?v=20261010a" defer></script>
 <script src="/static/tooltip.js?v=20261010a" defer></script>
 <script src="/static/notify.js?v=20261010a" defer></script>
-<script src="/static/app.js?v=20261031o" defer></script>
+<script src="/static/app.js?v=20261101a" defer></script>
 <script src="/static/settings-extras.js?v=20261010a" defer></script>
 <script src="/static/bubbles.js?v=20261010a" defer></script>
 <script src="/static/msg-extras.js?v=20261020a" defer></script>

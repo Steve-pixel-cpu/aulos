@@ -56,6 +56,15 @@
     .boot-wrap { display: none; }
   }
 
+  /* 自定义开机动画视频: 全屏 cover 静音垫底, 播完由脚本导航 */
+  #boot-video {
+    display: none; position: fixed; inset: 0;
+    width: 100%; height: 100%; object-fit: cover;
+    z-index: 1; background: #191919;
+  }
+  body.custom-anim #boot-video { display: block; }
+  body.custom-anim .boot-wrap { visibility: hidden; }   /* 视频期间藏品牌动画区 */
+
   /* 自绘标题栏: 与应用内同款（BRIDGE_JS 注入的 html.aulos-desktop 类） */
   #titlebar {
     display: none; position: fixed; top: 0; left: 0; right: 0;
@@ -99,6 +108,7 @@
       </button>
     </div>
   </div>
+  <video id="boot-video" muted loop playsinline></video>
   <div class="boot-wrap">
     <img class="boot-logo" src="/static/icon-256.png" alt="" draggable="false"
         onerror="this.classList.add('error')">
@@ -191,6 +201,54 @@ document.addEventListener("DOMContentLoaded", () => {
   };
   tick();
   setInterval(tick, 500);
+})();
+</script>
+<script>
+/* ---------- 自定义开机动画视频（aulosboot:// 协议, 壳侧供文件） ----------
+ * 优先级: 关闭开关(?boot=min)/减弱动效 = 极简 > 自定义视频 > 内置 CSS 动画。
+ * 探测 http://aulosboot.localhost/boot-anim.mp4: 200 → 全屏静音播放;
+ * 404/出错 → 试 webm → 都没有则内置动画照旧。壳侧 bootstrap 完成后 eval
+ * __aulosReady(appUrl): 无视频立即跳(等价旧直跳); 视频在播 → 等播完本轮再跳。
+ * 20s 硬上限: 无论视频/后端状态强制进主界面, 防卡死在启动页。 */
+(function () {
+  if (document.body.classList.contains("min-mode")) return;   // 极简模式不播视频
+  const vid = document.getElementById("boot-video");
+  if (!vid) return;
+  let navigated = false;
+  const go = (url) => {
+    if (navigated || !url) return;
+    navigated = true;
+    window.__aulosNavigated = true;
+    location.replace(url);
+  };
+  window.__aulosReady = (appUrl) => {
+    // 无自定义动画(或已停): 立即跳; 在播: 记 pending, 本轮播完 go
+    if (!vid.src || vid.paused || vid.ended) go(appUrl);
+    else window.__aulosPendingUrl = appUrl;
+  };
+  setTimeout(() => go(window.__aulosPendingUrl), 20000);   // 硬上限兜底
+  const tryLoad = (ext) => {
+    vid.onerror = () => {
+      if (ext === "mp4") tryLoad("webm");
+      // webm 也失败: 内置动画照旧, 跳转交给 __aulosReady 直跳分支
+    };
+    vid.onplaying = () => {
+      document.body.classList.add("custom-anim");
+      // loop 回绕检测: currentTime 变小 = 一轮播完。任一轮播完时若后端已就绪
+      // (pending) 即跳; 否则 loop 继续——__aulosReady 任意时刻来都记 pending,
+      // 最近的回绕点必然赶上（每轮都有 timeupdate, 监听器常驻不移除）
+      let last = -1;
+      vid.addEventListener("timeupdate", () => {
+        const cur = vid.currentTime;
+        if (last >= 0 && cur < last && window.__aulosPendingUrl) go(window.__aulosPendingUrl);
+        last = cur;
+      });
+    };
+    vid.src = "http://aulosboot.localhost/boot-anim." + ext;
+    vid.load();
+    vid.play().catch(() => {});   // muted 满足自动播放策略; 失败静默
+  };
+  tryLoad("mp4");
 })();
 </script>
 </body>

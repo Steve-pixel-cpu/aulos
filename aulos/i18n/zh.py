@@ -178,5 +178,7 @@ STRINGS = {
     "server.058": "未设置动态壁纸",
     "server.059": "不支持的动态壁纸格式（仅 MP4/WebM）",
     "server.060": "动态壁纸超出 80MB 限制",
+    "server.061": "不支持的开机动画格式（仅 MP4/WebM）",
+    "server.062": "开机动画超出 50MB 限制",
     "server_settings.045": "开机动画开关需为布尔值，收到 {p0}",
 }

@@ -286,6 +286,7 @@ name = "aulos"
 version = "5.6.0"
 dependencies = [
  "base64 0.22.1",
+ "http",
  "image",
  "rfd",
  "serde_json",

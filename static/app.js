@@ -2016,6 +2016,41 @@ $("btn-bgv-clear").onclick = async () => {
   } catch (e) { toast(t("app.166") + e.message); }
 };
 
+/* ---------- 设置 → 外观: 自定义开机动画视频（/api/boot-anim, 50MB） ---------- */
+$("btn-ba-upload").onclick = () => $("ba-file").click();
+$("ba-file").addEventListener("change", () => {
+  const file = $("ba-file").files[0];
+  $("ba-file").value = "";   // 清空: 允许重复选择同一文件
+  if (!file) return;
+  if (file.size > 50 * 1024 * 1024) { toast(t("app.167")); return; }
+  const rd = new FileReader();
+  rd.onload = async () => {
+    const data = String(rd.result || "");
+    if (!/^data:video\/(mp4|webm);base64,/.test(data)) { toast(t("app.162")); return; }
+    try {
+      const r = await fetch("/api/boot-anim", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ data }),
+      });
+      if (!r.ok) throw new Error((await r.json()).detail || "HTTP " + r.status);
+      toast(t("app.169"));
+    } catch (e) { toast(t("app.170") + e.message); }
+  };
+  rd.readAsDataURL(file);
+});
+$("btn-ba-clear").onclick = async () => {
+  try {
+    const r = await fetch("/api/boot-anim", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ data: null }),
+    });
+    if (!r.ok) throw new Error((await r.json()).detail || "HTTP " + r.status);
+    toast(t("app.171"));
+  } catch (e) { toast(t("app.172") + e.message); }
+};
+
 /* ---------- 设置 → 外观: 应用图标上传 / 恢复默认 ---------- */
 $("btn-icon-upload").onclick = () => $("icon-file").click();
 $("icon-file").addEventListener("change", () => {
