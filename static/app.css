@@ -1968,7 +1968,7 @@
   .pill.mode { color: var(--accent); }
   .pill.mode > svg { margin-left: 3px; }
   .pill.effort { color: var(--accent); }
-  .pill.effort .effort-ic { flex: none; margin-left: 3px; color: var(--text-3); }
+  .pill.effort .effort-ic { flex: none; margin-left: 3px; color: var(--accent); }
   .pill.effort .dd { color: var(--text-2); }
   .pill .model-name { font-size: calc(12.5px * var(--fs-ui)); color: var(--text-2); padding: 0 4px; }
 
