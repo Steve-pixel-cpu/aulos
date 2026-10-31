@@ -2477,19 +2477,6 @@ function rainSfx(level, strength) {
   function dayFactor(t) {
     return t >= 0.5 ? 0 : Math.sin(t / 0.5 * Math.PI);
   }
-  /* TWILIGHT (v9.8, USER: 太阳落下会很黑, 月亮出来突然变亮):
-     dayFactor 在 0.5 瞬时归零 (sin 截断), 但天空晚霞拖到 0.55、
-     月亮/星星 0.5 即刻绘制 — 地表光照先黑, sky 又亮起来, 观感
-     = 「落日黑一下, 月亮出来突然变亮」。twilight 把这段落差补成
-     连续曲线: 0.5→0.62 从 1 平滑降到 0 (日落后月光余晖), 黎明前
-     0.95→1.0 从 0 升回 1 (黎明预亮)。paintLight 用它让地表亮度
-     跟着晚霞一起衰减, 不再跳变 */
-  function twilight(t) {
-    if (t >= 0.5 && t < 0.62) { return 1 - (t - 0.5) / 0.12; }
-    if (t >= 0.95) { return 1 - (t - 0.95) / 0.05; }
-    if (t < 0.02) { return 1 - (0.02 - t) / 0.02; }
-    return 0;
-  }
   /* ---- near rain layer: camera-space streaks on a Phaser Graphics.
      Screen-space drawing (worldPoint of camera corners), each streak
      falls along a slant; a streak's foot is clipped at the surface
@@ -3032,10 +3019,21 @@ function rainSfx(level, strength) {
     /* v9.8: floor 再乘 twilight 拖尾 — 日落瞬间 floor 不立即生效,
        而是随晚霞 (0.5→0.62) 从 100% 滑到 0%; 黎明前 (0.95→1.0)
        反向滑回, 月亮升起的光感与天空同步, 消灭「黑一下又亮」 */
-    /* 0.49→0.50 仍有小反向跳 (day 衰减快于 twilight 抬升), 把 twilight
-       系数从 0.25/0.75 再压 — floor 顶点 0.315, 与 day 衰减尾 0.16 差
-       0.15, 视觉上是「月光渐显」而非跳变 */
-    bMin *= moonLit * (0.25 + 0.75 * twilight(dayT));
+    /* v9.9 (USER: 夜晚亮度会变): v9.8 把 twilight 乘进 floor 后,
+       夜深 floor 只剩 CFG.brightness×0.25 — 比设定暗 4 倍且黄昏
+       14 秒里一直在掉 = 「夜晚亮度会变」。修正语义: twilight 只
+       管「日落→夜」的过渡方向, 过渡结束后 floor 恰好 = 用户设定
+       的 CFG.brightness, 夜深恒定不再动:
+         floor = bMin × (1 − tw×0.75) 反了 → 正确的是
+         过渡期 floor 在「余晖亮度」与「设定值」之间滑动, 夜深=设定值 */
+    /* 最终形状 (数值推演定稿): floor = bMin × (0.35 + 0.65×smoothstep(
+       日落后进度)) — 日落瞬间 floor=35%×bMin (补 day 归零的落差,
+       0.49→0.50: 0.456→0.147 平滑), 之后 smoothstep 升到 100%×bMin,
+       t≥0.62 后恒定 = 用户设定值, 夜里不再有任何变化。黎明前 0.95+
+       day 因子自然回升接管渐亮, 无需 floor 参与 */
+    var twProg = (dayT < 0.5 || dayT >= 0.62) ? 1 : Math.min(1, (dayT - 0.5) / 0.12);
+    var ss = twProg * twProg * (3 - 2 * twProg);   /* smoothstep */
+    bMin *= moonLit * (0.35 + 0.65 * ss);
     var bright = bMin + (1 - bMin) * day;      /* night floor .. 1 noon */
     var sR = Math.round(surf[0] * bright),
         sG = Math.round(surf[1] * bright),
