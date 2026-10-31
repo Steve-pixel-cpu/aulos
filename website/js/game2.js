@@ -40,6 +40,8 @@
     caveSpawnMin: 12,     /* cave spawn ring (tiles) */
     caveSpawnMax: 24,
     bloodMoonChance: 40,  /* % per night */
+    rainChance: 25,       /* % per day (decided at dawn; 0 = never rains) */
+    rainIntensity: 100,   /* % rain density — scales streak count on screen */
     brightness: 42,       /* % night brightness floor (USER: 夜晚太黑可调亮) */
     caveBright: 100,      /* % cave ambient tint scale (USER: 洞穴太黑可调亮) */
     bulletSpeed: 780,
@@ -941,6 +943,11 @@
     }
     this.hudCtx = document.getElementById('eggHudOverlay').getContext('2d');
     this.skyCtx = document.getElementById('eggSkyOverlay').getContext('2d');
+    /* RAIN near layer (USER: 下雨): Graphics above terrain/entities,
+       below HUD (HUD is a DOM canvas, always on top). Camera-scoped:
+       streaks are drawn in SCREEN space each frame, clipped at the
+       live surface line so shafts/pits stay dry. */
+    this.rainG = this.add.graphics().setDepth(90);
     /* ---- BACKDROP AS PHASER OBJECTS (framework-native parallax) -----
        7 TileSprites, one per layer, each setScrollFactor(fx, 0):
          • horizontal: engine-native parallax — camera movement drives
@@ -2178,6 +2185,34 @@ var dayCount = 0;               /* nights elapsed — dusk increments it; now
                                    nights in a row" bookkeeping (moon
                                    phases were dropped, USER: "不用做月
                                    相了") */
+/* ---- RAIN (USER: "彩蛋游戏能加下雨的效果吗") ------------------------
+   Whole-day weather: at dawn a dice roll (CFG.rainChance %) decides if
+   today rains; level eases toward that decision over ~2s so rain
+   fades in/out instead of popping. Blood-moon nights never rain (the
+   crimson sky IS the mood; also 传统说法血月不落雨). level is read by
+   drawSky (grey-blue wash + far mist streaks) and by the scene layer
+   (near rain streaks, RAIN_TICK below). */
+var rain = { level: 0, target: 0, lastDayFrac: 0 };
+function rainTick(dt, S) {
+  /* day wrap → decide today's weather. dayT loops 0..1; a wrap is
+     dayT shrinking (e.g. 0.98 → 0.01). dayT<0 means pre-init (hash
+     start) — skip. Blood moon is decided at dusk of the SAME cycle
+     (its night spans 0.5..1.0), so by the time the day wraps the
+     flag already covers tonight; checking it here keeps the whole
+     blood-moon night dry. */
+  if (dayT >= 0) {
+    if (dayT < rain.lastDayFrac - 0.5) {
+      var raining = Math.random() < CFG.rainChance / 100;
+      if (S && S.bloodMoon) { raining = false; }   /* 血月夜不落雨 */
+      rain.target = raining ? 1 : 0;
+    }
+    rain.lastDayFrac = dayT;
+  }
+  /* ease level → target (~2s to ~95%) — frame-rate independent */
+  var k = 1 - Math.exp(-dt * 2.2);
+  rain.level += (rain.target - rain.level) * k;
+  if (rain.level < 0.002 && rain.target === 0) { rain.level = 0; }
+}
   var SKY_STOPS = [               /* [t, top, bottom] colors */
     [0.00, 0x1a2440, 0x3a3a5c],   /* pre-dawn */
     [0.08, 0x7a9ec9, 0xd9b98a],   /* sunrise */
@@ -2218,6 +2253,44 @@ var dayCount = 0;               /* nights elapsed — dusk increments it; now
   function dayFactor(t) {
     return t >= 0.5 ? 0 : Math.sin(t / 0.5 * Math.PI);
   }
+  /* ---- near rain layer: camera-space streaks on a Phaser Graphics.
+     Screen-space drawing (worldPoint of camera corners), each streak
+     falls along a slant; a streak's foot is clipped at the surface
+     column it crosses so pits/overhangs read dry. Skipped entirely
+     when the player is underground (feet below their surface column)
+     or rain.level ~0. Density scales with CFG.rainIntensity. ---- */
+  function drawRain(S) {
+    var g = S.rainG;
+    if (!g) { return; }
+    g.clear();
+    var lvl = rain.level;
+    if (lvl <= 0.02) { return; }
+    var cam = S.cameras.main;
+    var pCol = Math.max(0, Math.min(WORLD_W - 1, Math.floor(S.player.x / TILE)));
+    var pSurf = world.surfaceY[pCol] * TILE;
+    if (S.player.y > pSurf + 8) { return; }        /* underground: no rain */
+    var vw = cam.width, vh = cam.height;
+    var n = Math.round(64 * (CFG.rainIntensity / 100) * lvl);
+    var tNow = (typeof performance !== 'undefined' ? performance.now() : 0);
+    g.lineStyle(1, 0xc8d7eb, 0.42 * lvl);
+    g.beginPath();
+    for (var i = 0; i < n; i++) {
+      /* hash-scatter: stable per-index, animated by time — the
+         streak wraps back to the top after crossing the view */
+      var sx = ((i * 233.7 + tNow * 0.42 * (0.7 + (i % 5) * 0.14)) % (vw + 60)) - 30;
+      var sy = ((i * 149.3 + tNow * (0.52 + (i % 7) * 0.05)) % (vh + 90)) - 45;
+      var wx = cam.scrollX + sx, wy = cam.scrollY + sy;
+      var col = Math.max(0, Math.min(WORLD_W - 1, Math.floor(wx / TILE)));
+      var foot = world.surfaceY[col] * TILE - cam.scrollY;
+      var len = 13 + (i % 6) * 2;
+      var y2 = Math.min(sy + len, foot);
+      if (y2 <= sy) { continue; }                  /* already past surface */
+      g.moveTo(sx, sy);
+      g.lineTo(sx - len * 0.28, y2);
+    }
+    g.strokePath();
+  }
+
   function cssColor(c) {
     return 'rgb(' + ((c >> 16) & 255) + ',' + ((c >> 8) & 255) + ',' + (c & 255) + ')';
   }
@@ -2974,11 +3047,40 @@ var dayCount = 0;               /* nights elapsed — dusk increments it; now
     if (!ctx) { return null; }
     var w = ctx.canvas.width, h = ctx.canvas.height;
     var sky = skyColors(dayT);
+    /* RAIN WASH (USER: 下雨): grey-blue调制 — push top/bot toward a
+       desaturated slate by rain.level; far streak mist below. */
+    if (rain.level > 0.01) {
+      var RAIN_TOP = 0x4a5568, RAIN_BOT = 0x5a6478;
+      sky = {
+        top: lerpColor(sky.top, RAIN_TOP, rain.level * 0.65),
+        bot: lerpColor(sky.bot, RAIN_BOT, rain.level * 0.55),
+        dayness: sky.dayness * (1 - rain.level * 0.25)
+      };
+    }
     var grad = ctx.createLinearGradient(0, 0, 0, h);
     grad.addColorStop(0, cssColor(sky.top));
     grad.addColorStop(1, cssColor(sky.bot));
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, w, h);
+    /* far rain mist: faint slanted strokes across the sky band —
+       cheap parallax hint of weather before the near layer in the
+       Phaser scene; seeded by frame time so it shimmers */
+    if (rain.level > 0.05) {
+      var nFar = Math.round(34 * rain.level);
+      ctx.strokeStyle = 'rgba(200,215,235,0.16)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      var tNow = (typeof performance !== 'undefined' ? performance.now() : 0);
+      for (var fi = 0; fi < nFar; fi++) {
+        /* deterministic per-index pseudo-random — no re-seed jitter */
+        var fx = ((fi * 137.5 + (tNow * 0.28)) % (w + 80)) - 40;
+        var fy = ((fi * 89.7 + (tNow * 0.55)) % (h * 0.62));
+        var flen = 11 + (fi % 7) * 1.6;
+        ctx.moveTo(fx, fy);
+        ctx.lineTo(fx - flen * 0.28, fy + flen);
+      }
+      ctx.stroke();
+    }
 
     /* BELOW-HORIZON FALLBACK = cave wall, anchored to the BANDS' live
        screen position (USER: "山的背面…删掉"). The first version started
@@ -3811,6 +3913,7 @@ var dayCount = 0;               /* nights elapsed — dusk increments it; now
         : this.player.y;
     }
     dayT = (dayT + dt / DAY_LEN) % 1;
+    rainTick(dt, this);        /* weather state machine (above) */
     var spd = 190;
     var mv = (window.__digAutoWalk || this.keysA.D.isDown || this.cursors.right.isDown ? 1 : 0) -
              (this.keysA.A.isDown || this.cursors.left.isDown ? 1 : 0);
@@ -3934,6 +4037,7 @@ var dayCount = 0;               /* nights elapsed — dusk increments it; now
     if (this.hudT > 0.05 || this.hudDirty) {
       this.hudT = 0; this.hudDirty = false;
       drawSky(this);
+      drawRain(this);
       drawHotbar(this);
       /* ambient re-tint only (no BFS) — composed for the camera
          viewport only (~8% of the map; full-map putImageData was the
@@ -4318,6 +4422,8 @@ var dayCount = 0;               /* nights elapsed — dusk increments it; now
     { k: 'caveSpawnMin',    label: '洞穴刷怪近距(格)',  min: 6,  max: 30, step: 2 },
     { k: 'caveSpawnMax',    label: '洞穴刷怪远距(格)',  min: 10, max: 40, step: 2 },
     { k: 'bloodMoonChance', label: '血月概率(%)',       min: 0,  max: 100, step: 5 },
+    { k: 'rainChance',      label: '下雨概率(%/天)',    min: 0,  max: 100, step: 5 },
+    { k: 'rainIntensity',   label: '雨量(%)',           min: 10, max: 200, step: 10 },
     { k: 'brightness',      label: '夜晚亮度(%)',       min: 20, max: 100, step: 2 },
     { k: 'caveBright',      label: '洞穴亮度(%)',       min: 40, max: 200, step: 5 },
     { k: 'bulletSpeed',     label: '子弹速度',          min: 300, max: 1400, step: 20 },
