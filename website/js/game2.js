@@ -3729,7 +3729,7 @@ function rainSfx(level, strength) {
         /* yuanjing rides 2 tiles higher than the Admurin ground anchor
            (USER: "贴图抬高一点" then "太高了" — 2 tiles settled) */
         var LIFT = (d.n === 'pixelforge_far' ||
-                    d.n === 'yuanjing_far') ? -3.5 * 32 : 0;
+                    d.n === 'yuanjing_far') ? -3.6 * 32 : 0;
         /* ^ tuning trail: +2 up → too high; −8 → too low; USER hand-
            tuned to −5.75, then "地表线还可以下来一点" → −8.75. The
            band's grass baseline is what reads as the 地表线 against the
@@ -3781,7 +3781,7 @@ function rainSfx(level, strength) {
           _bkTex.img[d.n] = im;
           make(im);
         };
-        im.src = 'assets/scenery/bg/' + d.n + '.png?v=sky13';
+        im.src = 'assets/scenery/bg/' + d.n + '.png?v=sky14';
       }
     });
     return layers;
@@ -3832,7 +3832,7 @@ function rainSfx(level, strength) {
           _bkGround = 'rgb(' + p2[0] + ',' + p2[1] + ',' + p2[2] + ')';
         }
       };
-      im.src = 'assets/scenery/bg/' + d.n + '.png?v=sky13';
+      im.src = 'assets/scenery/bg/' + d.n + '.png?v=sky14';
       _bkTex.img[d.n] = im;          /* shown until the bake lands */
     });
   }
