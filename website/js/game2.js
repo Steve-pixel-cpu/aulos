@@ -250,8 +250,8 @@
        blurry up close (USER: "这种树有点糊适合做中景") and live as the
        mid-ground band assets/scenery/bg/tree_band.png (see BK_DEFS). */
     this.load.image('trees', 'assets/mc/tree_user.png?v=s2');
-    this.load.image('trees2', 'assets/mc/tree_user2.png?v=s2');
-    this.load.image('trees3', 'assets/mc/tree_user3.png?v=s2');
+    /* trees2/trees3 (白桦) 已从 VARIANTS 移除 (v9.7), 不再加载 */
+
     /* showcase art (tools/prep_landmarks.py trims + sharpens 枫树.png /
        建筑.png): maple joins the tree variant pool, building is the
        landmark structure (worldgen 5b) */
@@ -646,13 +646,12 @@
            trunk bottom is INSIDE the grass tile, not floating on it
            (USER: 和方块重叠了 — the previous base sat exactly on the
            tile top edge and collided visually with surface blocks). */
-        /* variant table: sprite N -> texture + display size. The 3
-           hand-keyed trees + the ChatGPT maple (showcase art, pre-
-           sharpened; treeSet slices stayed in the mid-ground band). */
+        /* variant table: sprite N -> texture + display size. v9.7
+           (USER: 去掉桦树, 贴图有问题) — trees2/trees3 是白桦 (树干
+           白底黑纹), 移出池子; 只留 trees (深绿针叶) + maple (红枫)。
+           tr.sprite 取模自动重映射, worldgen 数据不用动。 */
         var VARIANTS = [
           { key: 'trees',  w: 560, h: 580 },
-          { key: 'trees2', w: 470, h: 555 },
-          { key: 'trees3', w: 500, h: 590 },
           { key: 'maple',  w: 400, h: 590 }
         ];
         var v = VARIANTS[tr.sprite % VARIANTS.length];
