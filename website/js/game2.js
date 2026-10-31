@@ -3651,7 +3651,7 @@ function rainSfx(level, strength) {
        horizon haze semi-transparent, which glowed over the night gradient
        as 峰/云残影 between clouds and peaks (USER). Scale 1.0 native —
        1.35x upscale read blurry (USER: 缩放太严重了). */
-    { n: 'yuanjing_far', blur: 0, haze: 0, fx: 0.18 },
+    { n: 'yuanjing_far', blur: 0, haze: 0, fx: 0.18 },   /* v11 fx 已接通: 远山 18% 视差 */
     /* mid-ground tree line (tools/build_tree_band.py composites the
        ChatGPT treeSet slices): native 1:1 band IN FRONT of the far
        mountains (array order drives depth). Those trees read slightly
@@ -3659,13 +3659,14 @@ function rainSfx(level, strength) {
        aerial tint is BAKED saturation-preserving by the band builder;
        in-game blur/haze stay 0 (the flat gray haze washed it out,
        USER: "太灰了吧"). */
-    { n: 'tree_band', blur: 0, haze: 0, fx: 0.4 }
+    { n: 'tree_band', blur: 0, haze: 0, fx: 0.4 }   /* 中景树带 40% 视差 */
   ];
   /* ---- Phaser-native backdrop ------------------------------------------
      Builds 7 TileSprites with per-layer scroll factors. Textures are
      the SAME baked canvases (blur + aerial haze) the old canvas-2D
      renderer produced, uploaded to Phaser once via canvas texture. */
   function buildPhaserBackdrop(S) {
+    S._bkLayers = [];                /* v11 重置层表 (重入安全) */
     var layers = [];
     var surfPx = (typeof PLAYER_SURFACE_Y === 'number'
       ? PLAYER_SURFACE_Y : 96 * 32);
@@ -3744,12 +3745,19 @@ function rainSfx(level, strength) {
           0, sy0, (WORLD_W * 32) / sc, srcH, texKey)
           .setOrigin(0, 0)
           .setScale(sc)                     /* → WORLD_W*32 × srcH*sc */
-          .setScrollFactor(1)
+          /* v11 (USER: 以不同速度移动营造视差): fx 此前从未生效 —
+             map-bound scrollFactor(1) 与地形 1:1 同速。改 scrollFactor(0)
+             钉屏幕 + 每帧 tilePositionX = scrollX × fx (标准视差公式),
+             远山 18% / 树带 40% 差速移动 = 纵深感 */
+          .setScrollFactor(0)
           .setDepth(-4 + BK_DEFS.indexOf(d) * 0.01)
           .setAlpha(1);
         ts._fx = d.fx; ts._srcW = img ? img.width : 1280;
+        ts._anchorY = ts.y;   /* scrollFactor(0) 后 y 也是屏幕坐标, 记住锚点 */
         ts._srcH = srcH;
         if (d.n === 'clouds') { S.cloudsBand = ts; }  /* wind drift hook */
+        S._bkLayers = S._bkLayers || [];
+        S._bkLayers.push({ ts: ts, fx: d.fx, n: d.n });
         /* GREEN EXTENSION REMOVED entirely (USER: "中景下面的绿色裙边
            需要去掉"). It was a legacy patch for the old Admurin bands'
            semi-transparent bottom rows; the current yuanjing band has an
@@ -4431,6 +4439,17 @@ function rainSfx(level, strength) {
 
     /* sun/moon live in the sky canvas (drawSky) — nothing to drive */
 
+    /* v11 PARALLAX DRIVE: 远/中景层 scrollFactor(0) 钉屏幕,
+       tilePosition = camera 滚动 × 各层 fx — 不同速度移动 = 视差。
+       y 同理 (0.55 系数): 竖直也有纵深, 但比水平弱 (天上为主)。 */
+    if (this._bkLayers) {
+      for (var bi = 0; bi < this._bkLayers.length; bi++) {
+        var L = this._bkLayers[bi];
+        if (!L || !L.ts) { continue; }
+        L.ts.tilePositionX = cam.scrollX * L.fx;
+        L.ts.tilePositionY = Math.max(0, cam.scrollY * L.fx * 0.55);
+      }
+    }
     /* cloud drift: the map-bound clouds band slowly scrolls its
        texture inside the fixed world rect — wind, not camera motion */
     if (this.cloudsBand) {
