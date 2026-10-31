@@ -382,8 +382,8 @@
            never straddle cliff steps or sprout on stone/sand. */
         /* sprite index: modded by the VARIANTS pool length in game2
            (3 hand-keyed trees + the maple showcase art) */
-        trees.push({ x: tx, y: surfaceY[tx], sprite: Math.floor(rand() * 4) });
-        tx += 12 + Math.floor(rand() * 13);
+        trees.push({ x: tx, y: surfaceY[tx], sprite: Math.floor(rand() * 3) });
+        tx += 6 + Math.floor(rand() * 8);   /* v10.1 (USER: 树弄多点) 密度翻倍: 间距 12-24 → 6-13 */
       } else {
         /* open ground deco RETIRED (USER: 这种堆叠起来的东西也去掉): the
            sapling/stump art read as odd stacked spheres on the lawn.

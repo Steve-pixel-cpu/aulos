@@ -264,7 +264,7 @@
     this.load.image('fountain', 'assets/big/fountain.png?v=p1');
     /* celestial art (USER): drawSky blits this sun and moon
        instead of the baked gradient discs */
-    this.load.image('sunImg', 'assets/mc/sun.png?v=c1');
+    this.load.image('sunImg', 'assets/mc/sun.png?v=c2');
     this.load.image('moonImg', 'assets/mc/moon_hard.png?v=c2');
     /* thunder samples (v7.1, USER: 去网上找点雷雨的音效) — CC0 from
        BigSoundBank (public domain, no attribution required). 6 takes:
