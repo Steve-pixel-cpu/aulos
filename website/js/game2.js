@@ -266,6 +266,13 @@
     this.load.audio('thunder3', 'assets/sfx/thunder4.mp3');
     this.load.audio('thunder4', 'assets/sfx/thunder5.mp3');
     this.load.audio('thunder5', 'assets/sfx/thunder6.mp3');
+    /* BGM (v8, USER: 再给游戏配几个合适的bgm + 中世纪风格) — CC0,
+       OpenGameArt (RandomMind "Medieval: Market Day" 白天 — 集市欢快
+       旋律; "Medieval: The Bard's Tale" 夜晚 — 吟游诗人小调; 洞穴
+       用 cave ambience)。按「昼夜 + 地上/地下」切轨, 交叉淡化 */
+    this.load.audio('bgmSurface', 'assets/sfx/bgm_day_medieval.mp3');
+    this.load.audio('bgmNight', 'assets/sfx/bgm_night_medieval.mp3');
+    this.load.audio('bgmCave', 'assets/sfx/bgm_cave.mp3');
     /* foreground bushes (16px pixel shrubs, USER: 太大/色块 fix) */
     BUSH_SET.forEach(function (b) {
       this.load.image('bush' + b.i, 'assets/mc/bush_px' + b.i + '.png?v=b2');
@@ -2313,6 +2320,44 @@ function rainTick(dt, S) {
    once on first rain (AudioContext needs a user gesture first); the
    source loops forever, we only ride the gain + filter nodes. */
 var rainSfxNode = null;   /* {gain, filter} */
+/* ---- BGM manager (v8, USER: 再给游戏配几个合适的bgm) ----
+   3 tracks keyed by state: day-surface / night-surface / underground.
+   Only ONE playing at a time; switches are cross-faded (1.5s out,
+   1.5s in) so no hard cuts. Loop via Phaser. Volume rides a CFG-free
+   fixed 0.35 base (BGM must sit under rain/thunder SFX). Storm adds
+   a slight duck so BGM doesn't fight the thunder. */
+var bgm = { cur: null, tracks: {} };
+function bgmUpdate(S) {
+  if (!S || !S.sound || !S.sound.add) { return; }
+  /* desired track */
+  var pCol = Math.max(0, Math.min(WORLD_W - 1, Math.floor(S.player.x / TILE)));
+  var surf = world.surfaceY[pCol] * TILE;
+  var under = S.player.y > surf + TILE * 2;
+  var want = under ? 'bgmCave' : (dayT > 0.5 && dayT < 0.99 ? 'bgmNight' : 'bgmSurface');
+  if (bgm.cur === want) {
+    /* storm duck: 雷响时 BGM 压低 (flash 活跃期) */
+    var tk = bgm.tracks[want];
+    if (tk && rain.flash > 0.05) {
+      S.sound.get(want).setVolume(0.12);
+    }
+    return;
+  }
+  /* fade out old */
+  if (bgm.cur && bgm.tracks[bgm.cur]) {
+    var old = S.sound.get(bgm.cur);
+    if (old && old.isPlaying) {
+      S.tweens.add({ targets: old, volume: 0, duration: 1500,
+        onComplete: function () { try { old.stop(); } catch (e) {} } });
+    }
+  }
+  /* fade in new */
+  var t = S.sound.add(want, { loop: true, volume: 0 });
+  t.play();
+  S.tweens.add({ targets: t, volume: 0.35, duration: 1500 });
+  bgm.tracks[want] = true;
+  bgm.cur = want;
+}
+
 function rainSfx(level, strength) {
   try {
     var c = ac();
@@ -4182,6 +4227,7 @@ function rainSfx(level, strength) {
     dayT = (dayT + dt / DAY_LEN) % 1;
     rainTick(dt, this);        /* weather events (MC-style, above) */
     stormTick(dt, this);       /* lightning flash decay + bolt schedule */
+    bgmUpdate(this);           /* BGM: 昼夜/地上地下切轨, 交叉淡化 */
     rainSfx(rain.level, rain.strength);  /* 声随雨势: 音量+音色都跟 strength */
     var spd = 190;
     var mv = (window.__digAutoWalk || this.keysA.D.isDown || this.cursors.right.isDown ? 1 : 0) -
@@ -4638,6 +4684,14 @@ function rainSfx(level, strength) {
   }
   function leave() {
     if (document.fullscreenElement) { document.exitFullscreen().catch(function () {}); }
+    /* BGM stop-on-leave (v8): 退出游戏必须停音乐, 否则回官网还放着 */
+    try {
+      if (bgm.cur && bgm.tracks[bgm.cur]) {
+        var t = this.sound ? this.sound.get(bgm.cur) : null;
+        if (t) { t.stop(); t.destroy(); }
+      }
+      bgm.cur = null; bgm.tracks = {};
+    } catch (e) {}
     running = false;
     win.classList.remove('egg-mode');
     if (input) { input.style.display = ''; }
