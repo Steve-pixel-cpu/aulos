@@ -3747,8 +3747,13 @@ function rainSfx(level, strength) {
           /* v11.1 (USER 截图: 贴图都没了): v342 的 scrollFactor(0)+手动
              tilePosition 驱动坐标系错位 (世界 y 锚点变成屏幕坐标), 层
              飞出视野。正确做法就是 Phaser 原生的非 1 scrollFactor:
-             (fx, fy) 层以系数倍速跟随相机, 世界定位保留, 一行搞定 */
-          .setScrollFactor(d.fx, 0.55 + d.fx * 0.45)
+             (fx, fy) 层以系数倍速跟随相机, 世界定位保留, 一行搞定。
+             v11.2 (USER 截图 v=345: 还是啥也没有): Y 轴不能也给非 1 —
+             sy0 把层底锚在地表线下 1 tile, 那是按 fy=1 算的世界坐标;
+             fy=0.63 时相机每下移 1px 层只跟 0.63px, 层顶 = 2192 −
+             2400×0.63 ≈ 680, 恰好整层藏进地形背后 (地表线屏幕 y≈675)。
+             视差只在水平方向成立, Y 锁 1, X 保留 d.fx 差速 */
+          .setScrollFactor(d.fx, 1)
           .setDepth(-4 + BK_DEFS.indexOf(d) * 0.01)
           .setAlpha(1);
         ts._fx = d.fx; ts._srcW = img ? img.width : 1280;
