@@ -42,6 +42,8 @@
     bloodMoonChance: 40,  /* % per night */
     rainChance: 25,       /* % per day (decided at dawn; 0 = never rains) */
     rainIntensity: 100,   /* % rain density — scales streak count on screen */
+    bgmVolume: 8,         /* % BGM volume (USER: 背景音可以小点→做成配置;
+                             100 = 原曲满音量, 默认 8 很轻) */
     brightness: 42,       /* % night brightness floor (USER: 夜晚太黑可调亮) */
     caveBright: 100,      /* % cave ambient tint scale (USER: 洞穴太黑可调亮) */
     bulletSpeed: 780,
@@ -2335,10 +2337,16 @@ function bgmUpdate(S) {
   var under = S.player.y > surf + TILE * 2;
   var want = under ? 'bgmCave' : (dayT > 0.5 && dayT < 0.99 ? 'bgmNight' : 'bgmSurface');
   if (bgm.cur === want) {
-    /* storm duck: 雷响时 BGM 压低 (flash 活跃期) */
+    /* v8.5 (USER: 放到配置里): 音量跟随 CFG.bgmVolume 滑杆, 每帧
+       同步 — 拖动滑杆即时生效, 不用等切轨。storm duck: 雷响时
+       压到滑杆值的 35% */
     var tk = bgm.tracks[want];
-    if (tk && rain.flash > 0.05) {
-      S.sound.get(want).setVolume(0.03);
+    var base = CFG.bgmVolume / 100 * 1.6;      /* 8% → 0.128; 100% → 1.6 满量 */
+    if (tk) {
+      var inst = S.sound.get(want);
+      if (inst) {
+        inst.setVolume(rain.flash > 0.05 ? base * 0.35 : base);
+      }
     }
     return;
   }
@@ -2367,7 +2375,7 @@ function bgmUpdate(S) {
   if (stale) { try { stale.stop(); stale.destroy(); } catch (e) {} }
   var t = S.sound.add(want, { loop: true, volume: 0 });
   t.play();
-  var inVol = 0.08;   /* v8.4 USER: 白天声音还是太大 — 0.16→0.08 */
+  var inVol = CFG.bgmVolume / 100 * 1.6;
   var inT = S.time.addEvent({
     delay: 50, repeat: 29, callback: function () {
       try { t.setVolume(Math.min(inVol, t.volume + inVol / 30)); } catch (e) {}
@@ -4770,6 +4778,7 @@ function rainSfx(level, strength) {
     { k: 'bloodMoonChance', label: '血月概率(%)',       min: 0,  max: 100, step: 5 },
     { k: 'rainChance',      label: '下雨概率(%/天)',    min: 0,  max: 100, step: 5 },
     { k: 'rainIntensity',   label: '雨量(%)',           min: 10, max: 200, step: 10 },
+    { k: 'bgmVolume',       label: '背景音量(%)',       min: 0,  max: 100, step: 2 },
     { k: 'brightness',      label: '夜晚亮度(%)',       min: 20, max: 100, step: 2 },
     { k: 'caveBright',      label: '洞穴亮度(%)',       min: 40, max: 200, step: 5 },
     { k: 'bulletSpeed',     label: '子弹速度',          min: 300, max: 1400, step: 20 },
