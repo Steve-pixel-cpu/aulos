@@ -2197,7 +2197,7 @@ var dayCount = 0;               /* nights elapsed — dusk increments it; now
    不落雨). level eases toward target over ~2s. SFX: looping filtered
    noise, gain follows level (rainSfx below). */
 var RAIN_MIN = 25, RAIN_MAX = 110;         /* seconds per rain event */
-var rain = { level: 0, target: 0, until: 0 };
+var rain = { level: 0, target: 0, until: 0, strength: 1 };
 function rainTick(dt, S) {
   var now = (typeof performance !== 'undefined' ? performance.now() : 0) / 1000;
   if (dayT >= 0 && now >= rain.until) {
@@ -2218,6 +2218,10 @@ function rainTick(dt, S) {
       /* biased spread: min + (max-min) * rand^1.6 — showers > storms */
       var dur = RAIN_MIN + (RAIN_MAX - RAIN_MIN) * Math.pow(Math.random(), 1.6);
       rain.until = now + dur;
+      /* v6 (USER: 雨量改为随机的, 雨声要随之适配): 每场雨掷一个强度
+         系数 0.45..1.6 (偏小场: rand^1.4), 整场保持——rain.level 会
+         乘它, 驱动雨丝密度 (drawRain) 与雨声音量/音色 (rainSfx) */
+      rain.strength = 0.45 + 1.15 * Math.pow(Math.random(), 1.4);
     } else {
       rain.until = now + 12;         /* re-roll every ~12s while dry */
     }
@@ -2227,11 +2231,12 @@ function rainTick(dt, S) {
   rain.level += (rain.target - rain.level) * k;
   if (rain.level < 0.002 && rain.target === 0) { rain.level = 0; }
 }
-/* rain SFX: filtered white-noise loop, gain tracks rain.level. Built
+/* rain SFX: filtered white-noise loop, gain tracks rain.level×strength
+   (v6: 声音随场强度适配 — 暴雨 gain 高 + 滤波低沉, 小雨反之)。Built
    once on first rain (AudioContext needs a user gesture first); the
-   source loops forever, we only ride the gain node. */
-var rainSfxNode = null;
-function rainSfx(level) {
+   source loops forever, we only ride the gain + filter nodes. */
+var rainSfxNode = null;   /* {gain, filter} */
+function rainSfx(level, strength) {
   try {
     var c = ac();
     if (!c) { return; }
@@ -2247,10 +2252,15 @@ function rainSfx(level) {
       var g = c.createGain(); g.gain.value = 0;
       src.connect(f); f.connect(g); g.connect(c.destination);
       src.start();
-      rainSfxNode = g;
+      rainSfxNode = { gain: g, filter: f };
     }
-    var vol = 0.11 * level;    /* 落地: 雨大声音大, 停雨静音 */
-    rainSfxNode.gain.setTargetAtTime(vol, c.currentTime, 0.4);
+    var eff = level * (strength || 1);
+    /* 音量: 基线 0.11 × 强度 (暴雨 1.6 → 0.176 醒目, 小雨 0.45 → 0.05 轻柔) */
+    var vol = 0.11 * eff;
+    /* 音色: 滤波频率随强度降 — 暴雨低沉轰鸣 (900Hz), 小雨高细沙沙 (1700Hz) */
+    var freq = 1700 - 800 * Math.min(1, eff);
+    rainSfxNode.gain.gain.setTargetAtTime(vol, c.currentTime, 0.4);
+    rainSfxNode.filter.frequency.setTargetAtTime(freq, c.currentTime, 0.8);
   } catch (e) { /* audio unavailable — stay silent */ }
 }
   var SKY_STOPS = [               /* [t, top, bottom] colors */
@@ -2305,7 +2315,7 @@ function rainSfx(level) {
     var g = S.rainG;
     if (!g) { return; }
     g.clear();
-    var lvl = rain.level;
+    var lvl = rain.level * rain.strength;   /* v6: 有效等级 = level × 场强度 */
     var tNow = (typeof performance !== 'undefined' ? performance.now() : 0);
     if (lvl <= 0.02) { splashes.length = 0; return; }
     var cam = S.cameras.main;
@@ -3193,13 +3203,14 @@ function rainSfx(level) {
     var w = ctx.canvas.width, h = ctx.canvas.height;
     var sky = skyColors(dayT);
     /* RAIN WASH (USER: 下雨): grey-blue调制 — push top/bot toward a
-       desaturated slate by rain.level; far streak mist below. */
-    if (rain.level > 0.01) {
+       desaturated slate by rain.level × strength (v6: 暴雨天更阴沉) */
+    var rainEff = rain.level * rain.strength;
+    if (rainEff > 0.01) {
       var RAIN_TOP = 0x3e4859, RAIN_BOT = 0x4e5868;
       sky = {
-        top: lerpColor(sky.top, RAIN_TOP, rain.level * 0.8),
-        bot: lerpColor(sky.bot, RAIN_BOT, rain.level * 0.7),
-        dayness: sky.dayness * (1 - rain.level * 0.35)
+        top: lerpColor(sky.top, RAIN_TOP, rainEff * 0.8),
+        bot: lerpColor(sky.bot, RAIN_BOT, rainEff * 0.7),
+        dayness: sky.dayness * (1 - rainEff * 0.35)
       };
     }
     var grad = ctx.createLinearGradient(0, 0, 0, h);
@@ -3210,8 +3221,8 @@ function rainSfx(level) {
     /* far rain mist: faint slanted strokes across the sky band —
        cheap parallax hint of weather before the near layer in the
        Phaser scene; seeded by frame time so it shimmers */
-    if (rain.level > 0.05) {
-      var nFar = Math.round(90 * rain.level);
+    if (rainEff > 0.05) {
+      var nFar = Math.round(90 * rainEff);
       ctx.strokeStyle = 'rgba(215,228,246,0.28)';
       ctx.lineWidth = 1.5;
       ctx.beginPath();
@@ -4080,7 +4091,7 @@ function rainSfx(level) {
     }
     dayT = (dayT + dt / DAY_LEN) % 1;
     rainTick(dt, this);        /* weather events (MC-style, above) */
-    rainSfx(rain.level);       /* looping noise, gain follows level */
+    rainSfx(rain.level, rain.strength);  /* 声随雨势: 音量+音色都跟 strength */
     var spd = 190;
     var mv = (window.__digAutoWalk || this.keysA.D.isDown || this.cursors.right.isDown ? 1 : 0) -
              (this.keysA.A.isDown || this.cursors.left.isDown ? 1 : 0);
