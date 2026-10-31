@@ -1349,12 +1349,17 @@
     border-color: var(--accent-border);
     box-shadow: var(--shadow-lg), 0 0 0 3px var(--accent-soft);
   }
-  /* 上下文容量卡: 输入卡顶部内嵌小卡, 首轮 turn_done 有数据才显示。
+  /* 上下文容量卡: 悬浮在输入卡上方(absolute, 不占文档流位置, 与截图中
+   * 浮在模型选择器上方的形态一致), 首轮 turn_done 有数据才显示。
    * 两行「标签+数值」夹一条细进度条; 占用 >75% 进度条转警示色 */
   #ctx-card {
+    position: absolute; left: 12px; right: 12px;
+    bottom: calc(100% + 8px);              /* 悬浮: 输入卡上缘外 8px */
     border: 1px solid var(--border); border-radius: var(--r-lg);
-    background: var(--surface-2);
-    padding: 8px 12px 9px; margin: 0 0 8px;
+    background: var(--pop-bg);
+    -webkit-backdrop-filter: blur(12px) saturate(1.4); backdrop-filter: blur(12px) saturate(1.4);
+    box-shadow: var(--shadow-md);
+    padding: 9px 13px 10px;
     display: none;
   }
   #ctx-card[data-show] { display: block; }
