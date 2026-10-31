@@ -2197,7 +2197,49 @@ var dayCount = 0;               /* nights elapsed — dusk increments it; now
    不落雨). level eases toward target over ~2s. SFX: looping filtered
    noise, gain follows level (rainSfx below). */
 var RAIN_MIN = 25, RAIN_MAX = 110;         /* seconds per rain event */
-var rain = { level: 0, target: 0, until: 0, strength: 1 };
+var rain = { level: 0, target: 0, until: 0, strength: 1,
+             storm: false, nextBolt: 0, flash: 0 };
+/* thunder (v7, USER: 雷雨好做吗 → 可以): storms (strength>1.25) roll
+   lightning bolts every 4-11s. flash ∈ 0..1 is the sky brightness
+   spike (drawSky paints it, decays fast with a double-flicker);
+   the CRACK itself is noise() low-fft rumble delayed 0.3-1.4s
+   (distance feel) with a quieter echo. */
+var STORM_MIN_STRENGTH = 1.25;
+function thunderCrack(strength) {
+  try {
+    var c = ac();
+    if (!c) { return; }
+    /* 主轰鸣: 低频长噪声, 音量随强度 */
+    var delay = 0.3 + Math.random() * 1.1;         /* 距离感 */
+    window.setTimeout(function () {
+      try {
+        var c2 = ac();
+        if (!c2) { return; }
+        var vol = 0.16 + 0.14 * (strength - 1);    /* 0.19..0.27 */
+        noise(1.4, vol, 220 + Math.random() * 90); /* 220-310Hz 轰 */
+        /* 回声: 0.5s 后一次更弱更低的余响 */
+        window.setTimeout(function () {
+          noise(0.9, vol * 0.45, 140 + Math.random() * 60);
+        }, 480);
+      } catch (e) {}
+    }, delay * 1000);
+  } catch (e) {}
+}
+function stormTick(dt) {
+  if (!rain.storm || rain.level < 0.5) {
+    rain.flash = Math.max(0, rain.flash - dt * 4);   /* 衰减 */
+    return;
+  }
+  var now = (typeof performance !== 'undefined' ? performance.now() : 0) / 1000;
+  if (now >= rain.nextBolt) {
+    rain.flash = 0.55 + 0.45 * Math.random();        /* 亮度随场次 */
+    rain.nextBolt = now + 4 + Math.random() * 7;     /* 4-11s */
+    thunderCrack(rain.strength);
+  }
+  /* double-flicker 衰减: 快掉到 40% 再慢掉到 0 (闪电的频闪感) */
+  if (rain.flash > 0.4) { rain.flash -= dt * 3.5; }
+  else { rain.flash = Math.max(0, rain.flash - dt * 1.6); }
+}
 function rainTick(dt, S) {
   var now = (typeof performance !== 'undefined' ? performance.now() : 0) / 1000;
   if (dayT >= 0 && now >= rain.until) {
@@ -2222,6 +2264,9 @@ function rainTick(dt, S) {
          系数 0.45..1.6 (偏小场: rand^1.4), 整场保持——rain.level 会
          乘它, 驱动雨丝密度 (drawRain) 与雨声音量/音色 (rainSfx) */
       rain.strength = 0.45 + 1.15 * Math.pow(Math.random(), 1.4);
+      /* v7 雷雨: 强场 (≥1.25) 自动升级为雷雨 — 闪电 + 雷声 */
+      rain.storm = rain.strength >= STORM_MIN_STRENGTH;
+      rain.nextBolt = now + 1.5 + Math.random() * 4;
     } else {
       rain.until = now + 12;         /* re-roll every ~12s while dry */
     }
@@ -3218,6 +3263,12 @@ function rainSfx(level, strength) {
     grad.addColorStop(1, cssColor(sky.bot));
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, w, h);
+    /* LIGHTNING FLASH (v7 雷雨): stormTick 驱动的 sky 亮度尖峰 —
+       白层叠上去, flash 越大越亮; 冷白微偏蓝 (闪电色温) */
+    if (rain.flash > 0.02) {
+      ctx.fillStyle = 'rgba(225,235,255,' + (rain.flash * 0.55).toFixed(3) + ')';
+      ctx.fillRect(0, 0, w, h);
+    }
     /* far rain mist: faint slanted strokes across the sky band —
        cheap parallax hint of weather before the near layer in the
        Phaser scene; seeded by frame time so it shimmers */
@@ -4091,6 +4142,7 @@ function rainSfx(level, strength) {
     }
     dayT = (dayT + dt / DAY_LEN) % 1;
     rainTick(dt, this);        /* weather events (MC-style, above) */
+    stormTick(dt);             /* lightning flash decay + bolt schedule */
     rainSfx(rain.level, rain.strength);  /* 声随雨势: 音量+音色都跟 strength */
     var spd = 190;
     var mv = (window.__digAutoWalk || this.keysA.D.isDown || this.cursors.right.isDown ? 1 : 0) -
