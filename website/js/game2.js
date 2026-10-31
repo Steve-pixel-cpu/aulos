@@ -3453,8 +3453,12 @@ function rainSfx(level, strength) {
             改为抛物线: u = ang/π ∈ 0..1, 高度 = 起点低 + (终点低-
             起点低)*u - 4*拱高*u*(1-u)——标准的对称抛物线弧, 单调
             升到正午再单调降, 全程无折返。世界锚定不变: 屏幕坐标
-            = 世界Y - scrollY, 下洞整条弧上移出屏, 跳起下移 */
-      var cxS = w * (-0.06 + 1.12 * (ang / Math.PI));
+            = 世界Y - scrollY, 下洞整条弧上移出屏, 跳起下移
+         x (v8.2, USER 同意加微视差): x 加 0.05 视差系数 —
+            世界横向 ~3300px (WORLD_W*TILE), 0.05×超出彩窗的位移
+            = 跑全图太阳最多偏 ~几像素, 有一点点世界感又不晃眼 */
+      var parX = cam.scrollX * 0.05;
+      var cxS = w * (-0.06 + 1.12 * (ang / Math.PI)) - parX % (w * 0.12);
       var pcCol3 = Math.max(0, Math.min(WORLD_W - 1,
         Math.floor(S.player.x / TILE)));
       var surfW3 = world.surfaceY[pcCol3] * TILE;
