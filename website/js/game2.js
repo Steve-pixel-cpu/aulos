@@ -2349,6 +2349,7 @@ function bgmUpdate(S) {
      口向下看得到地表时仍是地表 BGM。 */
   var footRow2 = surf - S.cameras.main.scrollY;
   var under = footRow2 < -8;                   /* 地表线滚出屏顶 8px 缓冲 */
+  var raining = rain.level > 0.25;             /* 雨起 25% 即切雨环境声 */
   var want = under ? 'bgmCave'
     : raining ? 'bgmRain'
     : (dayT > 0.5 && dayT < 0.99 ? 'bgmNight' : 'bgmSurface');
