@@ -369,13 +369,6 @@
     this.load.image('zombie1', 'assets/tiny/zombie1.png?v=t4');
     this.load.image('skeleton', 'assets/tiny/skeleton0.png?v=t4');     /* bone archer, same CC0 sheet */
     this.load.image('skeleton1', 'assets/tiny/skeleton1.png?v=t4');
-    /* medieval melee tier (v10.3, USER: 中世纪素材的怪) — CC0 Kenney
-       Tiny Dungeon tiles (16x16 → 48px NEAREST), 2 帧 = 原帧 + 镜像 */
-    var MEDIEVAL = ['goblin', 'orc', 'knight', 'minotaur', 'werewolf', 'troll'];
-    MEDIEVAL.forEach(function (mk) {
-      this.load.image(mk, 'assets/tiny/medieval/' + mk + '0.png?v=m1');
-      this.load.image(mk + '1', 'assets/tiny/medieval/' + mk + '1.png?v=m1');
-    }, this);
     this.load.image('hydra', 'assets/tiny/hydra0.png?v=t2');           /* three heads */
     this.load.image('hydra1', 'assets/tiny/hydra1.png?v=t2');
     /* GIANT composites (64/48px, multi-part, procedurally assembled
@@ -1153,16 +1146,10 @@
       fly = kind === 'eyelet' || kind === 'spitter' || kind === 'bugW';
     } else if (dayT > 0.5) {
       /* NIGHT surface: bats join, eyelets scout, wisps haunt; zombies
-         shamble out after dark, skeletons patrol the graveyard shift.
-         v10.3: medieval melee tier (goblin/orc/knight/minotaur/
-         werewolf/troll) 加入夜巡 — 24% 概率, 与不死族分流 */
-      kind = roll < 0.18 ? 'bug' : roll < 0.32 ? 'bat'
-        : roll < 0.44 ? 'zombie' : roll < 0.54 ? 'skeleton'
-        : roll < 0.66 ? 'eyelet' : roll < 0.76 ? 'spitter'
-        : (function () {
-            var med = ['goblin', 'orc', 'knight', 'minotaur', 'werewolf', 'troll'];
-            return med[Math.floor(Math.random() * med.length)];
-          })();
+         shamble out after dark, skeletons patrol the graveyard shift */
+      kind = roll < 0.24 ? 'bug' : roll < 0.42 ? 'bat'
+        : roll < 0.56 ? 'zombie' : roll < 0.68 ? 'skeleton'
+        : roll < 0.84 ? 'eyelet' : 'spitter';
       fly = kind === 'bat' || kind === 'eyelet' || kind === 'spitter';
     } else {
       kind = roll < 0.6 ? 'bug' : roll < 0.9 ? 'bat' : 'spitter';
@@ -1238,9 +1225,6 @@
       : (kind === 'wraith' || kind === 'batF') ? 2.1
       : (kind === 'zombie') ? 2.6                                     /* 24x41 src (OGA Reemax sheet) -> big walker */
       : (kind === 'skeleton') ? 2.4                                   /* 24x48 src, same sheet */
-      : (kind === 'goblin' || kind === 'orc' || kind === 'knight' ||
-         kind === 'minotaur' || kind === 'werewolf' || kind === 'troll')
-        ? 3.0                                                         /* 16px src (Kenney Tiny) -> 48px melee */
       : 1.9;
     var elite = (depth > 60 && Math.random() < 0.15 && kind.indexOf('big') < 0 &&
                  kind !== 'bhydra' && kind !== 'dlord');
