@@ -2190,32 +2190,61 @@ var dayCount = 0;               /* nights elapsed — dusk increments it; now
                                    phases were dropped, USER: "不用做月
                                    相了") */
 /* ---- RAIN (USER: "彩蛋游戏能加下雨的效果吗") ------------------------
-   Whole-day weather: at dawn a dice roll (CFG.rainChance %) decides if
-   today rains; level eases toward that decision over ~2s so rain
-   fades in/out instead of popping. Blood-moon nights never rain (the
-   crimson sky IS the mood; also 传统说法血月不落雨). level is read by
-   drawSky (grey-blue wash + far mist streaks) and by the scene layer
-   (near rain streaks, RAIN_TICK below). */
-var rain = { level: 0, target: 0, lastDayFrac: 0 };
+   Minecraft-style weather EVENTS, not whole-day states: at dawn a dice
+   roll (CFG.rainChance %) starts a rain of random length (RAIN_MIN..
+   RAIN_MAX seconds, log-ish spread — short showers common, long storms
+   rare); rest of the day stays dry. Blood-moon nights never rain (血月
+   不落雨). level eases toward target over ~2s. SFX: looping filtered
+   noise, gain follows level (rainSfx below). */
+var RAIN_MIN = 25, RAIN_MAX = 110;         /* seconds per rain event */
+var rain = { level: 0, target: 0, until: 0 };
 function rainTick(dt, S) {
-  /* day wrap → decide today's weather. dayT loops 0..1; a wrap is
-     dayT shrinking (e.g. 0.98 → 0.01). dayT<0 means pre-init (hash
-     start) — skip. Blood moon is decided at dusk of the SAME cycle
-     (its night spans 0.5..1.0), so by the time the day wraps the
-     flag already covers tonight; checking it here keeps the whole
-     blood-moon night dry. */
-  if (dayT >= 0) {
-    if (dayT < rain.lastDayFrac - 0.5) {
-      var raining = Math.random() < CFG.rainChance / 100;
-      if (S && S.bloodMoon) { raining = false; }   /* 血月夜不落雨 */
-      rain.target = raining ? 1 : 0;
+  var now = (typeof performance !== 'undefined' ? performance.now() : 0) / 1000;
+  if (dayT >= 0 && now >= rain.until) {
+    /* expired (or boot): roll the NEXT event window. dawn-only is too
+       rigid for short events — roll whenever idle, chance per tick
+       scaled by dt so CFG.rainChance ≈ % of days that see rain */
+    var raining = Math.random() < CFG.rainChance / 100 * dt / 30;
+    if (S && S.bloodMoon) { raining = false; }   /* 血月夜不落雨 */
+    rain.target = raining ? 1 : 0;
+    if (raining) {
+      /* biased spread: min + (max-min) * rand^1.6 — showers > storms */
+      var dur = RAIN_MIN + (RAIN_MAX - RAIN_MIN) * Math.pow(Math.random(), 1.6);
+      rain.until = now + dur;
+    } else {
+      rain.until = now + 12;         /* re-roll every ~12s while dry */
     }
-    rain.lastDayFrac = dayT;
   }
   /* ease level → target (~2s to ~95%) — frame-rate independent */
   var k = 1 - Math.exp(-dt * 2.2);
   rain.level += (rain.target - rain.level) * k;
   if (rain.level < 0.002 && rain.target === 0) { rain.level = 0; }
+}
+/* rain SFX: filtered white-noise loop, gain tracks rain.level. Built
+   once on first rain (AudioContext needs a user gesture first); the
+   source loops forever, we only ride the gain node. */
+var rainSfxNode = null;
+function rainSfx(level) {
+  try {
+    var c = ac();
+    if (!c) { return; }
+    if (!rainSfxNode) {
+      var n = Math.floor(c.sampleRate * 2);
+      var buf = c.createBuffer(1, n, c.sampleRate);
+      var d = buf.getChannelData(0);
+      for (var i = 0; i < n; i++) { d[i] = Math.random() * 2 - 1; }
+      var src = c.createBufferSource();
+      src.buffer = buf; src.loop = true;
+      var f = c.createBiquadFilter(); f.type = 'bandpass';
+      f.frequency.value = 1400; f.Q.value = 0.45;   /* soft "shhh" */
+      var g = c.createGain(); g.gain.value = 0;
+      src.connect(f); f.connect(g); g.connect(c.destination);
+      src.start();
+      rainSfxNode = g;
+    }
+    var vol = 0.11 * level;    /* 落地: 雨大声音大, 停雨静音 */
+    rainSfxNode.gain.setTargetAtTime(vol, c.currentTime, 0.4);
+  } catch (e) { /* audio unavailable — stay silent */ }
 }
   var SKY_STOPS = [               /* [t, top, bottom] colors */
     [0.00, 0x1a2440, 0x3a3a5c],   /* pre-dawn */
@@ -2263,25 +2292,31 @@ function rainTick(dt, S) {
      column it crosses so pits/overhangs read dry. Skipped entirely
      when the player is underground (feet below their surface column)
      or rain.level ~0. Density scales with CFG.rainIntensity. ---- */
+  /* splash pool: impact points live ~130ms — {x, y, t0} screen-space */
+  var splashes = [];
   function drawRain(S) {
     var g = S.rainG;
     if (!g) { return; }
     g.clear();
     var lvl = rain.level;
-    if (lvl <= 0.02) { return; }
+    var tNow = (typeof performance !== 'undefined' ? performance.now() : 0);
+    if (lvl <= 0.02) { splashes.length = 0; return; }
     var cam = S.cameras.main;
     var pCol = Math.max(0, Math.min(WORLD_W - 1, Math.floor(S.player.x / TILE)));
     var pSurf = world.surfaceY[pCol] * TILE;
-    if (S.player.y > pSurf + 8) { return; }        /* underground: no rain */
+    if (S.player.y > pSurf + 8) { splashes.length = 0; return; }  /* underground */
     var vw = cam.width, vh = cam.height;
     var n = Math.round(150 * (CFG.rainIntensity / 100) * lvl);
-    var tNow = (typeof performance !== 'undefined' ? performance.now() : 0);
     /* near-surface? (player within a screen of their surface column)
-       → clip streak feet at the surface line; high above / camera
-       tilted to sky → no clip, rain crosses the whole screen.
-       scrollFactor(0): foot is already screen-space. */
+       → clip streak feet at the surface line and spawn splashes on
+       impact; high above / camera tilted to sky → no clip, rain
+       crosses the whole screen. scrollFactor(0): foot is screen-space. */
     var nearSurf = Math.abs(S.player.y - pSurf) < vh;
     var footRow = pSurf - cam.scrollY;
+    /* prune expired splashes once per frame */
+    for (var sp = splashes.length - 1; sp >= 0; sp--) {
+      if (tNow - splashes[sp].t0 > 130) { splashes.splice(sp, 1); }
+    }
     /* 两档亮度: 亮芯 (宽 2px, 更不透明) 为主, 偶有高亮滴 (每 9 条 1 条,
        3px) — 单靠 1px 淡线在亮天空下几乎看不见 (v1 教训: 雨线不明显) */
     for (var pass = 0; pass < 2; pass++) {
@@ -2301,11 +2336,31 @@ function rainTick(dt, S) {
           var wx = cam.scrollX + sx;
           var col = Math.max(0, Math.min(WORLD_W - 1, Math.floor(wx / TILE)));
           var foot = world.surfaceY[col] * TILE - cam.scrollY;
-          y2 = Math.min(y2, Math.max(foot, footRow - vh));  /* 防负值跳变 */
+          var hit = y2 >= foot && sy < foot;     /* crosses the ground line */
+          y2 = Math.min(y2, Math.max(foot, footRow - vh));
           if (y2 <= sy) { continue; }
+          /* impact → maybe a splash (sparse: every ~7th, cap 64) */
+          if (hit && splashes.length < 64 && (i % 7) === pass) {
+            splashes.push({ x: sx - (y2 - sy) * 0.28, y: y2, t0: tNow });
+          }
         }
         g.moveTo(sx, sy);
-        g.lineTo(sx - len * 0.28, y2);
+        g.lineTo(sx - (y2 - sy) * 0.28, y2);
+      }
+      g.strokePath();
+    }
+    /* SPLASHES: shallow "v" opening upward, widening + fading as it
+       ages (~130ms) — reads as a droplet bursting on the ground */
+    if (splashes.length) {
+      g.lineStyle(1, 0xdfe9f7, 0.5 * lvl);
+      g.beginPath();
+      for (var k2 = 0; k2 < splashes.length; k2++) {
+        var s2 = splashes[k2];
+        var age = (tNow - s2.t0) / 130;            /* 0..1 */
+        var r2 = 1.5 + age * 2.5;
+        g.moveTo(s2.x - r2, s2.y - 1 - age * 1.5);
+        g.lineTo(s2.x, s2.y - 0.5);
+        g.lineTo(s2.x + r2, s2.y - 1 - age * 1.5);
       }
       g.strokePath();
     }
@@ -3933,7 +3988,8 @@ function rainTick(dt, S) {
         : this.player.y;
     }
     dayT = (dayT + dt / DAY_LEN) % 1;
-    rainTick(dt, this);        /* weather state machine (above) */
+    rainTick(dt, this);        /* weather events (MC-style, above) */
+    rainSfx(rain.level);       /* looping noise, gain follows level */
     var spd = 190;
     var mv = (window.__digAutoWalk || this.keysA.D.isDown || this.cursors.right.isDown ? 1 : 0) -
              (this.keysA.A.isDown || this.cursors.left.isDown ? 1 : 0);
