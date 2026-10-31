@@ -1967,10 +1967,9 @@
   .pill > svg { flex: none; }
   .pill.mode { color: var(--accent); }
   .pill.mode > svg { margin-left: 3px; }
-  .pill.effort .ring {
-    width: 12px; height: 12px; border: 1.7px solid var(--text-3); border-radius: 50%;
-    flex: none; margin-left: 3px;
-  }
+  .pill.effort { color: var(--accent); }
+  .pill.effort .effort-ic { flex: none; margin-left: 3px; color: var(--text-3); }
+  .pill.effort .dd { color: var(--text-2); }
   .pill .model-name { font-size: calc(12.5px * var(--fs-ui)); color: var(--text-2); padding: 0 4px; }
 
   /* 自定义下拉: 原生 select 的弹层无法定制样式，深浅主题下都突兀 */
