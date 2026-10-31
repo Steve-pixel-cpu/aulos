@@ -916,10 +916,15 @@
     box-shadow: 0 1px 3px rgba(0, 0, 0, .10), 0 4px 14px rgba(0, 0, 0, .07);
   }
   .code-head {
-    display: flex; align-items: center; justify-content: space-between;
+    display: flex; align-items: center;
+    gap: 8px;
     padding: 6px 8px 6px 13px; background: var(--code-head);
     border-bottom: 1px solid var(--border);
   }
+  /* 右侧操作组: 展开/收起 + 复制, 成组贴右(margin-left:auto 推开),
+   * 语言标签独占左侧; 旧版按钮悬浮代码块底部中央, 挡最后一行代码 */
+  .code-head .code-expand, .code-head .code-copy { margin-left: auto; }
+  .code-head .code-expand + .code-copy { margin-left: 0; }   /* 成组: 复制紧跟展开 */
   .code-lang {
     font-size: calc(11px * var(--fs-ui)); color: var(--text-3); font-weight: 600;
     letter-spacing: .05em; text-transform: uppercase;
@@ -3611,20 +3616,17 @@ body.col-resizing, body.col-resizing * { cursor: col-resize !important; }
     color: var(--accent);
     background: var(--accent-soft);
   }
-  /* 展开按钮: 底部居中悬浮胶囊, 盖在渐隐遮罩上 */
+  /* 展开/收起按钮: 位于代码块头部栏(复制按钮左侧), 不悬浮在正文上
+   * ——旧版悬浮在底部中央会挡住最后一行代码 */
   .code-expand {
-    position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%);
     display: inline-flex; align-items: center; gap: 5px;
-    border: 1px solid var(--border-strong); border-radius: 999px;
-    padding: 4px 13px; font-size: calc(11.5px * var(--fs-ui)); color: var(--text-2);
-    background: var(--pop-bg);
-    -webkit-backdrop-filter: blur(12px) saturate(1.4); backdrop-filter: blur(12px) saturate(1.4);
-    box-shadow: var(--shadow-md);
-    transition: all .15s;
+    border: none; background: none; border-radius: 6px;
+    padding: 3.5px 8px; font-size: calc(11.5px * var(--fs-ui)); color: var(--text-3);
+    transition: all .12s;
   }
   .code-expand:hover {
-    border-color: var(--accent-border); color: var(--accent);
-    background: var(--accent-soft);
+    color: var(--accent);
+    background: var(--surface-3);
   }
   .code-expand svg { transition: transform .25s cubic-bezier(.16, 1, .3, 1); }
   .code-expand.open svg { transform: rotate(180deg); }

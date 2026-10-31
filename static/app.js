@@ -464,7 +464,10 @@ function setupCollapse(wrap, pre) {
       pre.style.maxHeight = open ? "none" : CODE_COLLAPSE_MAX + "px";
       btn.querySelector("span").textContent = open ? t("app.014") : t("app.015");
     });
-    wrap.appendChild(btn);
+    // 挂头部栏复制按钮左侧: 正文上方, 不遮挡任何代码行
+    const head = wrap.querySelector(".code-head");
+    const copyBtn = head.querySelector(".code-copy");
+    head.insertBefore(btn, copyBtn);
   });
 }
 /* 流式收口折叠: 对气泡内所有「流式期间只装饰未折叠」的代码块补折叠。
