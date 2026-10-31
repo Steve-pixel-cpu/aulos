@@ -943,11 +943,15 @@
     }
     this.hudCtx = document.getElementById('eggHudOverlay').getContext('2d');
     this.skyCtx = document.getElementById('eggSkyOverlay').getContext('2d');
-    /* RAIN near layer (USER: 下雨): Graphics above terrain/entities,
-       below HUD (HUD is a DOM canvas, always on top). Camera-scoped:
-       streaks are drawn in SCREEN space each frame, clipped at the
-       live surface line so shafts/pits stay dry. */
-    this.rainG = this.add.graphics().setDepth(90);
+    /* RAIN near layer (USER: 下雨): Graphics pinned to the camera
+       (scrollFactor 0 — streak coords ARE screen pixels, no scroll
+       compensation; v1 bug: world-scrollFactor graphics + screen-space
+       math = streaks slid off with the camera, only a top band
+       showed /贴图区看着像被挡住). Above terrain/entities, below HUD
+       (DOM). Per-streak surface clipping applies only while the
+       player is near the surface — looking up at sky, rain crosses
+       the full screen. */
+    this.rainG = this.add.graphics().setDepth(90).setScrollFactor(0);
     /* ---- BACKDROP AS PHASER OBJECTS (framework-native parallax) -----
        7 TileSprites, one per layer, each setScrollFactor(fx, 0):
          • horizontal: engine-native parallax — camera movement drives
@@ -2272,6 +2276,12 @@ function rainTick(dt, S) {
     var vw = cam.width, vh = cam.height;
     var n = Math.round(150 * (CFG.rainIntensity / 100) * lvl);
     var tNow = (typeof performance !== 'undefined' ? performance.now() : 0);
+    /* near-surface? (player within a screen of their surface column)
+       → clip streak feet at the surface line; high above / camera
+       tilted to sky → no clip, rain crosses the whole screen.
+       scrollFactor(0): foot is already screen-space. */
+    var nearSurf = Math.abs(S.player.y - pSurf) < vh;
+    var footRow = pSurf - cam.scrollY;
     /* 两档亮度: 亮芯 (宽 2px, 更不透明) 为主, 偶有高亮滴 (每 9 条 1 条,
        3px) — 单靠 1px 淡线在亮天空下几乎看不见 (v1 教训: 雨线不明显) */
     for (var pass = 0; pass < 2; pass++) {
@@ -2285,12 +2295,15 @@ function rainTick(dt, S) {
         var spd = 0.9 + (i % 5) * 0.13;
         var sx = ((i * 233.7 + tNow * 0.5 * spd) % (vw + 60)) - 30;
         var sy = ((i * 149.3 + tNow * spd * 0.95) % (vh + 90)) - 45;
-        var wx = cam.scrollX + sx, wy = cam.scrollY + sy;
-        var col = Math.max(0, Math.min(WORLD_W - 1, Math.floor(wx / TILE)));
-        var foot = world.surfaceY[col] * TILE - cam.scrollY;
         var len = 18 + (i % 6) * 3;              /* 18-33px: 更长才读得出雨 */
-        var y2 = Math.min(sy + len, foot);
-        if (y2 <= sy) { continue; }              /* already past surface */
+        var y2 = sy + len;
+        if (nearSurf) {                          /* 贴地: 雨落在外露地表为止 */
+          var wx = cam.scrollX + sx;
+          var col = Math.max(0, Math.min(WORLD_W - 1, Math.floor(wx / TILE)));
+          var foot = world.surfaceY[col] * TILE - cam.scrollY;
+          y2 = Math.min(y2, Math.max(foot, footRow - vh));  /* 防负值跳变 */
+          if (y2 <= sy) { continue; }
+        }
         g.moveTo(sx, sy);
         g.lineTo(sx - len * 0.28, y2);
       }
