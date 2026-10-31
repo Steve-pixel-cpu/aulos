@@ -2311,15 +2311,19 @@ function rainSfx(level) {
     var cam = S.cameras.main;
     var pCol = Math.max(0, Math.min(WORLD_W - 1, Math.floor(S.player.x / TILE)));
     var pSurf = world.surfaceY[pCol] * TILE;
-    if (S.player.y > pSurf + 8) { splashes.length = 0; return; }  /* underground */
+    /* v5 BUG (USER: 下洞时地表看不到雨水溅落): 上一版玩家脚比地表低
+       8px 就整层 return——挖掉脚下方块立刻断雨, 洞口地表的雨/溅射
+       一起消失。雨应绑定相机视野: 只要玩家所处列的地表线还在屏幕
+       内 (还能看到天), 雨就继续落在那道地表上; 深到地表滚出屏幕
+       (footRow < 0) 才真正停。 */
+    var footRow = pSurf - cam.scrollY;
+    if (footRow < -40) { splashes.length = 0; return; }  /* 地表已滚出屏顶 */
     var vw = cam.width, vh = cam.height;
     var n = Math.round(150 * (CFG.rainIntensity / 100) * lvl);
-    /* near-surface? (player within a screen of their surface column)
-       → clip streak feet at the surface line and spawn splashes on
-       impact; high above / camera tilted to sky → no clip, rain
-       crosses the whole screen. scrollFactor(0): foot is screen-space. */
-    var nearSurf = Math.abs(S.player.y - pSurf) < vh;
-    var footRow = pSurf - cam.scrollY;
+    /* near-surface? — 玩家在开阔处 (脚下 1.5 tile 内是地表) 时雨丝
+       在地表线折断 + 生成溅射; 下洞后地表在屏幕内仍可见 → nearSurf
+       改判"地表线是否在屏幕内" (footRow > 0), 洞口雨继续落到洞口 */
+    var nearSurf = footRow > -40;
     /* prune expired splashes once per frame */
     for (var sp = splashes.length - 1; sp >= 0; sp--) {
       if (tNow - splashes[sp].t0 > 260) { splashes.splice(sp, 1); }
