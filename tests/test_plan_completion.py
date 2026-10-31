@@ -69,6 +69,10 @@ def server_env(monkeypatch, tmp_path):
     st = SessionStore(storage_dir=tmp_path)
     monkeypatch.setattr(server, "store", st, raising=False)
     server._pending_sessions.clear()
+    # _sessions(WS 会话缓存)一并换空: WS 连接若命中残留的真实会话
+    # WebSession, 其 runtime 持有的是旧 store 引用, 消息会写进真实
+    # 会话目录（现场: ~/.aulos/sessions 被写入 plan-impl/plan-cut.jsonl）
+    monkeypatch.setattr(server, "_sessions", {}, raising=False)
     monkeypatch.setattr(plans_mod, "PLANS_DIR", tmp_path / "plans", raising=False)
 
     from aulos.api_client import (ApiClient, MessageStopEvent,

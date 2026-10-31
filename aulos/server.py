@@ -1964,7 +1964,9 @@ async def api_list_sessions():
                       "thinking_level": _session_thinking(sid),
                       "model_provider": _session_model(sid, meta)[0],
                       "model_id": _session_model(sid, meta)[1]})
-    items.sort(key=lambda item: item["id"], reverse=True)  # 时间戳字典序即时间序，最新在前
+    # 按最近活跃排序: mtime=最后一条消息落盘时间为主键(启动恢复/「最新会话」
+    # 语义都是最近活跃而非最新创建), id 作同秒创建的兜底; pending(mtime=0)沉底
+    items.sort(key=lambda item: (item["mtime"], item["id"]), reverse=True)
     return {"sessions": items}
 
 

@@ -1808,8 +1808,12 @@ def main():
         if not sessions:
             print(c_red("✗ 没有历史会话"))
             return
-        # 会话 id 是 %Y%m%d-%H%M%S 时间戳, 字典序即时间序, max() 即最近
-        start(session_store=session_store, session_id=max(sessions))
+        # 与 Web 端 /api/sessions 同口径: 最近活跃(最后一条消息落盘时间)
+        # 优先, id(创建时间戳)兜底——「继续上次」是继续最近对话过的会话,
+        # 不是最新创建的会话
+        sid = max(sessions, key=lambda s: (
+            session_store.get_session_meta(s)["last_activity"], s))
+        start(session_store=session_store, session_id=sid)
         return
 
     if head == "--resume":

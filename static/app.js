@@ -2584,10 +2584,14 @@ window.addEventListener("storage", (e) => {
   await loadSettings();
   await loadSessions();
   refreshSkillCache();   // 斜杠补全数据源: 预取一次（cwd 视图; 切会话后按需重拉）
-  // 默认选最近的会话（列表已倒序，第一个即最新）; 没有会话则进入草稿态。
+  // 恢复上次关闭时的对话: selectSession 会把当前会话写入 xc-cur-session,
+  // 启动时优先精确恢复它; 记录已失效(被删/仅桌宠)则回退列表第一条——
+  // 列表已按最近活跃倒序, 第一条即最近对话过的会话。
   // 桌宠专属会话要跳过——它不在任务列表里, 却常常是最新(悬浮输入框一直
   // 在用), 不跳过的话每次重启都自动打开它
-  const first = state.sessions.find(s => s.id !== petTaskSidSaved());
+  const lastSid = localStorage.getItem("xc-cur-session");
+  const last = lastSid && state.sessions.find(s => s.id === lastSid && s.id !== petTaskSidSaved());
+  const first = last || state.sessions.find(s => s.id !== petTaskSidSaved());
   if (first) await selectSession(first.id);
   else startDraft();
   if (state.configured === false) openOnboarding();   // 首次使用: 先引导配置供应商
