@@ -2477,6 +2477,19 @@ function rainSfx(level, strength) {
   function dayFactor(t) {
     return t >= 0.5 ? 0 : Math.sin(t / 0.5 * Math.PI);
   }
+  /* TWILIGHT (v9.8, USER: 太阳落下会很黑, 月亮出来突然变亮):
+     dayFactor 在 0.5 瞬时归零 (sin 截断), 但天空晚霞拖到 0.55、
+     月亮/星星 0.5 即刻绘制 — 地表光照先黑, sky 又亮起来, 观感
+     = 「落日黑一下, 月亮出来突然变亮」。twilight 把这段落差补成
+     连续曲线: 0.5→0.62 从 1 平滑降到 0 (日落后月光余晖), 黎明前
+     0.95→1.0 从 0 升回 1 (黎明预亮)。paintLight 用它让地表亮度
+     跟着晚霞一起衰减, 不再跳变 */
+  function twilight(t) {
+    if (t >= 0.5 && t < 0.62) { return 1 - (t - 0.5) / 0.12; }
+    if (t >= 0.95) { return 1 - (t - 0.95) / 0.05; }
+    if (t < 0.02) { return 1 - (0.02 - t) / 0.02; }
+    return 0;
+  }
   /* ---- near rain layer: camera-space streaks on a Phaser Graphics.
      Screen-space drawing (worldPoint of camera corners), each streak
      falls along a slant; a streak's foot is clipped at the surface
@@ -3016,7 +3029,13 @@ function rainSfx(level, strength) {
        (cave floor 独立)。雷雨判定: rain.storm && rain.level>0.3 */
     var moonLit = !(dayT > 0.5 && dayT < 0.99) ||
                   ((S && S.bloodMoon) || (rain.storm && rain.level > 0.3)) ? 0 : 1;
-    bMin *= moonLit;
+    /* v9.8: floor 再乘 twilight 拖尾 — 日落瞬间 floor 不立即生效,
+       而是随晚霞 (0.5→0.62) 从 100% 滑到 0%; 黎明前 (0.95→1.0)
+       反向滑回, 月亮升起的光感与天空同步, 消灭「黑一下又亮」 */
+    /* 0.49→0.50 仍有小反向跳 (day 衰减快于 twilight 抬升), 把 twilight
+       系数从 0.25/0.75 再压 — floor 顶点 0.315, 与 day 衰减尾 0.16 差
+       0.15, 视觉上是「月光渐显」而非跳变 */
+    bMin *= moonLit * (0.25 + 0.75 * twilight(dayT));
     var bright = bMin + (1 - bMin) * day;      /* night floor .. 1 noon */
     var sR = Math.round(surf[0] * bright),
         sG = Math.round(surf[1] * bright),
