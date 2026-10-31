@@ -2322,22 +2322,29 @@ function rainSfx(level) {
     var footRow = pSurf - cam.scrollY;
     /* prune expired splashes once per frame */
     for (var sp = splashes.length - 1; sp >= 0; sp--) {
-      if (tNow - splashes[sp].t0 > 130) { splashes.splice(sp, 1); }
+      if (tNow - splashes[sp].t0 > 260) { splashes.splice(sp, 1); }
     }
     /* 两档亮度: 亮芯 (宽 2px, 更不透明) 为主, 偶有高亮滴 (每 9 条 1 条,
-       3px) — 单靠 1px 淡线在亮天空下几乎看不见 (v1 教训: 雨线不明显) */
-    for (var pass = 0; pass < 2; pass++) {
-      g.lineStyle(pass === 0 ? 2 : 3, 0xdfe9f7,
-        (pass === 0 ? 0.55 : 0.75) * lvl);
+       3px) — 单靠 1px 淡线在亮天空下几乎看不见 (v1 教训: 雨线不明显)
+       v4 (USER: 雨线太丑): 均匀 hash 网格看着像噪点。改为
+       Terraria 式: 细 (1.5px)、更长更斜 (斜率 0.42)、三档速度层次
+       (远/中/近 = 视差感)、颜色带蓝 (0xaecbe8) 而非纯白 */
+    var SLANT = 0.42;                          /* dx per +1y — 更斜更像雨 */
+    for (var pass = 0; pass < 3; pass++) {
+      /* 每层 1/3 条数, 越近越快越长越亮 (速度视差) */
+      var layerN = Math.floor(n / 3) + (pass === 0 ? n % 3 : 0);
+      var lSpd = 0.75 + pass * 0.22;           /* 0.75 / 0.97 / 1.19 */
+      var lLen = 16 + pass * 6;                /* 16 / 22 / 28 (+hash) */
+      var lAlpha = [0.34, 0.46, 0.6][pass] * lvl;
+      var lWidth = pass === 2 ? 2 : 1.5;
+      g.lineStyle(lWidth, 0xaecbe8, lAlpha);
       g.beginPath();
-      for (var i = pass; i < n; i += 2) {
-        /* hash-scatter: stable per-index, animated by time — the
-           streak wraps back to the top after crossing the view.
-           速度系数提到 ~0.9: 雨要有「落」的速度感, 不能像飘 (v1 太慢) */
-        var spd = 0.9 + (i % 5) * 0.13;
-        var sx = ((i * 233.7 + tNow * 0.5 * spd) % (vw + 60)) - 30;
-        var sy = ((i * 149.3 + tNow * spd * 0.95) % (vh + 90)) - 45;
-        var len = 18 + (i % 6) * 3;              /* 18-33px: 更长才读得出雨 */
+      for (var i = 0; i < layerN; i++) {
+        /* hash-scatter per layer: 层内独立散布, 避免三层重叠成网格 */
+        var ii = i * 3 + pass * 17;
+        var sx = ((ii * 233.7 + tNow * 0.42 * lSpd) % (vw + 90)) - 45;
+        var sy = ((ii * 149.3 + tNow * lSpd * 1.05) % (vh + 120)) - 60;
+        var len = lLen + (ii % 5) * 3;
         var y2 = sy + len;
         if (nearSurf) {                          /* 贴地: 雨落在外露地表为止 */
           var wx = cam.scrollX + sx;
@@ -2346,28 +2353,45 @@ function rainSfx(level) {
           var hit = y2 >= foot && sy < foot;     /* crosses the ground line */
           y2 = Math.min(y2, Math.max(foot, footRow - vh));
           if (y2 <= sy) { continue; }
-          /* impact → maybe a splash (sparse: every ~7th, cap 64) */
-          if (hit && splashes.length < 64 && (i % 7) === pass) {
-            splashes.push({ x: sx - (y2 - sy) * 0.28, y: y2, t0: tNow });
+          /* impact → a splash (v4: USER 不明显 — 提高触发率到 1/3,
+             池上限 96, 带弹起小水珠) */
+          if (hit && splashes.length < 96 && (i % 3) === 0) {
+            splashes.push({ x: sx - (y2 - sy) * SLANT, y: y2, t0: tNow });
           }
         }
         g.moveTo(sx, sy);
-        g.lineTo(sx - (y2 - sy) * 0.28, y2);
+        g.lineTo(sx - (y2 - sy) * SLANT, y2);
       }
       g.strokePath();
     }
-    /* SPLASHES: shallow "v" opening upward, widening + fading as it
-       ages (~130ms) — reads as a droplet bursting on the ground */
+    /* SPLASHES (v4: USER 不明显 — 重做): 三段结构, 存活 260ms —
+       ① 展宽渐隐的上开 v (原有, 加大)
+       ② 中期两粒弹起水珠 (向上抛物线小点)
+       ③ 地面一条短亮横线 (水花铺开的读感) */
     if (splashes.length) {
-      g.lineStyle(1, 0xdfe9f7, 0.5 * lvl);
+      g.lineStyle(1, 0xaecbe8, 0.6 * lvl);
       g.beginPath();
       for (var k2 = 0; k2 < splashes.length; k2++) {
         var s2 = splashes[k2];
-        var age = (tNow - s2.t0) / 130;            /* 0..1 */
-        var r2 = 1.5 + age * 2.5;
-        g.moveTo(s2.x - r2, s2.y - 1 - age * 1.5);
-        g.lineTo(s2.x, s2.y - 0.5);
-        g.lineTo(s2.x + r2, s2.y - 1 - age * 1.5);
+        var age = (tNow - s2.t0) / 260;            /* 0..1 */
+        if (age < 0.45) {                          /* ① v 形张开 */
+          var r2 = 2 + (age / 0.45) * 4;
+          g.moveTo(s2.x - r2, s2.y - 2 - age * 5);
+          g.lineTo(s2.x, s2.y - 1);
+          g.lineTo(s2.x + r2, s2.y - 2 - age * 5);
+        } else {                                   /* ② 弹起水珠 */
+          var a2 = (age - 0.45) / 0.55;
+          var jx = 3.5 * (k2 % 2 ? 1 : -1);
+          g.moveTo(s2.x + jx * (0.3 + a2 * 0.7) - 1,
+                   s2.y - 3 - Math.sin(a2 * Math.PI) * 5);
+          g.lineTo(s2.x + jx * (0.3 + a2 * 0.7) + 1,
+                   s2.y - 3 - Math.sin(a2 * Math.PI) * 5);
+        }
+        /* ③ 地面横线: 前半段存在 */
+        if (age < 0.5) {
+          g.moveTo(s2.x - 3.5, s2.y);
+          g.lineTo(s2.x + 3.5, s2.y);
+        }
       }
       g.strokePath();
     }
@@ -3127,6 +3151,7 @@ function rainSfx(level) {
   function drawSky(S) {
     var ctx = S.skyCtx;
     if (!ctx) { return null; }
+    var cam = S.cameras.main;               /* 天体世界锚定视差用 */
     var w = ctx.canvas.width, h = ctx.canvas.height;
     var sky = skyColors(dayT);
     /* RAIN WASH (USER: 下雨): grey-blue调制 — push top/bot toward a
@@ -3225,19 +3250,41 @@ function rainSfx(level) {
        once-baked sprites (bakeCelestials): sun = stacked glows +
        gradient core; moon = shaded cratered disc with true lune phases
        (8-night cycle, dayCount increments at each dusk; 0 = new moon =
-       faint halo only, 4 = full). */
+       faint halo only, 4 = full).
+       USER: 太阳/月亮不要随人物竖直上下 — the sin() vertical arc
+       swung the body through 24% of screen height AND the camera's
+       vertical follow made the sky band shift under it, so jumping /
+       digging read as the sun bouncing. Now: horizontal travel only
+       (sky-painted UI is screen-anchored), tiny FIXED vertical swell
+       independent of the camera. */
     {
       var ang, isDay = dayT < 0.5;
       if (isDay) { ang = (dayT / 0.5) * Math.PI; }
       else { ang = ((dayT - 0.5) / 0.5) * Math.PI; }
       var cxS = w * (0.08 + 0.84 * (ang / Math.PI));
-      var cyS = h * 0.30 - Math.sin(ang) * h * 0.24;
+      /* USER (设计澄清): 竖直坐标不该钉死屏幕——要世界锚定视差:
+         下洞 (相机下移) 太阳屏幕坐标上移, 跳起 (相机上移) 太阳下移,
+         "这样就有不动的效果" = 天体在世界里不动。实现: 太阳世界高度
+         = 地表上方 0.7 屏 + 昼弧小摆动, 屏幕坐标 = 世界Y - scrollY。
+         (v5 纯屏幕固定是错的; 更早的 sin 大弧 + 相机跟随才导致
+         "太阳跟着人上下跳" 的观感) */
+      var pcCol3 = Math.max(0, Math.min(WORLD_W - 1,
+        Math.floor(S.player.x / TILE)));
+      var surfW3 = world.surfaceY[pcCol3] * TILE;
+      var arcOff = Math.sin(ang) * h * 0.05;
+      var cyS = (surfW3 - h * 0.70 + arcOff) - cam.scrollY;
       var cel = bakeCelestials(S);
-      if (isDay) {
-        ctx.drawImage(cel.sun, cxS - cel.sun.width / 2, cyS - cel.sun.height / 2);
-      } else {
-        var mc2 = cel.moon;
-        ctx.drawImage(mc2, cxS - mc2.width / 2, cyS - mc2.height / 2);
+      /* 下雨渐隐 (USER: 下雨时太阳应该渐隐) — 雨越大越看不见天体 */
+      var celA = 1 - rain.level * 0.92;
+      if (celA > 0.01) {
+        ctx.globalAlpha = celA;
+        if (isDay) {
+          ctx.drawImage(cel.sun, cxS - cel.sun.width / 2, cyS - cel.sun.height / 2);
+        } else {
+          var mc2 = cel.moon;
+          ctx.drawImage(mc2, cxS - mc2.width / 2, cyS - mc2.height / 2);
+        }
+        ctx.globalAlpha = 1;
       }
     }
 
