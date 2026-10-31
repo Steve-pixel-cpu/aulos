@@ -3014,8 +3014,16 @@ function rainSfx(level, strength) {
        火把/灯)。月亮在场 = 夜晚 (dayT 0.5-0.99) 且非血月遮云且
        非雷雨 (storm flash 亮的一瞬是闪电不是月光); 地下不受影响
        (cave floor 独立)。雷雨判定: rain.storm && rain.level>0.3 */
-    var moonLit = !(dayT > 0.5 && dayT < 0.99) ||
-                  ((S && S.bloodMoon) || (rain.storm && rain.level > 0.3)) ? 0 : 1;
+    /* v9.10 (USER: 血月也是要有亮度的): 血月红光虽不是「月光」,
+       但也不该全黑 — 血月夜 floor 取设定值的一半 (血红微光)。
+       雷雨 (乌云遮月) 仍归零; 晴夜满额 */
+    var isNight = dayT > 0.5 && dayT < 0.99;
+    var isStorm = rain.storm && rain.level > 0.3;
+    var isBlood = S && S.bloodMoon;
+    var moonLit = !isNight ? 1
+      : isStorm ? 0
+      : isBlood ? 0.5
+      : 1;
     /* v9.8: floor 再乘 twilight 拖尾 — 日落瞬间 floor 不立即生效,
        而是随晚霞 (0.5→0.62) 从 100% 滑到 0%; 黎明前 (0.95→1.0)
        反向滑回, 月亮升起的光感与天空同步, 消灭「黑一下又亮」 */
