@@ -2201,11 +2201,18 @@ var rain = { level: 0, target: 0, until: 0 };
 function rainTick(dt, S) {
   var now = (typeof performance !== 'undefined' ? performance.now() : 0) / 1000;
   if (dayT >= 0 && now >= rain.until) {
-    /* expired (or boot): roll the NEXT event window. dawn-only is too
-       rigid for short events — roll whenever idle, chance per tick
-       scaled by dt so CFG.rainChance ≈ % of days that see rain */
-    var raining = Math.random() < CFG.rainChance / 100 * dt / 30;
-    if (S && S.bloodMoon) { raining = false; }   /* 血月夜不落雨 */
+    /* expired (or boot): roll the NEXT event window. v3 BUG: chance
+       was multiplied by dt/30 → per-frame 0.013% — it rained
+       essentially never (用户: 一直没看到下雨). Correct math: a day
+       is DAY_LEN seconds ≈ DAY_LEN/12 dry windows; we want
+       CFG.rainChance ≈ fraction of DAYS that see rain, so each
+       12s window hits with p = chance/100 × 12/DAY_LEN. */
+    var pWin = CFG.rainChance / 100 * Math.min(1, 12 / CFG.dayLen);
+    var raining = Math.random() < pWin;
+    /* 血月只禁血月「夜」: bloodMoon 标志从 dusk 一直保留到次日 dusk
+       才刷新——白天它也是 true。不加 night 条件会把 40% 的完整一天
+       (含白天) 全禁了 (v3 bug 之二, 用户: 一直没看到下雨) */
+    if (S && S.bloodMoon && dayT > 0.5) { raining = false; }
     rain.target = raining ? 1 : 0;
     if (raining) {
       /* biased spread: min + (max-min) * rand^1.6 — showers > storms */
