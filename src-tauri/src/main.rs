@@ -58,8 +58,44 @@ static BOOT_ANIM_OFF: LazyLock<bool> = LazyLock::new(|| {
 // 页面经 <video src="aulosboot://boot-anim.mp4"> 探测: 200=有自定义动画,
 // 404=用内置 CSS 动画。Windows 上 origin 表现为 http://aulosboot.localhost ====
 fn boot_anim_video_response(request: http::Request<Vec<u8>>) -> http::Response<Vec<u8>> {
-    // 路径仅认两个固定文件名, 不拼接用户输入（无路径穿越面）
+    // 路径仅认固定文件名, 不拼接用户输入（无路径穿越面）
     let name = request.uri().path().trim_start_matches('/');
+    // 用户上传的应用图标: loading 页 logo 优先用它(后端未起, /api/icon 不可达),
+    // 404 时页面回退出厂 icon-256.png。magic bytes 判型(扩展名一律 .png 落盘)
+    if name == "user-icon" {
+        let home = std::env::var_os("HOME")
+            .or_else(|| std::env::var_os("USERPROFILE"))
+            .map(std::path::PathBuf::from)
+            .unwrap_or_default();
+        let path = home.join(".aulos").join("appearance").join("icon.png");
+        return match std::fs::read(&path) {
+            Ok(bytes) => {
+                // 服务端落盘前已校验 PNG/JPEG/WebP, 这里按 magic bytes 复核 mime
+                let mime = if bytes.starts_with(b"\x89PNG") {
+                    "image/png"
+                } else if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
+                    "image/jpeg"
+                } else if bytes.starts_with(b"RIFF") {
+                    "image/webp"
+                } else {
+                    return http::Response::builder()
+                        .status(http::StatusCode::NOT_FOUND)
+                        .body(Vec::new())
+                        .unwrap();
+                };
+                http::Response::builder()
+                    .header(http::header::CONTENT_TYPE, mime)
+                    .header(http::header::CACHE_CONTROL, "no-cache")
+                    .header(http::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+                    .body(bytes)
+                    .unwrap()
+            }
+            Err(_) => http::Response::builder()
+                .status(http::StatusCode::NOT_FOUND)
+                .body(Vec::new())
+                .unwrap(),
+        };
+    }
     let (path, mime) = match name {
         "boot-anim.mp4" => ("boot-anim.mp4", "video/mp4"),
         "boot-anim.webm" => ("boot-anim.webm", "video/webm"),
