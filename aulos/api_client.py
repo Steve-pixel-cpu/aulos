@@ -450,19 +450,24 @@ class _TerminalEcho:
 
 def _collect_usage(acc: dict, usage) -> None:
     """把 SDK 用量对象里非 None 的字段并进 acc（message_start 与 message_delta 各报一部分）。
-    输入侧字段(input/cache_*)只补缺不覆盖: message_start 报全量输入,
-    message_delta 的碎片值(部分兼容端点只回个位数 input)若覆盖会造出
-    input=308 / cache_read=16万 的错位账(前端命中率曾 52529%)。
-    输出 token 仍以 delta 为准（累计口径, start 时通常为 1）。"""
+    两种流式语义的叠加:
+    - 官方 anthropic: start 报全量输入, delta 只报 output 累计;
+    - GLM 等兼容端点: delta 的 input/cache_read 是「到目前为止」的
+      累计快照, 逐次递增（实测 50k→120k→168k）, 但偶发碎片小值
+      （input 报过 308/547 这类增量）。
+    统一策略: 输入侧三字段取 max(单调不减——累计快照取终值, 碎片小值
+    不倒退); output 取 delta 覆盖(累计口径, start 恒为 1)。
+    旧实现「非 None 即覆盖」被 delta 碎片覆盖出 input=308/命中率
+    52529%; 「只补缺」又把 start 初值 0 钉死, 丢掉 delta 递增的真实
+    cache_read。"""
     value = getattr(usage, "output_tokens", None)
     if value is not None:
         acc["output_tokens"] = value
     for field in ("input_tokens", "cache_creation_input_tokens",
                   "cache_read_input_tokens"):
-        if field not in acc:
-            value = getattr(usage, field, None)
-            if value is not None:
-                acc[field] = value
+        value = getattr(usage, field, None)
+        if value is not None:
+            acc[field] = max(acc.get(field, 0), value)
 
 
 def _map_to_retry_error(e: Exception) -> Optional[RetryApiError]:
