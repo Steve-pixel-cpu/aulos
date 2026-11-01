@@ -202,7 +202,7 @@
       </button>
     </div>
   </div>
-  <video id="boot-video" muted loop playsinline></video>
+  <video id="boot-video" loop playsinline></video>
   <div class="boot-glow"></div>
   <div class="boot-wrap">
     <img class="boot-logo" src="icon-256.png" alt="" draggable="false"
@@ -393,7 +393,12 @@ document.addEventListener("DOMContentLoaded", () => {
     };
     vid.src = "http://aulosboot.localhost/boot-anim." + ext;
     vid.load();
-    vid.play().catch(() => {});   // muted 满足自动播放策略; 失败静默
+    // 有声自动播放: 壳已注入 --autoplay-policy=no-user-gesture-required;
+    // 若被拦(脱离壳开页/策略变化), 降级 muted 播——能动好过卡在黑屏
+    vid.play().catch(() => {
+      vid.muted = true;
+      vid.play().catch(() => {});
+    });
   };
   tryLoad("mp4");
 })();
