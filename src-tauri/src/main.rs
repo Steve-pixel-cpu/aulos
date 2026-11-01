@@ -1474,6 +1474,18 @@ fn main() {
             );
         }
     }
+    // 自动播放政策放开(全环境): 自定义开机动画有声播放——浏览器手势要求
+    // 会拦截 vid.play()(页面降级 muted, 但用户明确要声音)。幂等防重。
+    {
+        let extra = std::env::var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS")
+            .unwrap_or_default();
+        if !extra.contains("--autoplay-policy") {
+            std::env::set_var(
+                "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
+                format!("{extra} --autoplay-policy=no-user-gesture-required"),
+            );
+        }
+    }
     // 必须先于一切 gtk 初始化 (GTK 读 GDK_BACKEND 的时机在 gdk 初始化)
     #[cfg(target_os = "linux")]
     apply_linux_gdk_backend();
