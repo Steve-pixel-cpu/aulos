@@ -1860,27 +1860,41 @@ const bgvUrl = () => "/api/bg-video" + (bgvVer ? `?v=${bgvVer}` : "");
 function bgvPref() { return localStorage.getItem(BGV_KEY) === "1"; }
 let _bgvSeq = 0;   // 会话序号: 丢弃慢于新一轮同步的旧 video 事件
 
+/* 亮度滑块可用性: 任一壁纸(静态图或视频)存在即有意义。
+ * 被 syncBgLayers / syncVideoLayer 双向调用——任一层开关后都要重算 */
+function syncBgBrightAvail() {
+  const bi = $("bg-bright");
+  if (bi) bi.disabled = !((bgPref() && bgVer > 0) || (bgvPref() && bgvVer > 0));
+}
+
 function syncVideoLayer() {
   const vid = $("bg-video");
   if (!vid) return;
   const seq = ++_bgvSeq;
   const on = bgvPref() && bgvVer > 0;
+  syncBgBrightAvail();
   if (!on) {
     vid.pause();
     vid.removeAttribute("src");   // removeAttribute 而非置空串: 避免触发 error 事件
     vid.load();
     delete document.documentElement.dataset.bgv;
+    // 摘 data-bg 要慎重: 静态壁纸可能还在, 交给 syncBgLayers 重算归属
+    if (!(bgPref() && bgVer > 0)) delete document.documentElement.dataset.bg;
     return;
   }
   // canplay 后才亮标记: 元数据/首帧未就绪时不闪黑块
   vid.oncanplay = () => {
     if (seq !== _bgvSeq || !bgvPref()) return;
     document.documentElement.dataset.bgv = "1";
+    // 同时点亮 data-bg: 亮度滑块(--bg-dim/--bg-surf)与 UI 半透明化体系
+    // 只被 :root[data-bg="1"] 消费, 纯视频壁纸不挂它则滑块完全无效
+    document.documentElement.dataset.bg = "1";
     vid.play().catch(() => {});   // muted 已满足自动播放策略; 失败静默
   };
   vid.onerror = () => {
     if (seq !== _bgvSeq) return;
     delete document.documentElement.dataset.bgv;   // 回落: 视频坏则露静态壁纸
+    if (!(bgvPref() && bgvVer > 0) && !(bgPref() && bgVer > 0)) delete document.documentElement.dataset.bg;
   };
   vid.src = bgvUrl();
   vid.load();
@@ -1888,7 +1902,7 @@ function syncVideoLayer() {
 
 function syncBgLayers() {
   const on = bgPref() && bgVer > 0;
-  const bi = $("bg-bright"); if (bi) bi.disabled = !on;   // 无壁纸时滑块无意义
+  syncBgBrightAvail();   // 视频壁纸也算数(只传视频时滑块同样可用)
   if (on) document.documentElement.dataset.bg = "1";
   else delete document.documentElement.dataset.bg;
   if (!on) {

@@ -65,10 +65,13 @@
   body.custom-anim #boot-video { display: block; }
   body.custom-anim .boot-wrap { visibility: hidden; }   /* 视频期间藏品牌动画区 */
 
-  /* 自绘标题栏: 与应用内同款（BRIDGE_JS 注入的 html.aulos-desktop 类） */
+  /* 自绘标题栏: 与应用内同款（BRIDGE_JS 注入的 html.aulos-desktop 类）
+   * z-index 2: 必须压过 #boot-video(z-index 1)——自定义开机动画全屏播放时
+   * 标题栏被盖住会吃掉拖拽/最小化/关闭(2026-11-01 用户实测回归) */
   #titlebar {
     display: none; position: fixed; top: 0; left: 0; right: 0;
     height: 42px; align-items: center; gap: 9px; padding-left: 14px;
+    z-index: 2;
     background: #efedeb; border-bottom: 1px solid #ddd6cb;
   }
   html.aulos-desktop #titlebar { display: flex; }

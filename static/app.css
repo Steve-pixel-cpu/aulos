@@ -190,6 +190,8 @@
     position: fixed; inset: 0; z-index: -1; display: none; pointer-events: none;
   }
   :root[data-bg="1"] #bg-scrim { display: block; background: var(--bg-scrim); }
+  /* 纯视频壁纸(无静态图): data-bgv 同样点亮遮罩——亮度滑块压暗/提亮直接作用于视频 */
+  :root[data-bgv="1"] #bg-scrim { display: block; background: var(--bg-scrim); }
 
   /* 动态壁纸视频层: z-index -2 垫在遮罩之下, 全屏 cover;
    * 显隐由 data-bgv 标记驱动（首帧预绘脚本抢设防闪帧, app.js 校准后接管） */
