@@ -1588,6 +1588,7 @@ async function loadSettings() {
 window.applyLanguageHot = function (v) {
   setI18nLang(v);
   try { localStorage.setItem("xc-lang", v); } catch (e) {}   // 卫星页镜像
+  if (window.mirrorAppearance) window.mirrorAppearance();   // 语言镜像到壳(loading 页跨源读取)
   const de = document.documentElement;                        // 对齐首帧内联脚本
   de.lang = v === "en" ? "en" : "zh-CN";
   de.dataset.lang = v === "en" ? "en" : "zh";
