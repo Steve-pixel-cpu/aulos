@@ -1443,6 +1443,18 @@ fn main() {
             "WEBVIEW2_USER_DATA_FOLDER",
             std::env::temp_dir().join("aulos-dev-webview"),
         );
+        // dev 附加: 禁 HTTP 缓存。loading.html 等壳侧资产经 tauri.localhost
+        // 协议加载, WebView2 会缓存旧响应——改完资产重启壳看到的还是旧页
+        // (2026-11-01 调试启动动画时反复踩坑)。dev 壳性能无所谓, 一律禁用;
+        // 正式安装版不受影响(不走此分支)。
+        let extra = std::env::var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS")
+            .unwrap_or_default();
+        if !extra.contains("--disable-http-cache") {
+            std::env::set_var(
+                "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
+                format!("{extra} --disable-http-cache"),
+            );
+        }
     }
     // 必须先于一切 gtk 初始化 (GTK 读 GDK_BACKEND 的时机在 gdk 初始化)
     #[cfg(target_os = "linux")]
