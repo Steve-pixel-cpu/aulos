@@ -29,6 +29,7 @@ const themeDd = makeDropdown($("sel-theme"), {
     localStorage.setItem(THEME_KEY, v);
     applyTheme();
     applyFx();
+    if (window.mirrorAppearance) window.mirrorAppearance();
     applyAccentVars();   // 自定义色的派生令牌跟随深浅主题
     syncAccentInput();
     syncMica();          // 云母明暗跟随深浅主题
@@ -126,6 +127,7 @@ const styleDd = makeDropdown($("sel-style"), {
     localStorage.setItem(STYLE_KEY, v);
     applyStyle();
     syncMica();
+    if (window.mirrorAppearance) window.mirrorAppearance();
   },
 });
 applyStyle();
@@ -416,6 +418,7 @@ function refreshAutoAccent(dataUrl) {
     localStorage.setItem(ACCENT_AUTO_HEX_KEY, hex);
     applyAccentVars();
     syncAccentSwatch();
+    if (window.mirrorAppearance) window.mirrorAppearance();   // 自动取色 hex 镜像到壳
   });
 }
 const accentAutoChk = $("accent-auto-chk");
@@ -424,6 +427,7 @@ accentAutoChk.addEventListener("change", () => {
   localStorage.setItem(ACCENT_AUTO_KEY, accentAutoChk.checked ? "1" : "0");
   applyAccentVars();
   syncAccentSwatch();
+  if (window.mirrorAppearance) window.mirrorAppearance();   // 自动取色开关镜像到壳
   syncAccentInput();
   toast(accentAutoChk.checked
     ? (localStorage.getItem(ACCENT_AUTO_HEX_KEY) ? t("settings_page.030") : t("settings_page.031"))
@@ -434,6 +438,7 @@ function applyAccent() {
   if (v === "gray") delete document.documentElement.dataset.accent;
   else document.documentElement.dataset.accent = v;
   applyAccentVars();
+  if (window.mirrorAppearance) window.mirrorAppearance();   // 镜像到壳(loading 页跨源读取)
 }
 function renderAccentDots() { }   // 已由 16 进制输入框取代（保留空实现防旧调用）
 function syncAccentInput() {

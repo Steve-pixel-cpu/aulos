@@ -4,7 +4,29 @@
 <meta charset="utf-8">
 <title>Aulos</title>
 <script>/* 与 index.html 一致的主题预置, 避免深色系统下加载页白闪 */
-  (function(){var p;try{p=localStorage.getItem("xc-theme")||"system";}catch(e){p="system";}
+  (function(){
+   /* 外观偏好跨源中转: 壳从 settings.json 读 appearance 对象, base64 后经
+    * URL 参数 ap= 带入(主界面 127.0.0.1 与本页 tauri.localhost 的 localStorage
+    * 互相独立, 直读必落空)。写入 localStorage 后本页所有偏好读取与旧版
+    * 完全一致——APPEARANCE 键是唯一入口, 其余逻辑零改动 */
+   try{
+     var ap=new URLSearchParams(location.search).get("ap");
+     if(ap){
+       var bin=atob(ap.replace(/-/g,"+").replace(/_/g,"/"));
+       var json=decodeURIComponent(Array.from(bin).map(c=>"%"+c.charCodeAt(0).toString(16).padStart(2,"0")).join(""));
+       var o=JSON.parse(json);
+       if(o&&typeof o==="object"){
+         if(o.theme!=null)localStorage.setItem("xc-theme",o.theme);
+         if(o.lang!=null)localStorage.setItem("xc-lang",o.lang);
+         if(o.style!=null)localStorage.setItem("xc-style",o.style);
+         if(o.accent!=null)localStorage.setItem("xc-accent",o.accent);
+         if(o.accentCustom!=null)localStorage.setItem("xc-accent-custom",o.accentCustom);
+         if(o.accentAuto!=null)localStorage.setItem("xc-accent-auto",o.accentAuto?"1":"0");
+         if(o.accentAutoHex!=null)localStorage.setItem("xc-accent-auto-hex",o.accentAutoHex);
+       }
+     }
+   }catch(e){}
+   var p;try{p=localStorage.getItem("xc-theme")||"system";}catch(e){p="system";}
    var d=p==="dark"||(p==="system"&&window.matchMedia("(prefers-color-scheme: dark)").matches);
    document.documentElement.classList.toggle("dark",d);
    /* 云母模式: 挂 html.fluent-mica → CSS body 透明让出 DWM 壁纸采样底

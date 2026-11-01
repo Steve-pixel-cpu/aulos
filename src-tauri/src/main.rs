@@ -53,6 +53,24 @@ static BOOT_ANIM_OFF: LazyLock<bool> = LazyLock::new(|| {
         .unwrap_or(false)
 });
 
+// ==== 外观偏好镜像: settings.json 的 appearance 对象(主界面防抖镜像写入)。
+// loading 页(tauri.localhost)与主界面(127.0.0.1:port)的 localStorage 互相
+// 独立——主题/语言/云母/强调色跨源必须经 settings.json 中转, 壳在此读出
+// 并注入 loading 页(缺键/损坏 → "{}", 页面回退自身 localStorage 与缺省值) ====
+static APPEARANCE_JSON: LazyLock<String> = LazyLock::new(|| {
+    let home = std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(std::path::PathBuf::from)
+        .unwrap_or_default();
+    let path = home.join(".aulos").join("settings.json");
+    std::fs::read_to_string(path).ok()
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+        .and_then(|v| v.get("appearance").cloned())
+        .filter(|a| a.is_object())
+        .and_then(|a| serde_json::to_string(&a).ok())
+        .unwrap_or_else(|| "{}".to_string())
+});
+
 // ==== 自定义开机动画视频: aulosboot:// 协议读取 ~/.aulos/appearance/ 下的
 // boot-anim.mp4|webm（后端未起时 loading 页就要拿到视频, 只能壳侧供）。
 // 页面经 <video src="aulosboot://boot-anim.mp4"> 探测: 200=有自定义动画,
@@ -1647,11 +1665,17 @@ fn create_main_window(app: &AppHandle) -> Result<(), String> {
     let version = &app.package_info().version;
     let bridge_js = format!("window.__AULOS_VERSION__ = '{version}';\n{BRIDGE_JS}");
     // 开机动画开关: 关闭时以 ?boot=min 打开 loading 页（下次启动生效）
-    let loading_url = if *BOOT_ANIM_OFF {
-        "loading.html?boot=min"
-    } else {
-        "loading.html"
+    // 外观偏好经 URL 参数带给 loading 页(跨源 localStorage 中转, 见
+    // APPEARANCE_JSON 注释): base64 编码避免 JSON 花括号/& 干扰参数解析
+    let appearance_b64 = {
+        use base64::Engine as _;
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(APPEARANCE_JSON.as_bytes())
     };
+    let loading_url = format!(
+        "loading.html?boot={}&ap={}",
+        if *BOOT_ANIM_OFF { "min" } else { "full" },
+        appearance_b64
+    );
     let builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::App(loading_url.into()))
         .title("Aulos")
         .decorations(false)   // 自绘标题栏: 高度可控, 主题跟随应用深浅色

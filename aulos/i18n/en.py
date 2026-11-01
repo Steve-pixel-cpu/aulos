@@ -186,4 +186,5 @@ STRINGS = {
     "server.061": "Unsupported boot animation format (MP4/WebM only)",
     "server.062": "Boot animation exceeds the 50MB limit",
     "server_settings.045": "Boot animation toggle must be a boolean, got {p0}",
+    "server_settings.046": "Appearance preferences must be an object, got {p0}",
 }

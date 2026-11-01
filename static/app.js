@@ -380,6 +380,36 @@ mqDark.addEventListener("change", () => {
 applyTheme();
 applyFx();
 
+/* ---------- 外观偏好镜像到 settings.json(壳 → loading 页的跨源中转) ----------
+ * 壳内资产页(tauri.localhost)与主界面(127.0.0.1:port)的 localStorage 互相
+ * 独立——主题/语言/云母/强调色在主界面改了, 启动页读不到。统一在此打包
+ * appearance 键 POST /api/settings(壳下次启动读取), 任意外观变更后防抖
+ * 500ms 同步一次; loadSettings 启动时也校准一轮(补齐从未手动改过的键) */
+function mirrorAppearance() {
+  clearTimeout(mirrorAppearance._t);
+  mirrorAppearance._t = setTimeout(async () => {
+    try {
+      const appearance = {
+        theme: themePref(),
+        lang: localStorage.getItem("xc-lang") || "zh",
+        style: localStorage.getItem("xc-style") || "default",
+        accent: localStorage.getItem("xc-accent") || "gray",
+        accentCustom: localStorage.getItem("xc-accent-custom") || "",
+        accentAuto: localStorage.getItem("xc-accent-auto") === "1",
+        accentAutoHex: localStorage.getItem("xc-accent-auto-hex") || "",
+        dark: resolvedTheme() === "dark",
+      };
+      await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ appearance }),
+      });
+    } catch (e) { /* 镜像失败无感知必要: 下次外观变更会再试 */ }
+  }, 500);
+}
+mirrorAppearance();
+window.mirrorAppearance = mirrorAppearance;   // settings-page.js 外观变更入口调用
+
 /* ============================================================
  * markdown 渲染: marked.js 优先，加载失败降级为转义纯文本;
  * 代码块外加语言标签/复制按钮，hljs 可用时做语法高亮

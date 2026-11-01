@@ -181,4 +181,5 @@ STRINGS = {
     "server.061": "不支持的开机动画格式（仅 MP4/WebM）",
     "server.062": "开机动画超出 50MB 限制",
     "server_settings.045": "开机动画开关需为布尔值，收到 {p0}",
+    "server_settings.046": "外观偏好需为对象，收到 {p0}",
 }
