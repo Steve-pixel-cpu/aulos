@@ -43,3 +43,14 @@ test("syncVideoLayer 联动滑块可用性(上传/清除视频后立即生效)",
   assert.ok(m, "syncVideoLayer 存在");
   assert.match(m[0], /syncBgBrightAvail\(/, "syncVideoLayer 必须同步亮度滑块禁用状态");
 });
+
+test("loading 页云母模式让位: body 透明 + 标记与主界面同源", () => {
+  // 主界面选「Fluent·系统云母」后, 启动页却是实色板(风格断裂)。
+  // DWM backdrop 是窗口属性跨导航持久, loading 页只需 CSS 让位。
+  const LH = fs.readFileSync(path.join(__dirname, "..", "..", "static", "loading.html"), "utf-8");
+  assert.match(LH, /xc-style/, "loading 页必须读 xc-style 偏好(与主界面同源)");
+  assert.match(LH, /data-mica/, "云母模式必须挂 data-mica 标记");
+  // CSS: 云母时 body 透明让出 DWM 底(照主界面 :root[data-mica="1"] body 规则)
+  assert.match(LH, /html\.fluent-mica\s+body\s*\{[^}]*background:\s*transparent/,
+    "云母模式下 body 必须 transparent(否则实色板挡住云母)");
+});

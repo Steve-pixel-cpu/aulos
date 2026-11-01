@@ -6,7 +6,11 @@
 <script>/* 与 index.html 一致的主题预置, 避免深色系统下加载页白闪 */
   (function(){var p;try{p=localStorage.getItem("xc-theme")||"system";}catch(e){p="system";}
    var d=p==="dark"||(p==="system"&&window.matchMedia("(prefers-color-scheme: dark)").matches);
-   document.documentElement.classList.toggle("dark",d);})();</script>
+   document.documentElement.classList.toggle("dark",d);
+   /* 云母模式: 挂 html.fluent-mica → CSS body 透明让出 DWM 壁纸采样底
+    * (主界面 syncMica 已向壳确认过开启, backdrop 窗口属性跨导航持久) */
+   try{if(localStorage.getItem("xc-style")==="fluent-mica")document.documentElement.classList.add("fluent-mica","data-mica");}catch(e){}
+  })();</script>
 <style>
   :root { color-scheme: dark light; }
   html, body { height: 100%; margin: 0; }
@@ -17,6 +21,10 @@
     user-select: none;
   }
   html.dark body { background: #191919; color: #d7d3cc; }
+  /* 云母模式让位(xc-style=fluent-mica, 预置脚本挂 html.fluent-mica):
+   * DWM backdrop 是窗口属性, 主界面开启后跨导航持久——启动页只需把
+   * 实底让透明, 壁纸采样即透上来, 与主界面风格连续 */
+  html.fluent-mica body { background: transparent; }
   .spin {
     width: 34px; height: 34px; border-radius: 50%;
     border: 3px solid #ddd6cb; border-top-color: #b45309;
