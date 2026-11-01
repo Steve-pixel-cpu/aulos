@@ -434,6 +434,19 @@ code, pre { font-family: var(--font-mono); }
   border-radius: 0;
   border: 0;
 }
+/* fullscreen: the fake window chrome fights the real fullscreen —
+   USER: 「这个全屏，上有标题栏，下有空白」。Hide the titlebar and let
+   the chat fill the viewport (was calc(100vh - 96px), which parked
+   ~60px of page background under the canvas). Esc exits fullscreen
+   natively; ⛶/⚙ live in the titlebar, so they are one Esc away. */
+.hero-demo.egg-mode:fullscreen .demo-titlebar,
+.hero-demo.egg-mode:-webkit-full-screen .demo-titlebar {
+  display: none;
+}
+.hero-demo.egg-mode:fullscreen .demo-chat,
+.hero-demo.egg-mode:-webkit-full-screen .demo-chat {
+  height: 100vh;
+}
 
 /* ============ egg mode: canvas takes over the chat area ============
    Phaser appends its canvas inside .demo-chat after the marketing
@@ -455,8 +468,10 @@ code, pre { font-family: var(--font-mono); }
   height: 400px;
   padding: 0;
 }
-.hero-demo.egg-mode:fullscreen .demo-chat {
-  height: calc(100vh - 96px);
+/* fullscreen chat fills the viewport (titlebar hidden above) */
+.hero-demo.egg-mode:fullscreen .demo-chat,
+.hero-demo.egg-mode:-webkit-full-screen .demo-chat {
+  height: 100vh;
 }
 /* flex:1 (basis 0%) in a content-sized column flex parent collapses the
    chat to 0px once siblings are hidden — un-flex it so height wins */
