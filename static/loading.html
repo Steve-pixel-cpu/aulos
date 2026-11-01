@@ -10,9 +10,32 @@
    /* 云母模式: 挂 html.fluent-mica → CSS body 透明让出 DWM 壁纸采样底
     * (主界面 syncMica 已向壳确认过开启, backdrop 窗口属性跨导航持久) */
    try{if(localStorage.getItem("xc-style")==="fluent-mica")document.documentElement.classList.add("fluent-mica","data-mica");}catch(e){}
+   /* 强调色跟随设置(xc-accent 预设挂 data-accent 走 CSS; custom/壁纸自动色
+    * 取 hex 直接内联 --accent, 进度条/光晕即随用户强调色变化)。
+    * de = documentElement, 本 IIFE 此前未定义过——2026-11-01 实测: 未定义
+    * 使整段抛 ReferenceError 被 try 吞掉, 强调色从未生效 */
+   try{
+     var de=document.documentElement;
+     var acc=localStorage.getItem("xc-accent")||"gray";
+     if(acc==="custom"){var c=localStorage.getItem("xc-accent-custom");if(c)de.style.setProperty("--accent",c);}
+     else if(acc!=="gray"){de.dataset.accent=acc;}
+     var autoOn=localStorage.getItem("xc-accent-auto")==="1";
+     if(autoOn){var ah=localStorage.getItem("xc-accent-auto-hex");if(ah)de.style.setProperty("--accent",ah);}
+   }catch(e){}
   })();</script>
 <style>
-  :root { color-scheme: dark light; }
+  :root {
+    color-scheme: dark light;
+    /* 强调色缺省(琥珀): 无 xc-accent 或 gray 时进度条/光晕/logo 阴影的底色 */
+    --accent: #d97706;
+  }
+  /* 强调色预设: 与 app.css 同色值(浅主题档——loading 页只有进度条/光晕/
+   * logo 阴影三处消费, 不需要 deep/soft/border 全套, 单值足够) */
+  :root[data-accent="blue"]   { --accent: #2f6fd6; }
+  :root[data-accent="violet"] { --accent: #6a5be0; }
+  :root[data-accent="green"]  { --accent: #17803b; }
+  :root[data-accent="orange"] { --accent: #e5622a; }
+  :root[data-accent="rose"]   { --accent: #cf3a5c; }
   html, body { height: 100%; margin: 0; }
   body {
     display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -42,26 +65,53 @@
   body.min-mode .spin,
   body.min-mode .t1,
   body.min-mode .t2 { display: block; }
+  /* 背景微光: 页面中央一团极淡暖光随呼吸起伏, 呼应琥珀主色;
+   * 云母模式下同样可见(mixblend 不遮底), 深浅色各自调强度 */
+  .boot-glow {
+    position: fixed; left: 50%; top: 50%; width: 56vmax; height: 56vmax;
+    transform: translate(-50%, -50%);
+    background: radial-gradient(circle, var(--accent, #d97706) 0%, transparent 68%);
+    opacity: .10;
+    animation: glow-breathe 3.2s ease-in-out infinite;
+    pointer-events: none;
+  }
+  @keyframes glow-breathe { 0%,100% { opacity: .055; transform: translate(-50%,-50%) scale(1); } 50% { opacity: .10; transform: translate(-50%,-50%) scale(1.08); } }
   .boot-logo {
     width: 84px; height: 84px; border-radius: 22px;
-    box-shadow: 0 10px 34px rgb(180 83 9 / .28);
+    box-shadow: 0 10px 34px color-mix(in srgb, var(--accent, #b45309) 28%, transparent);
     animation: boot-in .7s cubic-bezier(.22,1,.36,1) both, breath 2.6s ease-in-out 0.8s infinite;
   }
   .boot-logo.error { visibility: hidden; box-shadow: none; }  /* 图标缺失: 占位隐身, 布局不塌 */
   @keyframes boot-in { from { opacity: 0; transform: scale(.6); } to { opacity: 1; transform: scale(1); } }
-  @keyframes breath { 0%,100% { box-shadow: 0 10px 34px rgb(180 83 9 / .28); } 50% { box-shadow: 0 10px 48px rgb(217 119 6 / .45); } }
-  html.dark .boot-logo { box-shadow: 0 10px 34px rgb(217 119 6 / .30); animation: boot-in .7s cubic-bezier(.22,1,.36,1) both, breath-dark 2.6s ease-in-out 0.8s infinite; }
-  @keyframes breath-dark { 0%,100% { box-shadow: 0 10px 34px rgb(217 119 6 / .30); } 50% { box-shadow: 0 10px 48px rgb(217 119 6 / .5); } }
-  .boot-title { font-size: 19px; font-weight: 600; letter-spacing: .06em; color: #44403c; animation: fade-up .6s ease .25s both; }
+  /* 呼吸光晕跟随强调色(color-mix 无法用于 keyframes 内 var 派生,
+   * 直接用两层 var: --accent 全强度 + transparent 插值) */
+  @keyframes breath { 0%,100% { box-shadow: 0 10px 34px color-mix(in srgb, var(--accent, #b45309) 28%, transparent); } 50% { box-shadow: 0 10px 48px color-mix(in srgb, var(--accent, #d97706) 45%, transparent); } }
+  /* 标题: 淡入 + 字距从松到紧收拢(精致感), 收完停稳不抖 */
+  .boot-title { font-size: 19px; font-weight: 600; color: #44403c; animation: title-in .9s cubic-bezier(.22,1,.36,1) .25s both; }
   html.dark .boot-title { color: #e7e5e4; }
+  @keyframes title-in { from { opacity: 0; letter-spacing: .34em; transform: translateY(6px); } to { opacity: 1; letter-spacing: .06em; transform: none; } }
   .boot-step { font-size: 12.5px; color: #a8a29e; min-height: 18px; animation: fade-up .6s ease .45s both; transition: opacity .3s; }
   html.dark .boot-step { color: #6b6862; }
   .boot-dots::after { content: ""; animation: dots 1.6s steps(4) infinite; }
   @keyframes dots { 0% { content: ""; } 25% { content: "."; } 50% { content: ".."; } 75% { content: "..."; } }
   @keyframes fade-up { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  /* 进度条: 放在动画组内(阶段文案正下方), 是构图的一部分而非贴屏底;
+   * 宽 220px 居中, 4px 圆角粗条(2.5px 太细看不清) */
+  .boot-progress {
+    width: 220px; height: 4px; border-radius: 4px;
+    background: color-mix(in srgb, var(--accent, #b45309) 16%, transparent); overflow: hidden;
+    animation: fade-up .6s ease .55s both;
+  }
+  .boot-progress i {
+    display: block; height: 100%; width: 0%;
+    border-radius: inherit;
+    background: var(--accent, #b45309);
+    transition: width .4s cubic-bezier(.3,1,.4,1);
+  }
   /* 减弱动态效果: 回退极简 spinner（系统辅助功能偏好优先于用户开关） */
   @media (prefers-reduced-motion: reduce) {
     .boot-wrap { display: none; }
+    .boot-glow, .boot-progress { display: none; }
   }
 
   /* 自定义开机动画视频: 全屏 cover 静音垫底, 播完由脚本导航 */
@@ -104,7 +154,7 @@
 </head>
 <body>
   <div id="titlebar">
-    <img class="tb-icon" src="/static/icon.png" alt="" draggable="false"
+    <img class="tb-icon" src="icon.png" alt="" draggable="false"
         onerror="this.onerror=null;this.src='/api/icon?v='+Date.now()">
     <span class="tb-name">Aulos</span>
     <div class="tb-controls">
@@ -120,11 +170,13 @@
     </div>
   </div>
   <video id="boot-video" muted loop playsinline></video>
+  <div class="boot-glow"></div>
   <div class="boot-wrap">
-    <img class="boot-logo" src="/static/icon-256.png" alt="" draggable="false"
+    <img class="boot-logo" src="icon-256.png" alt="" draggable="false"
         onerror="this.classList.add('error')">
     <div class="boot-title">Aulos</div>
     <div class="boot-step" id="boot-step" data-step="0"></div>
+    <div class="boot-progress" aria-hidden="true"><i id="boot-bar"></i></div>
   </div>
   <div class="spin" style="display:none"></div>
   <div class="t1" style="display:none">正在启动 Aulos…</div>
@@ -147,9 +199,9 @@
       });
     }
   </script>
-<script src="/static/i18n/zh.js?v=20261020b" defer></script>
-<script src="/static/i18n/en.js?v=20261020b" defer></script>
-<script src="/static/i18n/i18n.js?v=20261020b" defer></script>
+<script src="i18n/zh.js?v=20261101b" defer></script>
+<script src="i18n/en.js?v=20261101b" defer></script>
+<script src="i18n/i18n.js?v=20261101b" defer></script>
 <script>
 /* i18n 卫星页: 语言镜像 xc-lang(主页面 loadSettings 写透) */
 document.addEventListener("DOMContentLoaded", () => {
@@ -158,6 +210,21 @@ document.addEventListener("DOMContentLoaded", () => {
     if (lg === "en") { setI18nLang("en"); document.documentElement.lang = "en"; }
     applyI18n();
   } catch (e) { console.warn("[i18n] page:", e); }
+  /* 用户上传的应用图标: 出厂 logo 先显示(aulosboot:// 在页面极早期请求会
+   * 走真 DNS 解析失败, 实测手动后设才命中协议), DOMContentLoaded 后协议
+   * 已稳定——探测到用户图标即替换, 404 保持出厂件, 双图标位同逻辑 */
+  try {
+    const swap = (img, fallback) => {
+      img.onload = () => { img.onerror = null; };
+      img.onerror = function () { img.onerror = null; img.src = fallback; };
+      const probe = new Image();
+      probe.onload = () => { img.src = "http://aulosboot.localhost/user-icon"; };
+      probe.onerror = null;   // 无自定义图标: 出厂件已在位, 不动
+      probe.src = "http://aulosboot.localhost/user-icon";
+    };
+    swap(document.querySelector(".boot-logo"), "icon-256.png");
+    swap(document.querySelector(".tb-icon"), "icon.png");
+  } catch (e) {}
 });
 </script>
 <script>
@@ -185,12 +252,17 @@ document.addEventListener("DOMContentLoaded", () => {
   let LANG = null;
   const STEPS = () => {
     const lg = LG();
-    if (lg !== LANG) {
+    // i18n.js 的 t 是 IIFE 内部函数, 仅经 window.t 暴露——裸标识符 t 在
+    // 本页任何时机都 typeof "undefined"(未声明变量 typeof 不抛错)。
+    // 重算条件: 语言变了, 或【t 已可用但缓存还是裸 key】(defer 字典晚到,
+    // 首调兜底成 key 后需要一次重算换真文案; 2026-11-01 两次实测教训)
+    const tReady = typeof window.t === "function";
+    const cacheIsKey = STEPS_CACHE && STEPS_CACHE[0][1] === rawSteps[0][1];
+    if (lg !== LANG || (tReady && cacheIsKey)) {
       LANG = lg;
-      // i18n.js 未加载完成时 T 可能未定义 → 用 rawSteps 的 key 兜底显示
       STEPS_CACHE = rawSteps.map(([sec, key]) => {
         let msg = key;
-        try { if (typeof t === "function") msg = t(key); } catch (e) {}
+        try { if (tReady) msg = window.t(key); } catch (e) {}
         return [sec, msg];
       });
     }
@@ -212,6 +284,29 @@ document.addEventListener("DOMContentLoaded", () => {
   };
   tick();
   setInterval(tick, 500);
+  /* 底部进度条: 计时假前进——3s 冲到 82%, 之后极缓爬向 90% 封顶
+   * (减速曲线暗示"接近就绪"); 后端真就绪(__aulosReady)冲 100% 再跳转。
+   * 极简模式(minimal)在上面 return 掉了, 走不到这里——符合语义。
+   * 注意: __aulosReady 此处只包一层"冲 100%"; 视频脚本(更晚执行)会再
+   * 包一层播放协调——链条式包装, 各层都调用前一层, 不互相覆盖 */
+  const bar = document.getElementById("boot-bar");
+  if (bar) {
+    let p = 0;
+    const t0 = Date.now();
+    const tickBar = () => {
+      const s = (Date.now() - t0) / 1000;
+      const target = s < 3 ? 82 * (s / 3) : 82 + 8 * (1 - Math.exp(-(s - 3) / 6));
+      p = Math.min(target, 90);
+      bar.style.width = p.toFixed(1) + "%";
+    };
+    tickBar();
+    setInterval(tickBar, 300);
+    const prevReady = window.__aulosReady;
+    window.__aulosReady = (url) => {
+      bar.style.width = "100%";
+      if (prevReady) prevReady(url);
+    };
+  }
 })();
 </script>
 <script>
@@ -232,10 +327,18 @@ document.addEventListener("DOMContentLoaded", () => {
     window.__aulosNavigated = true;
     location.replace(url);
   };
+  // 不覆盖进度条脚本已挂的 __aulosReady(链式包装): 保存前一层, 包完调用
+  const prevReady = window.__aulosReady;
   window.__aulosReady = (appUrl) => {
     // 无自定义动画(或已停): 立即跳; 在播: 记 pending, 本轮播完 go
     if (!vid.src || vid.paused || vid.ended) go(appUrl);
     else window.__aulosPendingUrl = appUrl;
+    // pending 分支不调 prevReady——跳转延迟到回绕点, 由 go 触发;
+    // 但进度条冲 100% 应立即发生(后端确实就绪了):
+    if (window.__aulosPendingUrl) {
+      const bar = document.getElementById("boot-bar");
+      if (bar) bar.style.width = "100%";
+    }
   };
   setTimeout(() => go(window.__aulosPendingUrl), 20000);   // 硬上限兜底
   const tryLoad = (ext) => {
