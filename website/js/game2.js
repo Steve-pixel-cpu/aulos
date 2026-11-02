@@ -40,8 +40,17 @@
     caveSpawnMin: 12,     /* cave spawn ring (tiles) */
     caveSpawnMax: 24,
     bloodMoonChance: 40,  /* % per night */
+    rainChance: 25,       /* % per day (decided at dawn; 0 = never rains) */
+    rainIntensity: 100,   /* % rain density — scales streak count on screen */
+    bgmVolume: 8,         /* % BGM volume (USER: 背景音可以小点→做成配置;
+                             100 = 原曲满音量, 默认 8 很轻) */
+    rainVolume: 60,       /* % 雨环境声音量 (v9.4 USER: 雨声音量也需可以
+                             调节; 独立于 BGM 滑杆) */
     brightness: 42,       /* % night brightness floor (USER: 夜晚太黑可调亮) */
     caveBright: 100,      /* % cave ambient tint scale (USER: 洞穴太黑可调亮) */
+    lightScale: 2,        /* light-map cells per tile, 1..4 (USER: "光照现在
+                             是一个 tile *2 的密度，改成可配置的，让用户能*4";
+                             4 = 更细腻的光斑边缘, 画布 2048x1024, 重进生效) */
     bulletSpeed: 780,
     shootCd: 170,         /* ms between shots */
     digRange: 6,          /* tiles */
@@ -243,18 +252,43 @@
        The ChatGPT treeSet slices are NOT surface trees — they read
        blurry up close (USER: "这种树有点糊适合做中景") and live as the
        mid-ground band assets/scenery/bg/tree_band.png (see BK_DEFS). */
-    this.load.image('trees', 'assets/mc/tree_user.png?v=s2');
-    this.load.image('trees2', 'assets/mc/tree_user2.png?v=s2');
-    this.load.image('trees3', 'assets/mc/tree_user3.png?v=s2');
+    this.load.image('trees', 'assets/big/tree1.png?v=t1');   /* v10.2: trim+sharpen 版 */
+    /* trees2/trees3 (白桦) 已从 VARIANTS 移除 (v9.7), 不再加载 */
+
     /* showcase art (tools/prep_landmarks.py trims + sharpens 枫树.png /
        建筑.png): maple joins the tree variant pool, building is the
        landmark structure (worldgen 5b) */
     this.load.image('maple', 'assets/big/maple.png?v=m1');
     this.load.image('building', 'assets/big/building.png?v=m1');
+    /* v10 (USER: 接入 松树 木制公告亭 喷泉) — same prep pipeline as
+       maple/building (trim + sharpen) */
+    this.load.image('ancient', 'assets/big/ancient.png?v=a1');
+    this.load.image('notice', 'assets/big/notice.png?v=p1');
+    this.load.image('fountain', 'assets/big/fountain.png?v=p1');
     /* celestial art (USER): drawSky blits this sun and moon
        instead of the baked gradient discs */
-    this.load.image('sunImg', 'assets/mc/sun.png?v=c1');
+    this.load.image('sunImg', 'assets/mc/sun.png?v=c2');
     this.load.image('moonImg', 'assets/mc/moon_hard.png?v=c2');
+    /* thunder samples (v7.1, USER: 去网上找点雷雨的音效) — CC0 from
+       BigSoundBank (public domain, no attribution required). 6 takes:
+       随机挑一道 + 随机 detune, 不重复感 */
+    this.load.audio('thunder0', 'assets/sfx/thunder1.mp3');
+    this.load.audio('thunder1', 'assets/sfx/thunder2.mp3');
+    this.load.audio('thunder2', 'assets/sfx/thunder3.mp3');
+    this.load.audio('thunder3', 'assets/sfx/thunder4.mp3');
+    this.load.audio('thunder4', 'assets/sfx/thunder5.mp3');
+    this.load.audio('thunder5', 'assets/sfx/thunder6.mp3');
+    /* BGM (v8, USER: 再给游戏配几个合适的bgm + 中世纪风格) — CC0,
+       OpenGameArt (RandomMind "Medieval: Market Day" 白天 — 集市欢快
+       旋律; "Medieval: The Bard's Tale" 夜晚 — 吟游诗人小调; 洞穴
+       用 cave ambience)。按「昼夜 + 地上/地下」切轨, 交叉淡化 */
+    this.load.audio('bgmSurface', 'assets/sfx/bgm_day_medieval.mp3');
+    this.load.audio('bgmNight', 'assets/sfx/bgm_night_medieval.mp3');
+    this.load.audio('bgmCave', 'assets/sfx/bgm_cave.mp3');
+    /* rain ambience (v9, USER: 雨天bgm不搭): 下雨时旋律 BGM 让位,
+       切纯雨声环境 loop (CC0, OpenGameArt "Rain (loopable)") —
+       雨声+雷声已构成雨天氛围, 中世纪旋律叠上去会打架 */
+    this.load.audio('bgmRain', 'assets/sfx/rain_amb.ogg');
     /* foreground bushes (16px pixel shrubs, USER: 太大/色块 fix) */
     BUSH_SET.forEach(function (b) {
       this.load.image('bush' + b.i, 'assets/mc/bush_px' + b.i + '.png?v=b2');
@@ -551,9 +585,9 @@
     this.localY = function (y) { return y; };
 
     /* ---- world-space lightmap (the ACTUAL light engine) ----
-       A small canvas at 2x tile resolution (1024x512): 2x2 light
-       samples per tile, bilinearly sampled from the tile-level light
-       fields at compose time (LIGHT_SCALE below). The tile fields
+       A small canvas at Nx tile resolution (LIGHT_W x LIGHT_H, see
+     LIGHT_SCALE): SC x SC light samples per tile, bilinearly sampled
+       from the tile-level light fields at compose time. The tile fields
        (skyLight / torch RGB / emissive / solidBits) stay 1 per tile -
        only the painted map is finer, so point pools read round instead
        of diamond and emissive tiles get a half-tile soft edge. RGB
@@ -595,12 +629,18 @@
        one depth step further back, so trees/bushes layered after it
        always draw in front. Non-interactive scenery. */
     if (world.landmarks && world.landmarks.length) {
+      var LM_ART = {
+        building: { key: 'building', w: 564, h: 620 },   /* native 997x1096 */
+        notice:   { key: 'notice',   w: 340, h: 380 },   /* native 882x986, ~12 tiles */
+        fountain: { key: 'fountain', w: 330, h: 286 }    /* native 1051x911, ~9 tiles */
+      };
       for (var li = 0; li < world.landmarks.length; li++) {
         var lm = world.landmarks[li];
+        var art = LM_ART[lm.kind || 'building'];
         this.add.image(lm.x * TILE + TILE / 2, (lm.y + 0.5) * TILE,
-          'building')
+          art.key)
           .setOrigin(0.5, 1)
-          .setDisplaySize(564, 620)   /* native 997x1096, ~19 tiles tall */
+          .setDisplaySize(art.w, art.h)
           .setDepth(-1.6);
       }
     }
@@ -620,14 +660,14 @@
            trunk bottom is INSIDE the grass tile, not floating on it
            (USER: 和方块重叠了 — the previous base sat exactly on the
            tile top edge and collided visually with surface blocks). */
-        /* variant table: sprite N -> texture + display size. The 3
-           hand-keyed trees + the ChatGPT maple (showcase art, pre-
-           sharpened; treeSet slices stayed in the mid-ground band). */
+        /* variant table: sprite N -> texture + display size. v9.7
+           (USER: 去掉桦树, 贴图有问题) — trees2/trees3 是白桦 (树干
+           白底黑纹), 移出池子; 只留 trees (深绿针叶) + maple (红枫)。
+           tr.sprite 取模自动重映射, worldgen 数据不用动。 */
         var VARIANTS = [
-          { key: 'trees',  w: 560, h: 580 },
-          { key: 'trees2', w: 470, h: 555 },
-          { key: 'trees3', w: 500, h: 590 },
-          { key: 'maple',  w: 400, h: 590 }
+          { key: 'trees',    w: 560, h: 580 },   /* tree1: 针叶 (trim+锐化) */
+          { key: 'maple',    w: 400, h: 590 },   /* 红枫 */
+          { key: 'ancient',  w: 520, h: 640 }    /* v10.2 深绿阔叶古树: 大冠幅 */
         ];
         var v = VARIANTS[tr.sprite % VARIANTS.length];
         /* trunk base sits INSIDE the surface tile (USER: 树底部扎进泥
@@ -941,6 +981,15 @@
     }
     this.hudCtx = document.getElementById('eggHudOverlay').getContext('2d');
     this.skyCtx = document.getElementById('eggSkyOverlay').getContext('2d');
+    /* RAIN near layer (USER: 下雨): Graphics pinned to the camera
+       (scrollFactor 0 — streak coords ARE screen pixels, no scroll
+       compensation; v1 bug: world-scrollFactor graphics + screen-space
+       math = streaks slid off with the camera, only a top band
+       showed /贴图区看着像被挡住). Above terrain/entities, below HUD
+       (DOM). Per-streak surface clipping applies only while the
+       player is near the surface — looking up at sky, rain crosses
+       the full screen. */
+    this.rainG = this.add.graphics().setDepth(90).setScrollFactor(0);
     /* ---- BACKDROP AS PHASER OBJECTS (framework-native parallax) -----
        7 TileSprites, one per layer, each setScrollFactor(fx, 0):
          • horizontal: engine-native parallax — camera movement drives
@@ -2178,6 +2227,231 @@ var dayCount = 0;               /* nights elapsed — dusk increments it; now
                                    nights in a row" bookkeeping (moon
                                    phases were dropped, USER: "不用做月
                                    相了") */
+/* ---- RAIN (USER: "彩蛋游戏能加下雨的效果吗") ------------------------
+   Minecraft-style weather EVENTS, not whole-day states: at dawn a dice
+   roll (CFG.rainChance %) starts a rain of random length (RAIN_MIN..
+   RAIN_MAX seconds, log-ish spread — short showers common, long storms
+   rare); rest of the day stays dry. Blood-moon nights never rain (血月
+   不落雨). level eases toward target over ~2s. SFX: looping filtered
+   noise, gain follows level (rainSfx below). */
+var RAIN_MIN = 25, RAIN_MAX = 110;         /* seconds per rain event */
+var rain = { level: 0, target: 0, until: 0, strength: 1,
+             storm: false, nextBolt: 0, flash: 0 };
+/* thunder (v7, USER: 雷雨好做吗 → 可以): storms (strength>1.25) roll
+   lightning bolts every 4-11s. flash ∈ 0..1 is the sky brightness
+   spike (drawSky paints it, decays fast with a double-flicker);
+   the CRACK itself is noise() low-fft rumble delayed 0.3-1.4s
+   (distance feel) with a quieter echo. */
+var STORM_MIN_STRENGTH = 1.25;
+function thunderCrack(strength, scene) {
+  /* v7.2 (USER: 去网上找点雷雨的音效): 播真实采样 — 6 道 CC0 雷
+     (BigSoundBank), 随机挑一道 + 随机 detune ±8%, 音量随强度 0.9..1.4
+     (采样本身响, 无需合成大增益)。采样未就绪 (Phaser 声音锁/加载中)
+     回退 v7.1 的合成噪声。Duck 雨声逻辑两路共用: 雷响瞬间压雨声到
+     30%, 1.2s 平滑恢复 — 现实听觉掩蔽的反相操作 */
+  var TH_N = 6;
+  var delay = 0.3 + Math.random() * 1.1;         /* 距离感 */
+  var pick = 'thunder' + Math.floor(Math.random() * TH_N);
+  var vGame = (scene && scene.sound && scene.sound.get) ? scene.sound.get(pick) : null;
+  var g0 = 0.11 * rain.level * (rain.strength || 1);
+  function duck(nowS) {
+    try {
+      var c2 = ac();
+      if (!c2 || !rainSfxNode) { return; }
+      var gn = rainSfxNode.gain.gain;
+      gn.cancelScheduledValues(nowS);
+      gn.setValueAtTime(g0 * 0.3, nowS);
+      gn.setTargetAtTime(g0, nowS + 0.5, 0.35);
+    } catch (e) {}
+  }
+  window.setTimeout(function () {
+    try {
+      if (vGame) {
+        var vol = 0.9 + 0.5 * (strength - 1);    /* 0.9..1.4 × 采样原声 */
+        vGame.setDetune ? vGame.setDetune((Math.random() * 160 - 80)) : 0;
+        vGame.setVolume ? vGame.setVolume(vol) : vGame.setGain(vol);
+        vGame.play();
+        var c2 = ac();
+        if (c2) { duck(c2.currentTime); }
+      } else {
+        /* 回退: 合成噪声 (Phaser audio 解锁失败/加载中) */
+        var vol2 = 0.5 + 0.2 * (strength - 1);
+        noise(1.6, vol2, 200 + Math.random() * 100);
+        window.setTimeout(function () {
+          try { noise(1.1, vol2 * 0.5, 130 + Math.random() * 70); } catch (e) {}
+        }, 520);
+        var c3 = ac();
+        if (c3) { duck(c3.currentTime); }
+      }
+    } catch (e) {}
+  }, delay * 1000);
+}
+function stormTick(dt, S) {
+  if (!rain.storm || rain.level < 0.5) {
+    rain.flash = Math.max(0, rain.flash - dt * 4);   /* 衰减 */
+    return;
+  }
+  var now = (typeof performance !== 'undefined' ? performance.now() : 0) / 1000;
+  if (now >= rain.nextBolt) {
+    rain.flash = 0.55 + 0.45 * Math.random();        /* 亮度随场次 */
+    rain.nextBolt = now + 4 + Math.random() * 7;     /* 4-11s */
+    thunderCrack(rain.strength, S);
+  }
+  /* double-flicker 衰减: 快掉到 40% 再慢掉到 0 (闪电的频闪感) */
+  if (rain.flash > 0.4) { rain.flash -= dt * 3.5; }
+  else { rain.flash = Math.max(0, rain.flash - dt * 1.6); }
+}
+function rainTick(dt, S) {
+  var now = (typeof performance !== 'undefined' ? performance.now() : 0) / 1000;
+  if (dayT >= 0 && now >= rain.until) {
+    /* expired (or boot): roll the NEXT event window. v3 BUG: chance
+       was multiplied by dt/30 → per-frame 0.013% — it rained
+       essentially never (用户: 一直没看到下雨). Correct math: a day
+       is DAY_LEN seconds ≈ DAY_LEN/12 dry windows; we want
+       CFG.rainChance ≈ fraction of DAYS that see rain, so each
+       12s window hits with p = chance/100 × 12/DAY_LEN. */
+    var pWin = CFG.rainChance / 100 * Math.min(1, 12 / CFG.dayLen);
+    var raining = Math.random() < pWin;
+    /* 血月只禁血月「夜」: bloodMoon 标志从 dusk 一直保留到次日 dusk
+       才刷新——白天它也是 true。不加 night 条件会把 40% 的完整一天
+       (含白天) 全禁了 (v3 bug 之二, 用户: 一直没看到下雨) */
+    if (S && S.bloodMoon && dayT > 0.5) { raining = false; }
+    rain.target = raining ? 1 : 0;
+    if (raining) {
+      /* biased spread: min + (max-min) * rand^1.6 — showers > storms */
+      var dur = RAIN_MIN + (RAIN_MAX - RAIN_MIN) * Math.pow(Math.random(), 1.6);
+      rain.until = now + dur;
+      /* v6 (USER: 雨量改为随机的, 雨声要随之适配): 每场雨掷一个强度
+         系数 0.45..1.6 (偏小场: rand^1.4), 整场保持——rain.level 会
+         乘它, 驱动雨丝密度 (drawRain) 与雨声音量/音色 (rainSfx) */
+      rain.strength = 0.45 + 1.15 * Math.pow(Math.random(), 1.4);
+      /* v7 雷雨: 强场 (≥1.25) 自动升级为雷雨 — 闪电 + 雷声 */
+      rain.storm = rain.strength >= STORM_MIN_STRENGTH;
+      rain.nextBolt = now + 1.5 + Math.random() * 4;
+    } else {
+      rain.until = now + 12;         /* re-roll every ~12s while dry */
+    }
+  }
+  /* ease level → target (~2s to ~95%) — frame-rate independent */
+  var k = 1 - Math.exp(-dt * 2.2);
+  rain.level += (rain.target - rain.level) * k;
+  if (rain.level < 0.002 && rain.target === 0) { rain.level = 0; }
+}
+/* rain SFX: filtered white-noise loop, gain tracks rain.level×strength
+   (v6: 声音随场强度适配 — 暴雨 gain 高 + 滤波低沉, 小雨反之)。Built
+   once on first rain (AudioContext needs a user gesture first); the
+   source loops forever, we only ride the gain + filter nodes. */
+var rainSfxNode = null;   /* {gain, filter} */
+/* ---- BGM manager (v8, USER: 再给游戏配几个合适的bgm) ----
+   3 tracks keyed by state: day-surface / night-surface / underground.
+   Only ONE playing at a time; switches are cross-faded (1.5s out,
+   1.5s in) so no hard cuts. Loop via Phaser. Volume rides a CFG-free
+   fixed 0.35 base (BGM must sit under rain/thunder SFX). Storm adds
+   a slight duck so BGM doesn't fight the thunder. */
+var bgm = { cur: null, tracks: {} };
+/* 每轨响度校准 (v9.2, USER: 白天50%过大、夜晚过小 — 两条母带
+   响度差很多): gain 乘在滑杆值上, 白天压低 / 夜晚抬高 */
+var BGM_GAIN = { bgmSurface: 0.42, bgmNight: 1.55, bgmCave: 1.0, bgmRain: 0.9 };   /* v9.3 USER: 白天还得压 — 0.6→0.42 */
+function bgmUpdate(S) {
+  if (!S || !S.sound || !S.sound.add) { return; }
+  /* desired track */
+  var pCol = Math.max(0, Math.min(WORLD_W - 1, Math.floor(S.player.x / TILE)));
+  var surf = world.surfaceY[pCol] * TILE;
+  /* v9.6 (USER: 洞穴bgm只在看不到地表才能播放): 「下洞」不再按玩
+     家深度 (脚低于地表 2 格就切), 改按视野——玩家所处列的地表线
+     滚出屏幕顶 (footRow < 0, 看不到天空了) 才算真·进洞。贴近洞
+     口向下看得到地表时仍是地表 BGM。 */
+  var footRow2 = surf - S.cameras.main.scrollY;
+  var under = footRow2 < -8;                   /* 地表线滚出屏顶 8px 缓冲 */
+  var raining = rain.level > 0.25;             /* 雨起 25% 即切雨环境声 */
+  var want = under ? 'bgmCave'
+    : raining ? 'bgmRain'
+    : (dayT > 0.5 && dayT < 0.99 ? 'bgmNight' : 'bgmSurface');
+  if (bgm.cur === want) {
+    /* v8.5 (USER: 放到配置里): 音量跟随 CFG.bgmVolume 滑杆, 每帧
+       同步 — 拖动滑杆即时生效, 不用等切轨。storm duck: 雷响时
+       压到滑杆值的 35% */
+    var tk = bgm.tracks[want];
+    /* bgmRain 走独立雨声音量滑杆; 其余轨走 BGM 滑杆 × 轨校准 */
+    var base = (want === 'bgmRain')
+      ? CFG.rainVolume / 100 * 1.6
+      : CFG.bgmVolume / 100 * 1.6 * (BGM_GAIN[want] || 1);
+    if (tk) {
+      var inst = S.sound.get(want);
+      if (inst) {
+        /* 雨环境声是雨天主氛围: 不被 flash duck; 旋律 BGM 照旧被雷 duck */
+        var v = (want === 'bgmRain')
+          ? base
+          : (rain.flash > 0.05 ? base * 0.35 : base);
+        inst.setVolume(v);
+      }
+    }
+    return;
+  }
+  /* fade out old — v8.3 确定性淡出 (下方 time.addEvent); 旧的
+     tweens.add(volume) 已删: tween 在 1500ms 内更新被 destroy 的
+     Sound 实例会抛 "Cannot set properties of null" (v321 报错)。
+     fade-out 旧实现对 Sound 实例做 volume tween + fade-out 完才
+     stop——bgmUpdate 每帧重入时 tween 失效旧轨就不停, 新旧两首
+     中世纪旋律混着放 → 听感「没切换」, 故改手动衰减 */
+  if (bgm.cur && bgm.tracks[bgm.cur]) {
+    var old = S.sound.get(bgm.cur);
+    if (old) {
+      var oVol = old.volume;
+      var fadeT = S.time.addEvent({
+        delay: 50, repeat: 29, callback: function () {
+          oVol *= 0.82;
+          try { old.setVolume(oVol); } catch (e) {}
+        }
+      });
+      S.time.delayedCall(1550, function () {
+        try { fadeT.remove(); old.stop(); old.destroy(); } catch (e) {}
+      });
+    }
+  }
+  var stale = S.sound.get(want);
+  if (stale) { try { stale.stop(); stale.destroy(); } catch (e) {} }
+  var t = S.sound.add(want, { loop: true, volume: 0 });
+  t.play();
+  var inVol = (want === 'bgmRain')
+    ? CFG.rainVolume / 100 * 1.6
+    : CFG.bgmVolume / 100 * 1.6 * (BGM_GAIN[want] || 1);
+  var inT = S.time.addEvent({
+    delay: 50, repeat: 29, callback: function () {
+      try { t.setVolume(Math.min(inVol, t.volume + inVol / 30)); } catch (e) {}
+    }
+  });
+  bgm.tracks[want] = true;
+  bgm.cur = want;
+}
+
+function rainSfx(level, strength) {
+  try {
+    var c = ac();
+    if (!c) { return; }
+    if (!rainSfxNode) {
+      var n = Math.floor(c.sampleRate * 2);
+      var buf = c.createBuffer(1, n, c.sampleRate);
+      var d = buf.getChannelData(0);
+      for (var i = 0; i < n; i++) { d[i] = Math.random() * 2 - 1; }
+      var src = c.createBufferSource();
+      src.buffer = buf; src.loop = true;
+      var f = c.createBiquadFilter(); f.type = 'bandpass';
+      f.frequency.value = 1400; f.Q.value = 0.45;   /* soft "shhh" */
+      var g = c.createGain(); g.gain.value = 0;
+      src.connect(f); f.connect(g); g.connect(c.destination);
+      src.start();
+      rainSfxNode = { gain: g, filter: f };
+    }
+    var eff = level * (strength || 1);
+    /* 音量: 基线 0.11 × 强度 (暴雨 1.6 → 0.176 醒目, 小雨 0.45 → 0.05 轻柔) */
+    var vol = 0.11 * eff;
+    /* 音色: 滤波频率随强度降 — 暴雨低沉轰鸣 (900Hz), 小雨高细沙沙 (1700Hz) */
+    var freq = 1700 - 800 * Math.min(1, eff);
+    rainSfxNode.gain.gain.setTargetAtTime(vol, c.currentTime, 0.4);
+    rainSfxNode.filter.frequency.setTargetAtTime(freq, c.currentTime, 0.8);
+  } catch (e) { /* audio unavailable — stay silent */ }
+}
   var SKY_STOPS = [               /* [t, top, bottom] colors */
     [0.00, 0x1a2440, 0x3a3a5c],   /* pre-dawn */
     [0.08, 0x7a9ec9, 0xd9b98a],   /* sunrise */
@@ -2218,6 +2492,132 @@ var dayCount = 0;               /* nights elapsed — dusk increments it; now
   function dayFactor(t) {
     return t >= 0.5 ? 0 : Math.sin(t / 0.5 * Math.PI);
   }
+  /* ---- near rain layer: camera-space streaks on a Phaser Graphics.
+     Screen-space drawing (worldPoint of camera corners), each streak
+     falls along a slant; a streak's foot is clipped at the surface
+     column it crosses so pits/overhangs read dry. Skipped entirely
+     when the player is underground (feet below their surface column)
+     or rain.level ~0. Density scales with CFG.rainIntensity. ---- */
+  /* splash pool: impact points live ~130ms — {x, y, t0} screen-space */
+  var splashes = [];
+  function drawRain(S) {
+    var g = S.rainG;
+    if (!g) { return; }
+    g.clear();
+    var lvl = rain.level * rain.strength;   /* v6: 有效等级 = level × 场强度 */
+    var tNow = (typeof performance !== 'undefined' ? performance.now() : 0);
+    if (lvl <= 0.02) { splashes.length = 0; return; }
+    var cam = S.cameras.main;
+    var pCol = Math.max(0, Math.min(WORLD_W - 1, Math.floor(S.player.x / TILE)));
+    var pSurf = world.surfaceY[pCol] * TILE;
+    /* v5 BUG (USER: 下洞时地表看不到雨水溅落): 上一版玩家脚比地表低
+       8px 就整层 return——挖掉脚下方块立刻断雨, 洞口地表的雨/溅射
+       一起消失。雨应绑定相机视野: 只要玩家所处列的地表线还在屏幕
+       内 (还能看到天), 雨就继续落在那道地表上; 深到地表滚出屏幕
+       (footRow < 0) 才真正停。 */
+    var footRow = pSurf - cam.scrollY;
+    if (footRow < -40) { splashes.length = 0; return; }  /* 地表已滚出屏顶 */
+    var vw = cam.width, vh = cam.height;
+    var n = Math.round(150 * (CFG.rainIntensity / 100) * lvl);
+    /* near-surface? — 雨的落点逐列取「第一个实心块」(isSolid), 不再
+       是单一 surfaceY 线 (v6, USER: 雨水不会下到洞穴里): 洞口/竖井
+       开口处雨会顺开口飘进来, 落到井底或洞内地面上; 实心地表照旧
+       折断。井很深时 (落点远超屏幕底) 雨丝自然画到屏底截止。 */
+    var nearSurf = footRow > -40;
+    /* prune expired splashes once per frame */
+    for (var sp = splashes.length - 1; sp >= 0; sp--) {
+      if (tNow - splashes[sp].t0 > 260) { splashes.splice(sp, 1); }
+    }
+    /* 两档亮度: 亮芯 (宽 2px, 更不透明) 为主, 偶有高亮滴 (每 9 条 1 条,
+       3px) — 单靠 1px 淡线在亮天空下几乎看不见 (v1 教训: 雨线不明显)
+       v4 (USER: 雨线太丑): 均匀 hash 网格看着像噪点。改为
+       Terraria 式: 细 (1.5px)、更长更斜 (斜率 0.42)、三档速度层次
+       (远/中/近 = 视差感)、颜色带蓝 (0xaecbe8) 而非纯白 */
+    var SLANT = 0.42;                          /* dx per +1y — 更斜更像雨 */
+    for (var pass = 0; pass < 3; pass++) {
+      /* 每层 1/3 条数, 越近越快越长越亮 (速度视差) */
+      var layerN = Math.floor(n / 3) + (pass === 0 ? n % 3 : 0);
+      var lSpd = 0.75 + pass * 0.22;           /* 0.75 / 0.97 / 1.19 */
+      var lLen = 16 + pass * 6;                /* 16 / 22 / 28 (+hash) */
+      var lAlpha = [0.34, 0.46, 0.6][pass] * lvl;
+      var lWidth = pass === 2 ? 2 : 1.5;
+      g.lineStyle(lWidth, 0xaecbe8, lAlpha);
+      g.beginPath();
+      for (var i = 0; i < layerN; i++) {
+        /* hash-scatter per layer: 层内独立散布, 避免三层重叠成网格 */
+        var ii = i * 3 + pass * 17;
+        var sx = ((ii * 233.7 + tNow * 0.42 * lSpd) % (vw + 90)) - 45;
+        var sy = ((ii * 149.3 + tNow * lSpd * 1.05) % (vh + 120)) - 60;
+        var len = lLen + (ii % 5) * 3;
+        var y2 = sy + len;
+        if (nearSurf) {                          /* 贴地: 雨落到第一块实心块为止 */
+          var wx = cam.scrollX + sx;
+          var col = Math.max(0, Math.min(WORLD_W - 1, Math.floor(wx / TILE)));
+          /* 逐列找第一个实心块 (含墙? 不含 — 墙不挡雨, 背景墙洞穴
+             也淋得到; 只挡 solid tile), 最多扫 40 格 (一屏深), 查
+             不到就落穿到屏底 (开井/深渊的读感) */
+          var fRow = Math.max(0, Math.floor((cam.scrollY + sy) / TILE));
+          var foot = vh + 60;                    /* default: fall through */
+          for (var scan = fRow, end2 = fRow + 40; scan < end2 && scan < WORLD_H; scan++) {
+            if (isSolid(col, scan)) {
+              foot = scan * TILE - cam.scrollY;
+              break;
+            }
+          }
+          var hit = y2 >= foot && sy < foot;     /* crosses the ground line */
+          y2 = Math.min(y2, foot);
+          if (y2 <= sy) { continue; }
+          /* impact → a splash (v4: USER 不明显 — 提高触发率到 1/3,
+             池上限 96, 带弹起小水珠) */
+          if (hit && foot < vh && splashes.length < 96 && (i % 3) === 0) {
+            splashes.push({ x: sx - (y2 - sy) * SLANT, y: y2, t0: tNow });
+          }
+        }
+        g.moveTo(sx, sy);
+        g.lineTo(sx - (y2 - sy) * SLANT, y2);
+      }
+      g.strokePath();
+    }
+    /* SPLASHES (v4: USER 不明显 — 重做): 三段结构, 存活 260ms —
+       ① 展宽渐隐的上开 v (原有, 加大)
+       ② 中期两粒弹起水珠 (向上抛物线小点)
+       ③ 地面一条短亮横线 (水花铺开的读感) */
+    if (splashes.length) {
+      g.lineStyle(1, 0xaecbe8, 0.6 * lvl);
+      g.beginPath();
+      for (var k2 = 0; k2 < splashes.length; k2++) {
+        var s2 = splashes[k2];
+        var age = (tNow - s2.t0) / 260;            /* 0..1 */
+        if (age < 0.45) {                          /* ① v 形张开 */
+          var r2 = 2 + (age / 0.45) * 4;
+          g.moveTo(s2.x - r2, s2.y - 2 - age * 5);
+          g.lineTo(s2.x, s2.y - 1);
+          g.lineTo(s2.x + r2, s2.y - 2 - age * 5);
+        } else {                                   /* ② 弹起水珠 */
+          var a2 = (age - 0.45) / 0.55;
+          var jx = 3.5 * (k2 % 2 ? 1 : -1);
+          g.moveTo(s2.x + jx * (0.3 + a2 * 0.7) - 1,
+                   s2.y - 3 - Math.sin(a2 * Math.PI) * 5);
+          g.lineTo(s2.x + jx * (0.3 + a2 * 0.7) + 1,
+                   s2.y - 3 - Math.sin(a2 * Math.PI) * 5);
+        }
+        /* ③ 地面横线: 前半段存在 */
+        if (age < 0.5) {
+          g.moveTo(s2.x - 3.5, s2.y);
+          g.lineTo(s2.x + 3.5, s2.y);
+        }
+      }
+      g.strokePath();
+    }
+    /* FULL-SCREEN FLASH (v7.1, USER: 整个画面都要屏闪): sky canvas
+       的白层只亮了天空 — 地下/近景没感觉。rainG 在场景最上层
+       (depth 90), 把同一 flash 画成全屏白罩, 游戏画面一起闪 */
+    if (rain.flash > 0.02) {
+      g.fillStyle(0xe9f1ff, rain.flash * 0.42);
+      g.fillRect(0, 0, vw + 2, vh + 2);
+    }
+  }
+
   function cssColor(c) {
     return 'rgb(' + ((c >> 16) & 255) + ',' + ((c >> 8) & 255) + ',' + (c & 255) + ')';
   }
@@ -2556,23 +2956,41 @@ var dayCount = 0;               /* nights elapsed — dusk increments it; now
      20 Hz GC pressure). lightComp always holds the LATEST composed
      value of every pixel, so a zone blur can read correct unblurred
      inputs just outside its border: no seams. */
-  /* ---- 2x light-map subdivision ------------------------------------
+  /* ---- Nx light-map subdivision (CFG.lightScale, USER: "光照现在是
+     一个 tile *2 的密度，改成可配置的，让用户能*4") --------------------
      The light FIELDS stay tile-resolution (1 sample per tile); the
-     painted canvas is 2x2 cells per tile. Compose bilinearly samples
-     the tile fields at cell centers, then the solid-aware blur runs
-     on cells with radius 2*LIGHT_SCALE (=4 cells = 2 tiles), so the
-     blur footprint in WORLD units is unchanged from the 1x pipeline.
-     Higher factors only shrink tiles from 32px to 16/8px on screen
-     without gaining real smoothness - 2x is the sweet spot. */
-  var LIGHT_SCALE = 2;
-  var LIGHT_W = WORLD_W * LIGHT_SCALE, LIGHT_H = WORLD_H * LIGHT_SCALE;
+     painted canvas is SC x SC cells per tile (SC = CFG.lightScale,
+     clamped 1..4, default 2). Compose bilinearly samples the tile
+     fields at cell centers, then the solid-aware blur runs on cells
+     with radius 2*LIGHT_SCALE cells (= 2 tiles in WORLD units), so
+     the blur footprint is unchanged at every setting. 4x = 2048x1024
+     canvas (~+20MB RGBA) — still a few ms to build at boot. The
+     canvas is created once in create(), so changes take effect on
+     the next game entry (same re-enter semantics as other CFG
+     fields). */
+  var LIGHT_SCALE = 2, LIGHT_W = 0, LIGHT_H = 0;
+  /* syncLightScaleFromCFG: LIGHT_SCALE/LIGHT_W/LIGHT_H depend on
+     CFG.lightScale, which the settings panel can change between runs.
+     They were once script-load constants — but "重进游戏生效" re-enters
+     via startGame() WITHOUT reloading the script, so a load-time value
+     made every setting render identically (USER: "1和4好像区别不大").
+     Re-derive them at boot instead: startGame() calls this before the
+     Phaser.Game is constructed, so create() builds the light canvas at
+     the right size. */
+  function syncLightScaleFromCFG() {
+    LIGHT_SCALE = Math.max(1, Math.min(4, CFG.lightScale | 0 || 2));
+    LIGHT_W = WORLD_W * LIGHT_SCALE;
+    LIGHT_H = WORLD_H * LIGHT_SCALE;
+  }
+  syncLightScaleFromCFG();   /* initial value for the first boot */
   var BLUR_R = 2; /* solid-aware blur radius, in TILES (footprint is 2*BLUR_R+1 = 5) */
   /* bilinear sample of a Uint8 tile field at a cell center:
-     fx/fy in cells; gx/gy = the tile grid position (0.5-cell inset so
-     cell centers land mid-edge between tile centers). Returns the
-     plain (unweighted) sample when LIGHT_SCALE === 1. */
+     fx/fy in cells; gx/gy = the tile grid position (a half-cell inset
+     so cell centers land mid-edge between tile centers at any SC).
+     Returns the plain (unweighted) sample when LIGHT_SCALE === 1. */
   function sampleB(f, fx, fy, W, H) {
-    var gx = fx * 0.5 - 0.5, gy = fy * 0.5 - 0.5;
+    var inv = 1 / LIGHT_SCALE;
+    var gx = fx * inv - 0.5, gy = fy * inv - 0.5;
     var x0 = Math.floor(gx), y0 = Math.floor(gy);
     var ax = gx - x0, ay = gy - y0;
     var x1 = x0 + 1, y1 = y0 + 1;
@@ -2583,9 +3001,9 @@ var dayCount = 0;               /* nights elapsed — dusk increments it; now
     return (f[cy0 * W + cx0] * (1 - ax) + f[cy0 * W + cx1] * ax) * (1 - ay) +
            (f[cy1 * W + cx0] * (1 - ax) + f[cy1 * W + cx1] * ax) * ay;
   }
-  /* 2x mirror of solidBits (1 cell per 1/4 tile) for the solid-aware
+  /* Nx mirror of solidBits (1 cell per 1/SC tile) for the solid-aware
      blur. Rebuilt alongside rebuildSolidBits from the tile mask - a
-     solid tile always makes all 4 of its cells solid. */
+     solid tile always makes all SC x SC of its cells solid. */
   var solidBits2 = null;
   function rebuildSolidBits2(x0, y0, x1, y1) {
     if (!solidBits2) { solidBits2 = new Uint8Array(LIGHT_W * LIGHT_H); }
@@ -2623,6 +3041,40 @@ var dayCount = 0;               /* nights elapsed — dusk increments it; now
        CFG.brightness (USER: "把游戏亮度也弄成配置") moves the night
        FLOOR in % — 42 is the old default; 100 makes nights noon-bright. */
     var bMin = CFG.brightness / 100;
+    /* v9.5 (USER: 夜晚亮度在无月亮的雷雨夜应该最小值是0): 夜晚地面
+       亮度 floor 由「月照」决定 — 有月亮照 42% 的月亮光, 无月亮
+       (新月) 或雷雨乌云遮月时没有月光, floor 应为 0 (纯黑, 全靠
+       火把/灯)。月亮在场 = 夜晚 (dayT 0.5-0.99) 且非血月遮云且
+       非雷雨 (storm flash 亮的一瞬是闪电不是月光); 地下不受影响
+       (cave floor 独立)。雷雨判定: rain.storm && rain.level>0.3 */
+    /* v9.10 (USER: 血月也是要有亮度的): 血月红光虽不是「月光」,
+       但也不该全黑 — 血月夜 floor 取设定值的一半 (血红微光)。
+       雷雨 (乌云遮月) 仍归零; 晴夜满额 */
+    var isNight = dayT > 0.5 && dayT < 0.99;
+    var isStorm = rain.storm && rain.level > 0.3;
+    var isBlood = S && S.bloodMoon;
+    var moonLit = !isNight ? 1
+      : isStorm ? 0
+      : isBlood ? 0.5
+      : 1;
+    /* v9.8: floor 再乘 twilight 拖尾 — 日落瞬间 floor 不立即生效,
+       而是随晚霞 (0.5→0.62) 从 100% 滑到 0%; 黎明前 (0.95→1.0)
+       反向滑回, 月亮升起的光感与天空同步, 消灭「黑一下又亮」 */
+    /* v9.9 (USER: 夜晚亮度会变): v9.8 把 twilight 乘进 floor 后,
+       夜深 floor 只剩 CFG.brightness×0.25 — 比设定暗 4 倍且黄昏
+       14 秒里一直在掉 = 「夜晚亮度会变」。修正语义: twilight 只
+       管「日落→夜」的过渡方向, 过渡结束后 floor 恰好 = 用户设定
+       的 CFG.brightness, 夜深恒定不再动:
+         floor = bMin × (1 − tw×0.75) 反了 → 正确的是
+         过渡期 floor 在「余晖亮度」与「设定值」之间滑动, 夜深=设定值 */
+    /* 最终形状 (数值推演定稿): floor = bMin × (0.35 + 0.65×smoothstep(
+       日落后进度)) — 日落瞬间 floor=35%×bMin (补 day 归零的落差,
+       0.49→0.50: 0.456→0.147 平滑), 之后 smoothstep 升到 100%×bMin,
+       t≥0.62 后恒定 = 用户设定值, 夜里不再有任何变化。黎明前 0.95+
+       day 因子自然回升接管渐亮, 无需 floor 参与 */
+    var twProg = (dayT < 0.5 || dayT >= 0.62) ? 1 : Math.min(1, (dayT - 0.5) / 0.12);
+    var ss = twProg * twProg * (3 - 2 * twProg);   /* smoothstep */
+    bMin *= moonLit * (0.35 + 0.65 * ss);
     var bright = bMin + (1 - bMin) * day;      /* night floor .. 1 noon */
     var sR = Math.round(surf[0] * bright),
         sG = Math.round(surf[1] * bright),
@@ -2938,7 +3390,7 @@ var dayCount = 0;               /* nights elapsed — dusk increments it; now
     if (_celCanvas) { return _celCanvas; }
     var sunSrc = S.textures.get('sunImg').getSourceImage();
     var moonSrc = S.textures.get('moonImg').getSourceImage();
-    var sp = { sun: null, moon: null };
+    var sp = { sun: null, moon: null, moonBlood: null };
     /* SUN — the art blitted once into a padded canvas (keep its own
        glow, no extra baked halo). */
     (function () {
@@ -2956,6 +3408,12 @@ var dayCount = 0;               /* nights elapsed — dusk increments it; now
       sp.sun = c;
     })();
     /* MOON — the art alone: full texture, every night. */
+    /* BLOOD MOON variant (USER: 血月的这个贴图没换啊): the old blood
+       moon was just two faint red circles drawn OVER the blue-grey
+       moon art — the disc itself never changed. Bake a real
+       recoloured copy: moon art, 'multiply' a crimson layer (keeps
+       crater texture, flips palette to blood red), clip to the
+       moon's alpha shape, then a soft red halo. */
     (function () {
       var MR = 24;                       /* disc radius on the sky */
       var SZM = MR * 2 + 8;              /* small margin for AA edge */
@@ -2963,6 +3421,23 @@ var dayCount = 0;               /* nights elapsed — dusk increments it; now
       cm.width = cm.height = SZM;
       cm.getContext('2d').drawImage(moonSrc, 4, 4, MR * 2, MR * 2);
       sp.moon = cm;
+      var cb = document.createElement('canvas');
+      cb.width = cb.height = SZM;
+      var xb = cb.getContext('2d');
+      xb.drawImage(moonSrc, 4, 4, MR * 2, MR * 2);
+      xb.globalCompositeOperation = 'multiply';
+      xb.fillStyle = 'rgb(255,64,48)';
+      xb.fillRect(0, 0, SZM, SZM);
+      xb.globalCompositeOperation = 'destination-in';
+      xb.drawImage(moonSrc, 4, 4, MR * 2, MR * 2);
+      xb.globalCompositeOperation = 'source-over';
+      var grB = xb.createRadialGradient(SZM / 2, SZM / 2, MR * 0.6,
+        SZM / 2, SZM / 2, SZM / 2);
+      grB.addColorStop(0, 'rgba(255,70,50,0.35)');
+      grB.addColorStop(1, 'rgba(255,70,50,0)');
+      xb.fillStyle = grB;
+      xb.fillRect(0, 0, SZM, SZM);
+      sp.moonBlood = cb;
     })();
     _celCanvas = sp;
     return sp;
@@ -2972,13 +3447,50 @@ var dayCount = 0;               /* nights elapsed — dusk increments it; now
   function drawSky(S) {
     var ctx = S.skyCtx;
     if (!ctx) { return null; }
+    var cam = S.cameras.main;               /* 天体世界锚定视差用 */
     var w = ctx.canvas.width, h = ctx.canvas.height;
     var sky = skyColors(dayT);
+    /* RAIN WASH (USER: 下雨): grey-blue调制 — push top/bot toward a
+       desaturated slate by rain.level × strength (v6: 暴雨天更阴沉) */
+    var rainEff = rain.level * rain.strength;
+    if (rainEff > 0.01) {
+      var RAIN_TOP = 0x3e4859, RAIN_BOT = 0x4e5868;
+      sky = {
+        top: lerpColor(sky.top, RAIN_TOP, rainEff * 0.8),
+        bot: lerpColor(sky.bot, RAIN_BOT, rainEff * 0.7),
+        dayness: sky.dayness * (1 - rainEff * 0.35)
+      };
+    }
     var grad = ctx.createLinearGradient(0, 0, 0, h);
     grad.addColorStop(0, cssColor(sky.top));
     grad.addColorStop(1, cssColor(sky.bot));
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, w, h);
+    /* LIGHTNING FLASH (v7 雷雨): stormTick 驱动的 sky 亮度尖峰 —
+       白层叠上去, flash 越大越亮; 冷白微偏蓝 (闪电色温) */
+    if (rain.flash > 0.02) {
+      ctx.fillStyle = 'rgba(225,235,255,' + (rain.flash * 0.55).toFixed(3) + ')';
+      ctx.fillRect(0, 0, w, h);
+    }
+    /* far rain mist: faint slanted strokes across the sky band —
+       cheap parallax hint of weather before the near layer in the
+       Phaser scene; seeded by frame time so it shimmers */
+    if (rainEff > 0.05) {
+      var nFar = Math.round(90 * rainEff);
+      ctx.strokeStyle = 'rgba(215,228,246,0.28)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      var tNow = (typeof performance !== 'undefined' ? performance.now() : 0);
+      for (var fi = 0; fi < nFar; fi++) {
+        /* deterministic per-index pseudo-random — no re-seed jitter */
+        var fx = ((fi * 137.5 + (tNow * 0.45)) % (w + 80)) - 40;
+        var fy = ((fi * 89.7 + (tNow * 0.85)) % (h * 0.62));
+        var flen = 14 + (fi % 7) * 2.4;
+        ctx.moveTo(fx, fy);
+        ctx.lineTo(fx - flen * 0.28, fy + flen);
+      }
+      ctx.stroke();
+    }
 
     /* BELOW-HORIZON FALLBACK = cave wall, anchored to the BANDS' live
        screen position (USER: "山的背面…删掉"). The first version started
@@ -3041,30 +3553,67 @@ var dayCount = 0;               /* nights elapsed — dusk increments it; now
        once-baked sprites (bakeCelestials): sun = stacked glows +
        gradient core; moon = shaded cratered disc with true lune phases
        (8-night cycle, dayCount increments at each dusk; 0 = new moon =
-       faint halo only, 4 = full). */
+       faint halo only, 4 = full).
+       USER: 太阳/月亮不要随人物竖直上下 — the sin() vertical arc
+       swung the body through 24% of screen height AND the camera's
+       vertical follow made the sky band shift under it, so jumping /
+       digging read as the sun bouncing. Now: horizontal travel only
+       (sky-painted UI is screen-anchored), tiny FIXED vertical swell
+       independent of the camera. */
     {
       var ang, isDay = dayT < 0.5;
       if (isDay) { ang = (dayT / 0.5) * Math.PI; }
       else { ang = ((dayT - 0.5) / 0.5) * Math.PI; }
-      var cxS = w * (0.08 + 0.84 * (ang / Math.PI));
-      var cyS = h * 0.30 - Math.sin(ang) * h * 0.24;
+      /* USER: 圆弧轨迹不能消失, 且要延伸到屏幕外——
+         x: 从 -0.06w (屏外左) 升到 1.06w (屏外落), 日出/日落时天体
+            从屏幕外进出场, 不在屏幕内凭空出现/消失
+         y (USER: 目前正弦弧上上下下): sin() 让 y 先降后升 (y 向下
+            为正时先上后下再折返), 叠加相机滚动读起来就是抖动。
+            改为抛物线: u = ang/π ∈ 0..1, 高度 = 起点低 + (终点低-
+            起点低)*u - 4*拱高*u*(1-u)——标准的对称抛物线弧, 单调
+            升到正午再单调降, 全程无折返。世界锚定不变: 屏幕坐标
+            = 世界Y - scrollY, 下洞整条弧上移出屏, 跳起下移
+         x (v8.2, USER 同意加微视差): x 加 0.05 视差系数 —
+            世界横向 ~3300px (WORLD_W*TILE), 0.05×超出彩窗的位移
+            = 跑全图太阳最多偏 ~几像素, 有一点点世界感又不晃眼 */
+      var parX = cam.scrollX * 0.05;
+      var cxS = w * (-0.06 + 1.12 * (ang / Math.PI)) - parX % (w * 0.12);
+      var pcCol3 = Math.max(0, Math.min(WORLD_W - 1,
+        Math.floor(S.player.x / TILE)));
+      var surfW3 = world.surfaceY[pcCol3] * TILE;
+      var u = ang / Math.PI;                     /* 0 日出 → 1 日落 */
+      var worldBaseY = surfW3 - h * 0.45;        /* 弧两端: 地表上 0.45 屏 */
+      var arch = h * 0.34;                       /* 弧顶比两端高 0.34 屏 */
+      var cyS = (worldBaseY - 4 * arch * u * (1 - u)) - cam.scrollY;
       var cel = bakeCelestials(S);
-      if (isDay) {
-        ctx.drawImage(cel.sun, cxS - cel.sun.width / 2, cyS - cel.sun.height / 2);
-      } else {
-        var mc2 = cel.moon;
-        ctx.drawImage(mc2, cxS - mc2.width / 2, cyS - mc2.height / 2);
+      /* 下雨渐隐 (USER: 下雨时太阳应该渐隐) — 雨越大越看不见天体 */
+      var celA = 1 - rain.level * 0.92;
+      if (celA > 0.01) {
+        ctx.globalAlpha = celA;
+        if (isDay) {
+          ctx.drawImage(cel.sun, cxS - cel.sun.width / 2, cyS - cel.sun.height / 2);
+        } else if (S.bloodMoon && dayT > 0.5) {
+          /* 血月: 换用重烘的红色贴图 (crater 纹理保留, 整盘血红) */
+          var mb = cel.moonBlood;
+          ctx.drawImage(mb, cxS - mb.width / 2, cyS - mb.height / 2);
+        } else {
+          var mc2 = cel.moon;
+          ctx.drawImage(mc2, cxS - mc2.width / 2, cyS - mc2.height / 2);
+        }
+        ctx.globalAlpha = 1;
       }
     }
 
     /* BLOOD MOON wash: during a blood-moon night the sky goes deep
-       red and the moon disc tints blood-red (Terraria signature) */
+       red (the moon DISC itself is swapped to the baked blood-red
+       texture in the celestial block above — v5 只叠两个小红圆,
+       贴图本体没变, USER: 血月的这个贴图没换啊) */
     if (S.bloodMoon && dayT > 0.5 && dayT < 0.99) {
       ctx.fillStyle = 'rgba(140,20,24,0.30)';
       ctx.fillRect(0, 0, w, h);
       /* blood-moon banner BELOW the crystal counter (which owns w/2,34 —
-         USER: "血月之夜和水晶计数的UI重叠了"); also dodges the moon disc,
-         which peaks at cyS≈h*0.06 + 26px glow. 62px is clear of both. */
+         USER: "血月之夜和水晶计数的UI重叠了"); also dodges the moon disc.
+         62px is clear of both. */
       ctx.font = 'bold 15px sans-serif';
       ctx.textAlign = 'center';
       ctx.lineWidth = 3; ctx.strokeStyle = '#000';
@@ -3072,18 +3621,6 @@ var dayCount = 0;               /* nights elapsed — dusk increments it; now
       ctx.strokeText('☂ 血 月 之 夜', w / 2, 62);
       ctx.fillText('☂ 血 月 之 夜', w / 2, 62);
       ctx.textAlign = 'left';
-      {
-        /* red halo + a disc-sized tint so the cratered moon itself
-           reads blood-red, not just ringed */
-        ctx.fillStyle = 'rgba(255,60,50,0.30)';
-        ctx.beginPath();
-        ctx.arc(cxS, cyS, 26, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = 'rgba(255,84,64,0.32)';
-        ctx.beginPath();
-        ctx.arc(cxS, cyS, 12, 0, Math.PI * 2);
-        ctx.fill();
-      }
     }
 
     /* stars fade in as the sun sets */
@@ -3213,7 +3750,7 @@ var dayCount = 0;               /* nights elapsed — dusk increments it; now
         /* yuanjing rides 2 tiles higher than the Admurin ground anchor
            (USER: "贴图抬高一点" then "太高了" — 2 tiles settled) */
         var LIFT = (d.n === 'pixelforge_far' ||
-                    d.n === 'yuanjing_far') ? -3.5 * 32 : 0;
+                    d.n === 'yuanjing_far') ? -3.6 * 32 : 0;
         /* ^ tuning trail: +2 up → too high; −8 → too low; USER hand-
            tuned to −5.75, then "地表线还可以下来一点" → −8.75. The
            band's grass baseline is what reads as the 地表线 against the
@@ -3228,7 +3765,16 @@ var dayCount = 0;               /* nights elapsed — dusk increments it; now
           0, sy0, (WORLD_W * 32) / sc, srcH, texKey)
           .setOrigin(0, 0)
           .setScale(sc)                     /* → WORLD_W*32 × srcH*sc */
-          .setScrollFactor(1)
+          /* v11.1 (USER 截图: 贴图都没了): v342 的 scrollFactor(0)+手动
+             tilePosition 驱动坐标系错位 (世界 y 锚点变成屏幕坐标), 层
+             飞出视野。正确做法就是 Phaser 原生的非 1 scrollFactor:
+             (fx, fy) 层以系数倍速跟随相机, 世界定位保留, 一行搞定。
+             v11.2 (USER 截图 v=345: 还是啥也没有): Y 轴不能也给非 1 —
+             sy0 把层底锚在地表线下 1 tile, 那是按 fy=1 算的世界坐标;
+             fy=0.63 时相机每下移 1px 层只跟 0.63px, 层顶 = 2192 −
+             2400×0.63 ≈ 680, 恰好整层藏进地形背后 (地表线屏幕 y≈675)。
+             视差只在水平方向成立, Y 锁 1, X 保留 d.fx 差速 */
+          .setScrollFactor(d.fx, 1)
           .setDepth(-4 + BK_DEFS.indexOf(d) * 0.01)
           .setAlpha(1);
         ts._fx = d.fx; ts._srcW = img ? img.width : 1280;
@@ -3256,7 +3802,7 @@ var dayCount = 0;               /* nights elapsed — dusk increments it; now
           _bkTex.img[d.n] = im;
           make(im);
         };
-        im.src = 'assets/scenery/bg/' + d.n + '.png?v=sky13';
+        im.src = 'assets/scenery/bg/' + d.n + '.png?v=sky14';
       }
     });
     return layers;
@@ -3307,7 +3853,7 @@ var dayCount = 0;               /* nights elapsed — dusk increments it; now
           _bkGround = 'rgb(' + p2[0] + ',' + p2[1] + ',' + p2[2] + ')';
         }
       };
-      im.src = 'assets/scenery/bg/' + d.n + '.png?v=sky13';
+      im.src = 'assets/scenery/bg/' + d.n + '.png?v=sky14';
       _bkTex.img[d.n] = im;          /* shown until the bake lands */
     });
   }
@@ -3811,6 +4357,10 @@ var dayCount = 0;               /* nights elapsed — dusk increments it; now
         : this.player.y;
     }
     dayT = (dayT + dt / DAY_LEN) % 1;
+    rainTick(dt, this);        /* weather events (MC-style, above) */
+    stormTick(dt, this);       /* lightning flash decay + bolt schedule */
+    bgmUpdate(this);           /* BGM: 昼夜/地上地下切轨, 交叉淡化 */
+    rainSfx(rain.level, rain.strength);  /* 声随雨势: 音量+音色都跟 strength */
     var spd = 190;
     var mv = (window.__digAutoWalk || this.keysA.D.isDown || this.cursors.right.isDown ? 1 : 0) -
              (this.keysA.A.isDown || this.cursors.left.isDown ? 1 : 0);
@@ -3934,6 +4484,7 @@ var dayCount = 0;               /* nights elapsed — dusk increments it; now
     if (this.hudT > 0.05 || this.hudDirty) {
       this.hudT = 0; this.hudDirty = false;
       drawSky(this);
+      drawRain(this);
       drawHotbar(this);
       /* ambient re-tint only (no BFS) — composed for the camera
          viewport only (~8% of the map; full-map putImageData was the
@@ -4215,6 +4766,7 @@ var dayCount = 0;               /* nights elapsed — dusk increments it; now
   /* ---- boot ---------------------------------------------------------- */
   function startGame() {
     if (!META) { setTimeout(startGame, 150); return; }
+    syncLightScaleFromCFG();   /* pick up CFG.lightScale set since last boot */
     if (game) { return; }   /* double-boot guard: game is nulled in leave() */
     /* A/B flags for flicker triage: #canvas forces the Canvas renderer,
        #nolight keeps WebGL but skips the Light2D pipeline. Default = the
@@ -4265,6 +4817,14 @@ var dayCount = 0;               /* nights elapsed — dusk increments it; now
   }
   function leave() {
     if (document.fullscreenElement) { document.exitFullscreen().catch(function () {}); }
+    /* BGM stop-on-leave (v8): 退出游戏必须停音乐, 否则回官网还放着 */
+    try {
+      if (bgm.cur && bgm.tracks[bgm.cur]) {
+        var t = this.sound ? this.sound.get(bgm.cur) : null;
+        if (t) { t.stop(); t.destroy(); }
+      }
+      bgm.cur = null; bgm.tracks = {};
+    } catch (e) {}
     running = false;
     win.classList.remove('egg-mode');
     if (input) { input.style.display = ''; }
@@ -4318,8 +4878,13 @@ var dayCount = 0;               /* nights elapsed — dusk increments it; now
     { k: 'caveSpawnMin',    label: '洞穴刷怪近距(格)',  min: 6,  max: 30, step: 2 },
     { k: 'caveSpawnMax',    label: '洞穴刷怪远距(格)',  min: 10, max: 40, step: 2 },
     { k: 'bloodMoonChance', label: '血月概率(%)',       min: 0,  max: 100, step: 5 },
+    { k: 'rainChance',      label: '下雨概率(%/天)',    min: 0,  max: 100, step: 5 },
+    { k: 'rainIntensity',   label: '雨量(%)',           min: 10, max: 200, step: 10 },
+    { k: 'bgmVolume',       label: '背景音量(%)',       min: 0,  max: 100, step: 2 },
+    { k: 'rainVolume',      label: '雨声音量(%)',       min: 0,  max: 100, step: 2 },
     { k: 'brightness',      label: '夜晚亮度(%)',       min: 20, max: 100, step: 2 },
     { k: 'caveBright',      label: '洞穴亮度(%)',       min: 40, max: 200, step: 5 },
+    { k: 'lightScale',      label: '光照密度(x/tile)',  min: 1,  max: 4,  step: 1 },
     { k: 'bulletSpeed',     label: '子弹速度',          min: 300, max: 1400, step: 20 },
     { k: 'shootCd',         label: '射击间隔(ms)',      min: 80, max: 600, step: 10 },
     { k: 'digRange',        label: '挖掘距离(格)',      min: 3,  max: 12, step: 1 },
