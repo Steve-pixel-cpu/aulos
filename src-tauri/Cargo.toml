@@ -27,6 +27,8 @@ tauri-plugin-notification = "2"
 tauri-plugin-updater = "2"
 # 更新命令的返回值结构（tauri 内部也用它, 但命令签名直接引用需显式依赖）
 serde_json = "1"
+# aulosboot:// 自定义协议的请求/响应类型（tauri 协议 handler 的签名用）
+http = "1"
 
 # 关闭 WebView2 浏览器快捷键（F5/Ctrl+R 刷新等, tauri 未透传该设置）
 # Win32_Graphics_Dwm: DwmSetWindowAttribute — Win11 主窗原生圆角 (DWMWA_WINDOW_CORNER_PREFERENCE)

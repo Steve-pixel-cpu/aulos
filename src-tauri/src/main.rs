@@ -37,6 +37,112 @@ static LANG_EN: LazyLock<bool> = LazyLock::new(|| {
         .unwrap_or(false)
 });
 
+// ==== 开机动画开关: settings.json 的 bootAnim(布尔, 缺省 true)。
+// 关闭时 loading 页以 ?boot=min 打开 → 极简 spinner 而非品牌动画。
+// 缺文件/解析失败/值非布尔一律按开（动画是缺省体验, 与后端口径一致） ====
+static BOOT_ANIM_OFF: LazyLock<bool> = LazyLock::new(|| {
+    let home = std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(std::path::PathBuf::from)
+        .unwrap_or_default();
+    let path = home.join(".aulos").join("settings.json");
+    std::fs::read_to_string(path).ok()
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+        .and_then(|v| v.get("bootAnim").and_then(|b| b.as_bool()))
+        .map(|on| !on)
+        .unwrap_or(false)
+});
+
+// ==== 外观偏好镜像: settings.json 的 appearance 对象(主界面防抖镜像写入)。
+// loading 页(tauri.localhost)与主界面(127.0.0.1:port)的 localStorage 互相
+// 独立——主题/语言/云母/强调色跨源必须经 settings.json 中转, 壳在此读出
+// 并注入 loading 页(缺键/损坏 → "{}", 页面回退自身 localStorage 与缺省值) ====
+static APPEARANCE_JSON: LazyLock<String> = LazyLock::new(|| {
+    let home = std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(std::path::PathBuf::from)
+        .unwrap_or_default();
+    let path = home.join(".aulos").join("settings.json");
+    std::fs::read_to_string(path).ok()
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+        .and_then(|v| v.get("appearance").cloned())
+        .filter(|a| a.is_object())
+        .and_then(|a| serde_json::to_string(&a).ok())
+        .unwrap_or_else(|| "{}".to_string())
+});
+
+// ==== 自定义开机动画视频: aulosboot:// 协议读取 ~/.aulos/appearance/ 下的
+// boot-anim.mp4|webm（后端未起时 loading 页就要拿到视频, 只能壳侧供）。
+// 页面经 <video src="aulosboot://boot-anim.mp4"> 探测: 200=有自定义动画,
+// 404=用内置 CSS 动画。Windows 上 origin 表现为 http://aulosboot.localhost ====
+fn boot_anim_video_response(request: http::Request<Vec<u8>>) -> http::Response<Vec<u8>> {
+    // 路径仅认固定文件名, 不拼接用户输入（无路径穿越面）
+    let name = request.uri().path().trim_start_matches('/');
+    // 用户上传的应用图标: loading 页 logo 优先用它(后端未起, /api/icon 不可达),
+    // 404 时页面回退出厂 icon-256.png。magic bytes 判型(扩展名一律 .png 落盘)
+    if name == "user-icon" {
+        let home = std::env::var_os("HOME")
+            .or_else(|| std::env::var_os("USERPROFILE"))
+            .map(std::path::PathBuf::from)
+            .unwrap_or_default();
+        let path = home.join(".aulos").join("appearance").join("icon.png");
+        return match std::fs::read(&path) {
+            Ok(bytes) => {
+                // 服务端落盘前已校验 PNG/JPEG/WebP, 这里按 magic bytes 复核 mime
+                let mime = if bytes.starts_with(b"\x89PNG") {
+                    "image/png"
+                } else if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
+                    "image/jpeg"
+                } else if bytes.starts_with(b"RIFF") {
+                    "image/webp"
+                } else {
+                    return http::Response::builder()
+                        .status(http::StatusCode::NOT_FOUND)
+                        .body(Vec::new())
+                        .unwrap();
+                };
+                http::Response::builder()
+                    .header(http::header::CONTENT_TYPE, mime)
+                    .header(http::header::CACHE_CONTROL, "no-cache")
+                    .header(http::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+                    .body(bytes)
+                    .unwrap()
+            }
+            Err(_) => http::Response::builder()
+                .status(http::StatusCode::NOT_FOUND)
+                .body(Vec::new())
+                .unwrap(),
+        };
+    }
+    let (path, mime) = match name {
+        "boot-anim.mp4" => ("boot-anim.mp4", "video/mp4"),
+        "boot-anim.webm" => ("boot-anim.webm", "video/webm"),
+        _ => {
+            return http::Response::builder()
+                .status(http::StatusCode::NOT_FOUND)
+                .body(Vec::new())
+                .unwrap();
+        }
+    };
+    let home = std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(std::path::PathBuf::from)
+        .unwrap_or_default();
+    match std::fs::read(home.join(".aulos").join("appearance").join(path)) {
+        Ok(bytes) => http::Response::builder()
+            .header(http::header::CONTENT_TYPE, mime)
+            .header(http::header::CACHE_CONTROL, "no-cache")
+            // <video> 跨源播放需要 CORS 头（Windows 上 origin 是 http://tauri.localhost）
+            .header(http::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+            .body(bytes)
+            .unwrap(),
+        Err(_) => http::Response::builder()
+            .status(http::StatusCode::NOT_FOUND)
+            .body(Vec::new())
+            .unwrap(),
+    }
+}
+
 /// UI 文案双语选择: zh_en("中文", "English")
 fn zh_en(zh: &str, en: &str) -> String {
     if *LANG_EN { en.to_string() } else { zh.to_string() }
@@ -1355,6 +1461,30 @@ fn main() {
             "WEBVIEW2_USER_DATA_FOLDER",
             std::env::temp_dir().join("aulos-dev-webview"),
         );
+        // dev 附加: 禁 HTTP 缓存。loading.html 等壳侧资产经 tauri.localhost
+        // 协议加载, WebView2 会缓存旧响应——改完资产重启壳看到的还是旧页
+        // (2026-11-01 调试启动动画时反复踩坑)。dev 壳性能无所谓, 一律禁用;
+        // 正式安装版不受影响(不走此分支)。
+        let extra = std::env::var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS")
+            .unwrap_or_default();
+        if !extra.contains("--disable-http-cache") {
+            std::env::set_var(
+                "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
+                format!("{extra} --disable-http-cache"),
+            );
+        }
+    }
+    // 自动播放政策放开(全环境): 自定义开机动画有声播放——浏览器手势要求
+    // 会拦截 vid.play()(页面降级 muted, 但用户明确要声音)。幂等防重。
+    {
+        let extra = std::env::var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS")
+            .unwrap_or_default();
+        if !extra.contains("--autoplay-policy") {
+            std::env::set_var(
+                "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
+                format!("{extra} --autoplay-policy=no-user-gesture-required"),
+            );
+        }
     }
     // 必须先于一切 gtk 初始化 (GTK 读 GDK_BACKEND 的时机在 gdk 初始化)
     #[cfg(target_os = "linux")]
@@ -1388,6 +1518,10 @@ fn main() {
     }
     builder
         .manage(())
+        // 自定义开机动画视频源: 后端未起时 loading 页经此读用户上传的动画
+        .register_uri_scheme_protocol("aulosboot", |_ctx, request| {
+            boot_anim_video_response(request)
+        })
         .invoke_handler(tauri::generate_handler![
             pick_folder,
             read_clipboard_text,
@@ -1435,12 +1569,17 @@ fn main() {
                         app.exit(1);
                         return;
                     }
-                    // 就绪后把窗口从 loading 页导航到真正的应用地址
+                    // 就绪信号: 优先通知 loading 页"后端好了"——自定义开机动画
+                    // 播完才跳转（页面里 __aulosNavigate 收到即跳; 无自定义动画
+                    // 或页面没挂监听时 1s 兜底直跳, 行为与旧直跳等价）。
                     if let Some(win) = app.get_webview_window("main") {
-                        let _ = win.eval(&format!(
-                            "location.replace('{}')",
+                        let nav = format!("window.__aulosReady && window.__aulosReady('{}')", app_url(&token));
+                        let _ = win.eval(&nav);
+                        let fallback = format!(
+                            "setTimeout(() => {{ if (!window.__aulosNavigated) location.replace('{}'); }}, 1000)",
                             app_url(&token)
-                        ));
+                        );
+                        let _ = win.eval(&fallback);
                     }
                 });
             }
@@ -1537,7 +1676,19 @@ fn create_main_window(app: &AppHandle) -> Result<(), String> {
     // plugin:app 命令的 ACL 曾实测不放行, invoke 路线不可靠。
     let version = &app.package_info().version;
     let bridge_js = format!("window.__AULOS_VERSION__ = '{version}';\n{BRIDGE_JS}");
-    let builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("loading.html".into()))
+    // 开机动画开关: 关闭时以 ?boot=min 打开 loading 页（下次启动生效）
+    // 外观偏好经 URL 参数带给 loading 页(跨源 localStorage 中转, 见
+    // APPEARANCE_JSON 注释): base64 编码避免 JSON 花括号/& 干扰参数解析
+    let appearance_b64 = {
+        use base64::Engine as _;
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(APPEARANCE_JSON.as_bytes())
+    };
+    let loading_url = format!(
+        "loading.html?boot={}&ap={}",
+        if *BOOT_ANIM_OFF { "min" } else { "full" },
+        appearance_b64
+    );
+    let builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::App(loading_url.into()))
         .title("Aulos")
         .decorations(false)   // 自绘标题栏: 高度可控, 主题跟随应用深浅色
         .inner_size(1440.0, 900.0)

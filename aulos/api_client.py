@@ -449,12 +449,25 @@ class _TerminalEcho:
 
 
 def _collect_usage(acc: dict, usage) -> None:
-    """把 SDK 用量对象里非 None 的字段并进 acc（message_start 与 message_delta 各报一部分）。"""
-    for field in ("input_tokens", "output_tokens",
-                  "cache_creation_input_tokens", "cache_read_input_tokens"):
+    """把 SDK 用量对象里非 None 的字段并进 acc（message_start 与 message_delta 各报一部分）。
+    两种流式语义的叠加:
+    - 官方 anthropic: start 报全量输入, delta 只报 output 累计;
+    - GLM 等兼容端点: delta 的 input/cache_read 是「到目前为止」的
+      累计快照, 逐次递增（实测 50k→120k→168k）, 但偶发碎片小值
+      （input 报过 308/547 这类增量）。
+    统一策略: 输入侧三字段取 max(单调不减——累计快照取终值, 碎片小值
+    不倒退); output 取 delta 覆盖(累计口径, start 恒为 1)。
+    旧实现「非 None 即覆盖」被 delta 碎片覆盖出 input=308/命中率
+    52529%; 「只补缺」又把 start 初值 0 钉死, 丢掉 delta 递增的真实
+    cache_read。"""
+    value = getattr(usage, "output_tokens", None)
+    if value is not None:
+        acc["output_tokens"] = value
+    for field in ("input_tokens", "cache_creation_input_tokens",
+                  "cache_read_input_tokens"):
         value = getattr(usage, field, None)
         if value is not None:
-            acc[field] = value
+            acc[field] = max(acc.get(field, 0), value)
 
 
 def _map_to_retry_error(e: Exception) -> Optional[RetryApiError]:

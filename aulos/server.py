@@ -283,6 +283,19 @@ def _active_provider_dict() -> Optional[dict]:
                  if p.get("id") == active.get("provider")), None)
 
 
+def _session_provider_dict(web_session) -> Optional[dict]:
+    """会话实际生效的供应商条目: 会话级覆盖优先, 无覆盖回落全局 active。
+    与 _resolve_client 的回落逻辑同口径——usage 聚合语义(cache_in_input)
+    必须按真正发请求的协议判定, 用全局 active 会在「会话覆盖 A 协议、
+    全局是 B 协议」时给错(实测 kithara 会话 glm-anthropic + 全局
+    glm-openAI → cache_in_input 误判 true, 命中率 30338%)。"""
+    cfg_provider = web_session.model_provider
+    active = _provider_cfg.get("active") or {}
+    target = cfg_provider or active.get("provider")
+    return next((p for p in _provider_cfg.get("providers", [])
+                 if p.get("id") == target), None)
+
+
 def _apply_provider_config(cfg: dict) -> None:
     """把 active 指向的启用供应商应用到 api_client, 并重挂浏览器镜像观察者。
 
@@ -1498,7 +1511,11 @@ def _spawn_turn_thread(web_session: WebSession, text: str,
             except Exception:
                 pass
             needs_title = not web_session.titled
-            u = summary.usage
+            # 上下文容量卡口径: 最近一次 API 调用的单次用量(latest_call)
+            # ——每次调用的输入都携带全量历史, 单次才是"此刻上下文多大"。
+            # turn 级累加器(summary.usage)把多工具轮的 N 次请求相加,
+            # 前端缓存命中率曾算出 1029%(分子累加 N 次/分母单次)
+            u = web_session.runtime.usage().latest_call_usage()
             emitter({
                 "type": "turn_done",
                 "interrupted": web_session.stop_requested,
@@ -1513,6 +1530,13 @@ def _spawn_turn_thread(web_session: WebSession, text: str,
                     "cache_creation_input_tokens": u.cache_creation_input_tokens,
                     "cache_read_input_tokens": u.cache_read_input_tokens,
                 },
+                # 配置的上下文窗口大小: 前端「上下文容量」卡片算占比用
+                "context_window": runtime_config.context_window(),
+                # 缓存字段语义: openai 协议 input(prompt_tokens)已含缓存读
+                # (cache_read 拆自 prompt_tokens_details.cached_tokens),
+                # anthropic 协议 input 与缓存段互斥相加——前端算占用按此区分。
+                # 按会话实际生效的供应商判定(覆盖优先), 非全局 active
+                "cache_in_input": _protocol_of(_session_provider_dict(web_session) or {}) == "openai",
             })
             # 计划实施完成终态: 本轮批准过的计划随正常收口回写 completed 并
             # 广播 plan_completed（前端把计划卡推进"已完成"）。放在 turn_done
@@ -1754,8 +1778,15 @@ async def favicon():
 APPEARANCE_DIR = USER_DIR / "appearance"
 _ICON_LIVE = APPEARANCE_DIR / "icon.png"
 _BG_LIVE = APPEARANCE_DIR / "bg-user.png"
+# 动态壁纸（视频）: 与静态壁纸同目录双轨, mp4/webm 二选一（后传者胜）
+_BGV_LIVE = APPEARANCE_DIR / "bg-video.mp4"
+_BGV_LIVE_WEBM = APPEARANCE_DIR / "bg-video.webm"
+# 自定义开机动画视频: 同为视频双轨。启动时后端未起, 由壳经 aulosboot:// 读
+_BA_LIVE = APPEARANCE_DIR / "boot-anim.mp4"
+_BA_LIVE_WEBM = APPEARANCE_DIR / "boot-anim.webm"
 _ICON_DEFAULT = STATIC_DIR / "icon-default.png"
 _ICON_RE = re.compile(r"^data:image/(png|jpeg|webp);base64,(.+)$", re.S)
+_BGV_RE = re.compile(r"^data:video/(mp4|webm);base64,(.+)$", re.S)
 
 
 def _migrate_legacy_appearance() -> None:
@@ -1844,6 +1875,8 @@ async def api_post_icon(request: dict):
 
 # --- 背景图片: 设置 → 外观 可上传; 存用户目录, 经 GET /api/bg 读取 ---
 _BG_MAX = 20 * 1024 * 1024
+# --- 动态壁纸（视频）: 同目录双轨, 上限放宽到 80MB ---
+_BGV_MAX = 80 * 1024 * 1024
 
 
 def _bg_ver() -> int:
@@ -1851,6 +1884,121 @@ def _bg_ver() -> int:
         return int(_BG_LIVE.stat().st_mtime)
     except OSError:
         return 0
+
+
+def _video_asset_live(live_mp4: "Path", live_webm: "Path") -> "Path | None":
+    """当前生效的视频资产文件（mp4 优先, 无则 webm, 都没有返回 None）。
+
+    两个格式文件不会共存——写入前先清对方; 双保险兜底防御手工摆放。
+    /api/bg-video 与 /api/boot-anim 共用（同构双轨）。"""
+    if live_mp4.exists():
+        return live_mp4
+    if live_webm.exists():
+        return live_webm
+    return None
+
+
+def _video_asset_clear(live_mp4: "Path", live_webm: "Path") -> None:
+    """删除视频资产两格式文件（Windows 文件占用重试, 照 /api/bg 模式）。"""
+    for path in (live_mp4, live_webm):
+        for _ in range(4):
+            try:
+                path.unlink(missing_ok=True)
+                break
+            except PermissionError:
+                time.sleep(0.05)
+
+
+def _video_asset_ver(live_mp4: "Path", live_webm: "Path") -> int:
+    live = _video_asset_live(live_mp4, live_webm)
+    if live is None:
+        return 0
+    try:
+        return int(live.stat().st_mtime)
+    except OSError:
+        return 0
+
+
+def _video_asset_write(live_mp4: "Path", live_webm: "Path", ext: str, raw: bytes) -> None:
+    """写入视频资产（先清另一格式, 保证任一时刻只有一份）。"""
+    APPEARANCE_DIR.mkdir(parents=True, exist_ok=True)
+    target = live_mp4 if ext == "mp4" else live_webm
+    other = live_webm if target is live_mp4 else live_mp4
+    other.unlink(missing_ok=True)
+    try:
+        target.write_bytes(raw)
+    except PermissionError:
+        raise HTTPException(status_code=409, detail=t("server.007"))
+
+
+def _bgv_live() -> "Path | None":
+    return _video_asset_live(_BGV_LIVE, _BGV_LIVE_WEBM)
+
+
+def _bgv_clear_files() -> None:
+    _video_asset_clear(_BGV_LIVE, _BGV_LIVE_WEBM)
+
+
+def _bgv_ver() -> int:
+    return _video_asset_ver(_BGV_LIVE, _BGV_LIVE_WEBM)
+
+
+@app.get("/api/bg-video", include_in_schema=False)
+async def api_get_bg_video():
+    """动态壁纸视频: 未设置时 404（前端以 bg_video_ver=0 为"无"口径）。"""
+    live = _bgv_live()
+    if live is None:
+        raise HTTPException(status_code=404, detail=t("server.058"))
+    return FileResponse(live, headers={"Cache-Control": "no-cache"})
+
+
+@app.post("/api/bg-video")
+async def api_post_bg_video(request: dict):
+    """data 为 dataURL（video/mp4|webm）时写入视频壁纸, null 删除; 返回新版本号。"""
+    data = request.get("data")
+    if data is None:
+        _bgv_clear_files()
+    else:
+        m = _BGV_RE.match(str(data))
+        if not m:
+            raise HTTPException(status_code=400, detail=t("server.059"))
+        raw = base64.b64decode(m.group(2))
+        if len(raw) > _BGV_MAX:
+            raise HTTPException(status_code=400, detail=t("server.060"))
+        _video_asset_write(_BGV_LIVE, _BGV_LIVE_WEBM, m.group(1), raw)
+    return {"ok": True, "ver": _bgv_ver()}
+
+
+# --- 自定义开机动画视频: 设置→外观 上传; 启动时壳经 aulosboot:// 协议读取 ---
+_BA_MAX = 50 * 1024 * 1024
+_BA_RE = _BGV_RE   # 格式约束与壁纸视频一致（video/mp4|webm dataURL）
+
+
+def _ba_live() -> "Path | None":
+    return _video_asset_live(_BA_LIVE, _BA_LIVE_WEBM)
+
+
+def _ba_ver() -> int:
+    return _video_asset_ver(_BA_LIVE, _BA_LIVE_WEBM)
+
+
+@app.post("/api/boot-anim")
+async def api_post_boot_anim(request: dict):
+    """data 为 dataURL（video/mp4|webm）时写入开机动画, null 删除; 返回新版本号。
+
+    无 GET 端点: 启动时后端未起, 壳经自定义协议 aulosboot:// 直接读文件。"""
+    data = request.get("data")
+    if data is None:
+        _video_asset_clear(_BA_LIVE, _BA_LIVE_WEBM)
+    else:
+        m = _BA_RE.match(str(data))
+        if not m:
+            raise HTTPException(status_code=400, detail=t("server.061"))
+        raw = base64.b64decode(m.group(2))
+        if len(raw) > _BA_MAX:
+            raise HTTPException(status_code=400, detail=t("server.062"))
+        _video_asset_write(_BA_LIVE, _BA_LIVE_WEBM, m.group(1), raw)
+    return {"ok": True, "ver": _ba_ver()}
 
 
 @app.get("/api/bg", include_in_schema=False)
@@ -1964,7 +2112,9 @@ async def api_list_sessions():
                       "thinking_level": _session_thinking(sid),
                       "model_provider": _session_model(sid, meta)[0],
                       "model_id": _session_model(sid, meta)[1]})
-    items.sort(key=lambda item: item["id"], reverse=True)  # 时间戳字典序即时间序，最新在前
+    # 按最近活跃排序: mtime=最后一条消息落盘时间为主键(启动恢复/「最新会话」
+    # 语义都是最近活跃而非最新创建), id 作同秒创建的兜底; pending(mtime=0)沉底
+    items.sort(key=lambda item: (item["mtime"], item["id"]), reverse=True)
     return {"sessions": items}
 
 

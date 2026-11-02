@@ -4,11 +4,60 @@
 <meta charset="utf-8">
 <title>Aulos</title>
 <script>/* 与 index.html 一致的主题预置, 避免深色系统下加载页白闪 */
-  (function(){var p;try{p=localStorage.getItem("xc-theme")||"system";}catch(e){p="system";}
+  (function(){
+   /* 外观偏好跨源中转: 壳从 settings.json 读 appearance 对象, base64 后经
+    * URL 参数 ap= 带入(主界面 127.0.0.1 与本页 tauri.localhost 的 localStorage
+    * 互相独立, 直读必落空)。写入 localStorage 后本页所有偏好读取与旧版
+    * 完全一致——APPEARANCE 键是唯一入口, 其余逻辑零改动 */
+   try{
+     var ap=new URLSearchParams(location.search).get("ap");
+     if(ap){
+       var bin=atob(ap.replace(/-/g,"+").replace(/_/g,"/"));
+       var json=decodeURIComponent(Array.from(bin).map(c=>"%"+c.charCodeAt(0).toString(16).padStart(2,"0")).join(""));
+       var o=JSON.parse(json);
+       if(o&&typeof o==="object"){
+         if(o.theme!=null)localStorage.setItem("xc-theme",o.theme);
+         if(o.lang!=null)localStorage.setItem("xc-lang",o.lang);
+         if(o.style!=null)localStorage.setItem("xc-style",o.style);
+         if(o.accent!=null)localStorage.setItem("xc-accent",o.accent);
+         if(o.accentCustom!=null)localStorage.setItem("xc-accent-custom",o.accentCustom);
+         if(o.accentAuto!=null)localStorage.setItem("xc-accent-auto",o.accentAuto?"1":"0");
+         if(o.accentAutoHex!=null)localStorage.setItem("xc-accent-auto-hex",o.accentAutoHex);
+       }
+     }
+   }catch(e){}
+   var p;try{p=localStorage.getItem("xc-theme")||"system";}catch(e){p="system";}
    var d=p==="dark"||(p==="system"&&window.matchMedia("(prefers-color-scheme: dark)").matches);
-   document.documentElement.classList.toggle("dark",d);})();</script>
+   document.documentElement.classList.toggle("dark",d);
+   /* 云母模式: 挂 html.fluent-mica → CSS body 透明让出 DWM 壁纸采样底
+    * (主界面 syncMica 已向壳确认过开启, backdrop 窗口属性跨导航持久) */
+   try{if(localStorage.getItem("xc-style")==="fluent-mica")document.documentElement.classList.add("fluent-mica","data-mica");}catch(e){}
+   /* 强调色跟随设置(xc-accent 预设挂 data-accent 走 CSS; custom/壁纸自动色
+    * 取 hex 直接内联 --accent, 进度条/光晕即随用户强调色变化)。
+    * de = documentElement, 本 IIFE 此前未定义过——2026-11-01 实测: 未定义
+    * 使整段抛 ReferenceError 被 try 吞掉, 强调色从未生效 */
+   try{
+     var de=document.documentElement;
+     var acc=localStorage.getItem("xc-accent")||"gray";
+     if(acc==="custom"){var c=localStorage.getItem("xc-accent-custom");if(c)de.style.setProperty("--accent",c);}
+     else if(acc!=="gray"){de.dataset.accent=acc;}
+     var autoOn=localStorage.getItem("xc-accent-auto")==="1";
+     if(autoOn){var ah=localStorage.getItem("xc-accent-auto-hex");if(ah)de.style.setProperty("--accent",ah);}
+   }catch(e){}
+  })();</script>
 <style>
-  :root { color-scheme: dark light; }
+  :root {
+    color-scheme: dark light;
+    /* 强调色缺省(琥珀): 无 xc-accent 或 gray 时进度条/光晕/logo 阴影的底色 */
+    --accent: #d97706;
+  }
+  /* 强调色预设: 与 app.css 同色值(浅主题档——loading 页只有进度条/光晕/
+   * logo 阴影三处消费, 不需要 deep/soft/border 全套, 单值足够) */
+  :root[data-accent="blue"]   { --accent: #2f6fd6; }
+  :root[data-accent="violet"] { --accent: #6a5be0; }
+  :root[data-accent="green"]  { --accent: #17803b; }
+  :root[data-accent="orange"] { --accent: #e5622a; }
+  :root[data-accent="rose"]   { --accent: #cf3a5c; }
   html, body { height: 100%; margin: 0; }
   body {
     display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -17,6 +66,10 @@
     user-select: none;
   }
   html.dark body { background: #191919; color: #d7d3cc; }
+  /* 云母模式让位(xc-style=fluent-mica, 预置脚本挂 html.fluent-mica):
+   * DWM backdrop 是窗口属性, 主界面开启后跨导航持久——启动页只需把
+   * 实底让透明, 壁纸采样即透上来, 与主界面风格连续 */
+  html.fluent-mica body { background: transparent; }
   .spin {
     width: 34px; height: 34px; border-radius: 50%;
     border: 3px solid #ddd6cb; border-top-color: #b45309;
@@ -27,10 +80,91 @@
   .t1 { font-size: 15px; }
   .t2 { font-size: 12px; color: #a8a29e; }
   html.dark .t2 { color: #6b6862; }
-  /* 自绘标题栏: 与应用内同款（BRIDGE_JS 注入的 html.aulos-desktop 类） */
+
+  /* ---------- 全量开机动画（?boot=min 时整体不渲染, 见 body.min-mode） ---------- */
+  .boot-wrap { display: flex; flex-direction: column; align-items: center; gap: 22px; }
+  body.min-mode .boot-wrap { display: none; }
+  body.min-mode .spin,
+  body.min-mode .t1,
+  body.min-mode .t2 { display: block; }
+  /* 背景微光: 页面中央一团极淡暖光随呼吸起伏, 呼应琥珀主色;
+   * 云母模式下同样可见(mixblend 不遮底), 深浅色各自调强度 */
+  .boot-glow {
+    position: fixed; left: 50%; top: 50%; width: 56vmax; height: 56vmax;
+    transform: translate(-50%, -50%);
+    background: radial-gradient(circle, var(--accent, #d97706) 0%, transparent 68%);
+    opacity: .10;
+    animation: glow-breathe 3.2s ease-in-out infinite;
+    pointer-events: none;
+  }
+  @keyframes glow-breathe { 0%,100% { opacity: .055; transform: translate(-50%,-50%) scale(1); } 50% { opacity: .10; transform: translate(-50%,-50%) scale(1.08); } }
+  .boot-logo {
+    width: 84px; height: 84px; border-radius: 22px;
+    box-shadow: 0 10px 34px color-mix(in srgb, var(--accent, #b45309) 28%, transparent);
+    animation: boot-in .7s cubic-bezier(.22,1,.36,1) both, breath 2.6s ease-in-out 0.8s infinite;
+  }
+  .boot-logo.error { visibility: hidden; box-shadow: none; }  /* 图标缺失: 占位隐身, 布局不塌 */
+  @keyframes boot-in { from { opacity: 0; transform: scale(.6); } to { opacity: 1; transform: scale(1); } }
+  /* 呼吸光晕跟随强调色(color-mix 无法用于 keyframes 内 var 派生,
+   * 直接用两层 var: --accent 全强度 + transparent 插值) */
+  @keyframes breath { 0%,100% { box-shadow: 0 10px 34px color-mix(in srgb, var(--accent, #b45309) 28%, transparent); } 50% { box-shadow: 0 10px 48px color-mix(in srgb, var(--accent, #d97706) 45%, transparent); } }
+  /* 标题: 淡入 + 字距从松到紧收拢(精致感), 收完停稳不抖 */
+  .boot-title { font-size: 19px; font-weight: 600; color: #44403c; animation: title-in .9s cubic-bezier(.22,1,.36,1) .25s both; }
+  html.dark .boot-title { color: #e7e5e4; }
+  @keyframes title-in { from { opacity: 0; letter-spacing: .34em; transform: translateY(6px); } to { opacity: 1; letter-spacing: .06em; transform: none; } }
+  .boot-step { font-size: 12.5px; color: #a8a29e; min-height: 18px; animation: fade-up .6s ease .45s both; transition: opacity .3s; }
+  html.dark .boot-step { color: #6b6862; }
+  .boot-dots::after { content: ""; animation: dots 1.6s steps(4) infinite; }
+  @keyframes dots { 0% { content: ""; } 25% { content: "."; } 50% { content: ".."; } 75% { content: "..."; } }
+  @keyframes fade-up { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  /* 进度条: 放在动画组内(阶段文案正下方), 是构图的一部分而非贴屏底;
+   * 宽 220px 居中, 4px 圆角粗条(2.5px 太细看不清) */
+  .boot-progress {
+    width: 220px; height: 4px; border-radius: 4px;
+    background: color-mix(in srgb, var(--accent, #b45309) 16%, transparent); overflow: hidden;
+    animation: fade-up .6s ease .55s both;
+  }
+  .boot-progress i {
+    display: block; height: 100%; width: 0%;
+    border-radius: inherit;
+    background: var(--accent, #b45309);
+    transition: width .4s cubic-bezier(.3,1,.4,1);
+  }
+  /* 减弱动态效果: 回退极简 spinner（系统辅助功能偏好优先于用户开关） */
+  @media (prefers-reduced-motion: reduce) {
+    .boot-wrap { display: none; }
+    .boot-glow, .boot-progress { display: none; }
+  }
+
+  /* 自定义开机动画视频: 全屏 cover 静音垫底, 播完由脚本导航 */
+  #boot-video {
+    display: none; position: fixed; inset: 0;
+    width: 100%; height: 100%; object-fit: cover;
+    z-index: 1; background: #191919;
+  }
+  body.custom-anim #boot-video { display: block; }
+  body.custom-anim .boot-wrap { visibility: hidden; }   /* 视频期间藏品牌动画区 */
+  /* 视频沉浸模式: 标题栏从实底条变为悬浮玻璃条叠在视频上——
+   * 视频真正全屏(inset:0), 不被 42px 不透明横条切掉头部。
+   * html.dark #titlebar(实底)声明在本文更下方且同特异性——必须以
+   * html.custom-anim 双类压过它, 否则深色主题下玻璃被 #232323 吃掉 */
+  html.custom-anim body #titlebar {
+    background: rgb(0 0 0 / .45);
+    -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+    border-bottom-color: transparent;
+  }
+  html.custom-anim body #titlebar .tb-name { color: #e7e5e4; }
+  html.custom-anim body #titlebar .tb-btn { color: #d6d3d1; }
+  html.custom-anim body #titlebar .tb-btn:hover { background: rgb(255 255 255 / .12); color: #fff; }
+  html.custom-anim body #titlebar .tb-btn.tb-close:hover { background: #dc2626; color: #fff; }
+
+  /* 自绘标题栏: 与应用内同款（BRIDGE_JS 注入的 html.aulos-desktop 类）
+   * z-index 2: 必须压过 #boot-video(z-index 1)——自定义开机动画全屏播放时
+   * 标题栏被盖住会吃掉拖拽/最小化/关闭(2026-11-01 用户实测回归) */
   #titlebar {
     display: none; position: fixed; top: 0; left: 0; right: 0;
     height: 42px; align-items: center; gap: 9px; padding-left: 14px;
+    z-index: 2;
     background: #efedeb; border-bottom: 1px solid #ddd6cb;
   }
   html.aulos-desktop #titlebar { display: flex; }
@@ -55,7 +189,7 @@
 </head>
 <body>
   <div id="titlebar">
-    <img class="tb-icon" src="/api/icon" alt="" draggable="false"
+    <img class="tb-icon" src="icon.png" alt="" draggable="false"
         onerror="this.onerror=null;this.src='/api/icon?v='+Date.now()">
     <span class="tb-name">Aulos</span>
     <div class="tb-controls">
@@ -70,9 +204,18 @@
       </button>
     </div>
   </div>
-  <div class="spin"></div>
-  <div class="t1">正在启动 Aulos…</div>
-  <div class="t2">首次启动需要初始化本地服务，通常几秒钟</div>
+  <video id="boot-video" loop playsinline></video>
+  <div class="boot-glow"></div>
+  <div class="boot-wrap">
+    <img class="boot-logo" src="icon-256.png" alt="" draggable="false"
+        onerror="this.classList.add('error')">
+    <div class="boot-title">Aulos</div>
+    <div class="boot-step" id="boot-step" data-step="0"></div>
+    <div class="boot-progress" aria-hidden="true"><i id="boot-bar"></i></div>
+  </div>
+  <div class="spin" style="display:none"></div>
+  <div class="t1" style="display:none">正在启动 Aulos…</div>
+  <div class="t2" style="display:none">首次启动需要初始化本地服务，通常几秒钟</div>
   <script>
     // BRIDGE_JS 注入 aulos-desktop 类; 窗口控制按钮直接走命令
     if (window.__TAURI_INTERNALS__) {
@@ -91,9 +234,9 @@
       });
     }
   </script>
-<script src="/static/i18n/zh.js?v=20261020b" defer></script>
-<script src="/static/i18n/en.js?v=20261020b" defer></script>
-<script src="/static/i18n/i18n.js?v=20261020b" defer></script>
+<script src="i18n/zh.js?v=20261101b" defer></script>
+<script src="i18n/en.js?v=20261101b" defer></script>
+<script src="i18n/i18n.js?v=20261101b" defer></script>
 <script>
 /* i18n 卫星页: 语言镜像 xc-lang(主页面 loadSettings 写透) */
 document.addEventListener("DOMContentLoaded", () => {
@@ -102,7 +245,166 @@ document.addEventListener("DOMContentLoaded", () => {
     if (lg === "en") { setI18nLang("en"); document.documentElement.lang = "en"; }
     applyI18n();
   } catch (e) { console.warn("[i18n] page:", e); }
+  /* 用户上传的应用图标: 出厂 logo 先显示(aulosboot:// 在页面极早期请求会
+   * 走真 DNS 解析失败, 实测手动后设才命中协议), DOMContentLoaded 后协议
+   * 已稳定——探测到用户图标即替换, 404 保持出厂件, 双图标位同逻辑 */
+  try {
+    const swap = (img, fallback) => {
+      img.onload = () => { img.onerror = null; };
+      img.onerror = function () { img.onerror = null; img.src = fallback; };
+      const probe = new Image();
+      probe.onload = () => { img.src = "http://aulosboot.localhost/user-icon"; };
+      probe.onerror = null;   // 无自定义图标: 出厂件已在位, 不动
+      probe.src = "http://aulosboot.localhost/user-icon";
+    };
+    swap(document.querySelector(".boot-logo"), "icon-256.png");
+    swap(document.querySelector(".tb-icon"), "icon.png");
+  } catch (e) {}
 });
+</script>
+<script>
+/* ---------- 开机动画模式切换与阶段文案 ----------
+ * main.rs 读 settings.json 的 bootAnim(缺省开): 关闭时以 ?boot=min 打开本页 →
+ * 藏动画区、亮极简 spinner(后端冷启动最长 60s, 页面不能空白)。
+ * 阶段文案按 elapsed 计时推进; 跳转时机仍由壳 ping 成功驱动, 天然自适应。 */
+(function () {
+  const min = new URLSearchParams(location.search).get("boot") === "min";
+  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const minimal = min || reduced;
+  if (minimal) {
+    document.body.classList.add("min-mode");
+    document.querySelectorAll(".spin,.t1,.t2").forEach(el => el.style.display = "");
+  }
+  // 阶段文案: 计时驱动(而非真实进度——壳侧跳转才是权威就绪信号)
+  // 词条经 i18n 字典取词, 英文模式(xc-lang)显示英文
+  const rawSteps = [
+    [0,   "loadpg.t004"],
+    [4,   "loadpg.t005"],
+    [9,   "loadpg.t006"],
+    [20,  "loadpg.t007"],
+  ];
+  const LG = () => { try { return localStorage.getItem("xc-lang") || "zh"; } catch (e) { return "zh"; } };
+  let LANG = null;
+  const STEPS = () => {
+    const lg = LG();
+    // i18n.js 的 t 是 IIFE 内部函数, 仅经 window.t 暴露——裸标识符 t 在
+    // 本页任何时机都 typeof "undefined"(未声明变量 typeof 不抛错)。
+    // 重算条件: 语言变了, 或【t 已可用但缓存还是裸 key】(defer 字典晚到,
+    // 首调兜底成 key 后需要一次重算换真文案; 2026-11-01 两次实测教训)
+    const tReady = typeof window.t === "function";
+    const cacheIsKey = STEPS_CACHE && STEPS_CACHE[0][1] === rawSteps[0][1];
+    if (lg !== LANG || (tReady && cacheIsKey)) {
+      LANG = lg;
+      STEPS_CACHE = rawSteps.map(([sec, key]) => {
+        let msg = key;
+        try { if (tReady) msg = window.t(key); } catch (e) {}
+        return [sec, msg];
+      });
+    }
+    return STEPS_CACHE;
+  };
+  let STEPS_CACHE = null;
+  STEPS();
+  const el = document.getElementById("boot-step");
+  if (minimal || !el) return;
+  const t0 = Date.now();
+  const tick = () => {
+    const s = (Date.now() - t0) / 1000;
+    let text = STEPS()[0][1];
+    for (const [sec, msg] of STEPS()) if (s >= sec) text = msg;
+    el.textContent = text;
+    const dots = document.createElement("span");
+    dots.className = "boot-dots";
+    el.appendChild(dots);
+  };
+  tick();
+  setInterval(tick, 500);
+  /* 底部进度条: 计时假前进——3s 冲到 82%, 之后极缓爬向 90% 封顶
+   * (减速曲线暗示"接近就绪"); 后端真就绪(__aulosReady)冲 100% 再跳转。
+   * 极简模式(minimal)在上面 return 掉了, 走不到这里——符合语义。
+   * 注意: __aulosReady 此处只包一层"冲 100%"; 视频脚本(更晚执行)会再
+   * 包一层播放协调——链条式包装, 各层都调用前一层, 不互相覆盖 */
+  const bar = document.getElementById("boot-bar");
+  if (bar) {
+    let p = 0;
+    const t0 = Date.now();
+    const tickBar = () => {
+      const s = (Date.now() - t0) / 1000;
+      const target = s < 3 ? 82 * (s / 3) : 82 + 8 * (1 - Math.exp(-(s - 3) / 6));
+      p = Math.min(target, 90);
+      bar.style.width = p.toFixed(1) + "%";
+    };
+    tickBar();
+    setInterval(tickBar, 300);
+    const prevReady = window.__aulosReady;
+    window.__aulosReady = (url) => {
+      bar.style.width = "100%";
+      if (prevReady) prevReady(url);
+    };
+  }
+})();
+</script>
+<script>
+/* ---------- 自定义开机动画视频（aulosboot:// 协议, 壳侧供文件） ----------
+ * 优先级: 关闭开关(?boot=min)/减弱动效 = 极简 > 自定义视频 > 内置 CSS 动画。
+ * 探测 http://aulosboot.localhost/boot-anim.mp4: 200 → 全屏静音播放;
+ * 404/出错 → 试 webm → 都没有则内置动画照旧。壳侧 bootstrap 完成后 eval
+ * __aulosReady(appUrl): 无视频立即跳(等价旧直跳); 视频在播 → 等播完本轮再跳。
+ * 20s 硬上限: 无论视频/后端状态强制进主界面, 防卡死在启动页。 */
+(function () {
+  if (document.body.classList.contains("min-mode")) return;   // 极简模式不播视频
+  const vid = document.getElementById("boot-video");
+  if (!vid) return;
+  let navigated = false;
+  const go = (url) => {
+    if (navigated || !url) return;
+    navigated = true;
+    window.__aulosNavigated = true;
+    location.replace(url);
+  };
+  // 不覆盖进度条脚本已挂的 __aulosReady(链式包装): 保存前一层, 包完调用
+  const prevReady = window.__aulosReady;
+  window.__aulosReady = (appUrl) => {
+    // 无自定义动画(或已停): 立即跳; 在播: 记 pending, 本轮播完 go
+    if (!vid.src || vid.paused || vid.ended) go(appUrl);
+    else window.__aulosPendingUrl = appUrl;
+    // pending 分支不调 prevReady——跳转延迟到回绕点, 由 go 触发;
+    // 但进度条冲 100% 应立即发生(后端确实就绪了):
+    if (window.__aulosPendingUrl) {
+      const bar = document.getElementById("boot-bar");
+      if (bar) bar.style.width = "100%";
+    }
+  };
+  setTimeout(() => go(window.__aulosPendingUrl), 20000);   // 硬上限兜底
+  const tryLoad = (ext) => {
+    vid.onerror = () => {
+      if (ext === "mp4") tryLoad("webm");
+      // webm 也失败: 内置动画照旧, 跳转交给 __aulosReady 直跳分支
+    };
+    vid.onplaying = () => {
+      document.body.classList.add("custom-anim");
+      document.documentElement.classList.add("custom-anim");   // html 双类: 玻璃规则特异性压过 html.dark #titlebar 实底
+      // loop 回绕检测: currentTime 变小 = 一轮播完。任一轮播完时若后端已就绪
+      // (pending) 即跳; 否则 loop 继续——__aulosReady 任意时刻来都记 pending,
+      // 最近的回绕点必然赶上（每轮都有 timeupdate, 监听器常驻不移除）
+      let last = -1;
+      vid.addEventListener("timeupdate", () => {
+        const cur = vid.currentTime;
+        if (last >= 0 && cur < last && window.__aulosPendingUrl) go(window.__aulosPendingUrl);
+        last = cur;
+      });
+    };
+    vid.src = "http://aulosboot.localhost/boot-anim." + ext;
+    vid.load();
+    // 有声自动播放: 壳已注入 --autoplay-policy=no-user-gesture-required;
+    // 若被拦(脱离壳开页/策略变化), 降级 muted 播——能动好过卡在黑屏
+    vid.play().catch(() => {
+      vid.muted = true;
+      vid.play().catch(() => {});
+    });
+  };
+  tryLoad("mp4");
+})();
 </script>
 </body>
 </html>

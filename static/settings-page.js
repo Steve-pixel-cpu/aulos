@@ -29,6 +29,7 @@ const themeDd = makeDropdown($("sel-theme"), {
     localStorage.setItem(THEME_KEY, v);
     applyTheme();
     applyFx();
+    if (window.mirrorAppearance) window.mirrorAppearance();
     applyAccentVars();   // 自定义色的派生令牌跟随深浅主题
     syncAccentInput();
     syncMica();          // 云母明暗跟随深浅主题
@@ -48,6 +49,15 @@ const langDd = makeDropdown($("sel-lang"), {
   },
 });
 window.__langDd = langDd;   // loadSettings 回显钩子（先例: __zenDd）
+
+/* 开机动画开关: 持久键 bootAnim（settings.json）, 桌面壳下次启动时读取。
+ * 失败: saveSettings 内 toast+回显真值, 这里再按返回值兜底回显 */
+const bootAnimChk = $("boot-anim-chk");
+if (bootAnimChk) bootAnimChk.onchange = async () => {
+  const s = await saveSettings({ bootAnim: bootAnimChk.checked });
+  if (s) bootAnimChk.checked = s.bootAnim !== false;
+};
+window.__bootAnimChk = bootAnimChk;   // loadSettings 回显钩子
 /* i18n: 语言注入后所有设置下拉统一重同步 —— 构造时 label 固化了当时的
  * 语言快照; loadSettings 拿到后端语言后调用本函数现取 t() 刷新 */
 window.__resyncSettingsDropdowns = () => {
@@ -117,6 +127,7 @@ const styleDd = makeDropdown($("sel-style"), {
     localStorage.setItem(STYLE_KEY, v);
     applyStyle();
     syncMica();
+    if (window.mirrorAppearance) window.mirrorAppearance();
   },
 });
 applyStyle();
@@ -407,6 +418,7 @@ function refreshAutoAccent(dataUrl) {
     localStorage.setItem(ACCENT_AUTO_HEX_KEY, hex);
     applyAccentVars();
     syncAccentSwatch();
+    if (window.mirrorAppearance) window.mirrorAppearance();   // 自动取色 hex 镜像到壳
   });
 }
 const accentAutoChk = $("accent-auto-chk");
@@ -415,6 +427,7 @@ accentAutoChk.addEventListener("change", () => {
   localStorage.setItem(ACCENT_AUTO_KEY, accentAutoChk.checked ? "1" : "0");
   applyAccentVars();
   syncAccentSwatch();
+  if (window.mirrorAppearance) window.mirrorAppearance();   // 自动取色开关镜像到壳
   syncAccentInput();
   toast(accentAutoChk.checked
     ? (localStorage.getItem(ACCENT_AUTO_HEX_KEY) ? t("settings_page.030") : t("settings_page.031"))
@@ -425,6 +438,7 @@ function applyAccent() {
   if (v === "gray") delete document.documentElement.dataset.accent;
   else document.documentElement.dataset.accent = v;
   applyAccentVars();
+  if (window.mirrorAppearance) window.mirrorAppearance();   // 镜像到壳(loading 页跨源读取)
 }
 function renderAccentDots() { }   // 已由 16 进制输入框取代（保留空实现防旧调用）
 function syncAccentInput() {

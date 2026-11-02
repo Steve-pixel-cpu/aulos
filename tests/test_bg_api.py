@@ -32,6 +32,10 @@ def iso(monkeypatch, tmp_path):
     monkeypatch.setattr(server, "_ICON_LIVE", app_dir / "icon.png")
     monkeypatch.setattr(server, "_BG_LIVE", app_dir / "bg-user.png")
     monkeypatch.setattr(server, "_ICON_DEFAULT", icon_default)
+    monkeypatch.setattr(server, "_BGV_LIVE", app_dir / "bg-video.mp4")
+    monkeypatch.setattr(server, "_BGV_LIVE_WEBM", app_dir / "bg-video.webm")
+    monkeypatch.setattr(server, "_BA_LIVE", app_dir / "boot-anim.mp4")
+    monkeypatch.setattr(server, "_BA_LIVE_WEBM", app_dir / "boot-anim.webm")
     return tmp_path
 
 
@@ -79,6 +83,94 @@ def test_bg_get_serves_upload_and_404_when_unset(client, iso):
     r = client.get("/api/bg")
     assert r.status_code == 200
     assert r.content.startswith(b"\x89PNG")
+
+
+# ------------------------------------------------------------
+# 动态壁纸 /api/bg-video（复刻 /api/bg 双轨模式）
+# ------------------------------------------------------------
+
+def _b64(payload: bytes) -> str:
+    return base64.b64encode(payload).decode()
+
+
+def test_bgv_upload_and_ver(client, iso):
+    r = client.post("/api/bg-video", json={"data": "data:video/mp4;base64," + _b64(b"0" * 2048)})
+    assert r.status_code == 200
+    ver = r.json()["ver"]
+    assert ver > 0
+    assert (iso / "appearance" / "bg-video.mp4").read_bytes() == b"0" * 2048
+    # settings 能看到版本号
+    assert client.get("/api/settings").json()["bg_video_ver"] == ver
+
+
+def test_bgv_upload_webm_uses_right_extension(client, iso):
+    r = client.post("/api/bg-video", json={"data": "data:video/webm;base64," + _b64(b"w") * 16})
+    assert r.status_code == 200
+    assert (iso / "appearance" / "bg-video.webm").exists()
+    assert not (iso / "appearance" / "bg-video.mp4").exists()
+
+
+def test_bgv_clear(client, iso):
+    client.post("/api/bg-video", json={"data": "data:video/mp4;base64," + _b64(b"v") * 8})
+    r = client.post("/api/bg-video", json={"data": None})
+    assert r.status_code == 200
+    assert r.json()["ver"] == 0
+    assert not (iso / "appearance" / "bg-video.mp4").exists()
+    # settings 的版本号同步归零
+    assert client.get("/api/settings").json()["bg_video_ver"] == 0
+
+
+def test_bgv_reject_image_dataurl(client):
+    # 静态壁纸的 dataURL 不能蒙混进视频壁纸
+    assert client.post("/api/bg-video", json={"data": PNG}).status_code == 400
+
+
+def test_bgv_reject_bad_data(client):
+    assert client.post("/api/bg-video", json={"data": "not-a-dataurl"}).status_code == 400
+
+
+def test_bgv_too_large(client):
+    # 上限与 server._BGV_MAX 对齐: 解码后 80MB（前端 file.size 同为 80MB 口径）
+    big = "data:video/mp4;base64," + base64.b64encode(b"x" * (80 * 1024 * 1024 + 1)).decode()
+    assert client.post("/api/bg-video", json={"data": big}).status_code == 400
+
+
+def test_bgv_get_serves_upload_and_404_when_unset(client, iso):
+    # 未设置: 404（前端以 bg_video_ver=0 为"无动态壁纸"口径, 不盲拉）
+    assert client.get("/api/bg-video").status_code == 404
+    client.post("/api/bg-video", json={"data": "data:video/mp4;base64," + _b64(b"0" * 512)})
+    r = client.get("/api/bg-video")
+    assert r.status_code == 200
+    assert r.content == b"0" * 512
+    assert r.headers["content-type"].startswith("video/mp4")
+
+
+def test_bgv_replace_switches_extension(client, iso):
+    # mp4 换 webm: 旧文件删除, 不留双份（GET 永远指向最新一份）
+    client.post("/api/bg-video", json={"data": "data:video/mp4;base64," + _b64(b"m" * 4)})
+    client.post("/api/bg-video", json={"data": "data:video/webm;base64," + _b64(b"w" * 4)})
+    assert not (iso / "appearance" / "bg-video.mp4").exists()
+    assert (iso / "appearance" / "bg-video.webm").read_bytes() == b"w" * 4
+    assert client.get("/api/bg-video").content == b"w" * 4
+
+
+# ------------------------------------------------------------
+# 设置项 bootAnim（开机动画开关, 壳侧下次启动读取）
+# ------------------------------------------------------------
+
+def test_boot_anim_default_and_persist(tmp_path, monkeypatch):
+    """缺省开启; 设置后落盘 settings.json（camelCase 键, 照 language 模式）。"""
+    import aulos.web.server_settings as ss
+    settings_file = tmp_path / "settings.json"
+    monkeypatch.setattr(server, "SETTINGS_FILE", settings_file)
+    with TestClient(server.app) as c:
+        assert c.get("/api/settings").json()["bootAnim"] is True   # 缺省开
+        assert c.post("/api/settings", json={"bootAnim": False}).status_code == 200
+        assert c.get("/api/settings").json()["bootAnim"] is False
+        import json as _json
+        assert _json.loads(settings_file.read_text(encoding="utf-8"))["bootAnim"] is False
+        # 非布尔拒绝
+        assert c.post("/api/settings", json={"bootAnim": "off"}).status_code == 400
 
 
 # ------------------------------------------------------------
@@ -156,3 +248,59 @@ def test_migrate_skips_factory_identical_icon(monkeypatch, tmp_path):
     server._migrate_legacy_appearance()
 
     assert not (app_dir / "icon.png").exists()
+
+
+# ------------------------------------------------------------
+# 自定义开机动画 /api/boot-anim（复用视频资产双轨, 壳经 aulosboot:// 读取）
+# ------------------------------------------------------------
+
+def test_bootanim_fixture_patches_boot_paths(iso):
+    """隔离面: boot-anim 两格式路径也要进 fixture, 否则写穿用户目录。"""
+    assert server._BA_LIVE == iso / "appearance" / "boot-anim.mp4"
+    assert server._BA_LIVE_WEBM == iso / "appearance" / "boot-anim.webm"
+
+
+def test_ba_upload_and_ver(client, iso):
+    r = client.post("/api/boot-anim", json={"data": "data:video/mp4;base64," + _b64(b"0" * 2048)})
+    assert r.status_code == 200
+    ver = r.json()["ver"]
+    assert ver > 0
+    assert (iso / "appearance" / "boot-anim.mp4").read_bytes() == b"0" * 2048
+    assert client.get("/api/settings").json()["boot_anim_ver"] == ver
+
+
+def test_ba_upload_webm_uses_right_extension(client, iso):
+    r = client.post("/api/boot-anim", json={"data": "data:video/webm;base64," + _b64(b"w" * 16)})
+    assert r.status_code == 200
+    assert (iso / "appearance" / "boot-anim.webm").exists()
+    assert not (iso / "appearance" / "boot-anim.mp4").exists()
+
+
+def test_ba_clear(client, iso):
+    client.post("/api/boot-anim", json={"data": "data:video/mp4;base64," + _b64(b"v" * 8)})
+    r = client.post("/api/boot-anim", json={"data": None})
+    assert r.status_code == 200
+    assert r.json()["ver"] == 0
+    assert not (iso / "appearance" / "boot-anim.mp4").exists()
+    assert client.get("/api/settings").json()["boot_anim_ver"] == 0
+
+
+def test_ba_reject_image_dataurl(client):
+    assert client.post("/api/boot-anim", json={"data": PNG}).status_code == 400
+
+
+def test_ba_reject_bad_data(client):
+    assert client.post("/api/boot-anim", json={"data": "not-a-dataurl"}).status_code == 400
+
+
+def test_ba_too_large(client):
+    # 上限与 server._BA_MAX 对齐: 解码后 50MB
+    big = "data:video/mp4;base64," + base64.b64encode(b"x" * (50 * 1024 * 1024 + 1)).decode()
+    assert client.post("/api/boot-anim", json={"data": big}).status_code == 400
+
+
+def test_ba_replace_switches_extension(client, iso):
+    client.post("/api/boot-anim", json={"data": "data:video/mp4;base64," + _b64(b"m" * 4)})
+    client.post("/api/boot-anim", json={"data": "data:video/webm;base64," + _b64(b"w" * 4)})
+    assert not (iso / "appearance" / "boot-anim.mp4").exists()
+    assert (iso / "appearance" / "boot-anim.webm").read_bytes() == b"w" * 4

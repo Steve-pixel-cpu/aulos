@@ -137,7 +137,7 @@ function handleServerMessage(msg, sid) {
     case "turn_queued_user":   onTurnQueuedUser(msg, sid); break;
     case "turn_queue_cleared": onQueueCleared(sid); break;
     case "await_output":       onAwaitOutput(msg, state.sessionId); break;
-    case "context_compacted":  addCompactNotice(msgCol(), true); break;
+    case "context_compacted":  addCompactNotice(msgCol(), true); resetCtxCard(); break;
     case "rate_limited_retry": onRateLimitedRetry(msg, sid); break;
     case "turn_interrupting":  onTurnInterrupting(msg, sid); break;
     case "permission_request": onPermissionRequest(msg, sid); break;
@@ -190,7 +190,7 @@ function onTextDelta(msg, sid) {
   }
   run.curBubble._raw += msg.text;
   run.curBubble.innerHTML = renderMd(run.curBubble._raw);
-  decorateCode(run.curBubble);
+  decorateCode(run.curBubble, true);   // streaming: 不折叠(防高度振荡), 收口补
   decorateTables(run.curBubble);
   scrollToBottom();
 }
@@ -201,6 +201,8 @@ function flushAssistantBubble(run) {
   if (run.curBubble && !run.curBubble._raw) {
     run.curBubble.closest(".msg").remove();   // 空气泡（模型直接调工具）: 移除
   }
+  // DOM 定型后统一补折叠（流式中 decorateCode(_, true) 只装饰未折叠）
+  if (run.curBubble) collapsePendingCode(run.curBubble);
   run.curBubble = null;
 }
 
@@ -1294,6 +1296,7 @@ function onSubagentEvent(msg, sid) {
   // 侧栏模式: 用户贴底时才跟随(上翻让位, 交给 wheel/scroll 监听切换)
   if (_saOpenAgent === msg.agent_id && sid === state.sessionId && saNearBottom) {
     const body = $("sa-body");
+    window.tipIgnoreNextScroll?.(120);   // 对齐主列 scrollToBottom: 程序化滚动不误杀 tooltip
     body.scrollTop = body.scrollHeight;
   }
 }
@@ -2141,6 +2144,164 @@ function fmtTokens(n) {
   return String(n);
 }
 
+/* ===== 上下文容量卡: 输入卡顶部, 显示当前会话上下文占用与缓存命中率 =====
+ * 占用口径: 最近一轮的输入侧 token 对比配置的 context_window——每轮
+ * prompt 已含全部历史, 取最新值即当前上下文大小(不跨轮累加, 否则重复
+ * 计数)。Anthropic input 不含缓存段取 input+cache, OpenAI 已含取
+ * input, 两者取大兼容。命中率 = 累计 cache_read / 累计输入侧(跨轮)。
+ * 数据源 turn_done.usage, context_compacted 清零重计。 */
+const ctxStats = { in: 0, cached: 0, window: 0, sid: null };
+const CTX_WARN_RATIO = 0.75;   // 与后端压缩阈值口径对齐, 进度条变警示色
+/* 累计值按会话持久化(localStorage): 刷新/切会话后环形按钮立即恢复显示,
+ * 不必等新一轮 turn_done。压缩清零时同步清存储。 */
+const CTX_STORE_KEY = "xc-ctx-stats-v2";   // v1 是旧口径(跨轮累加)的膨胀值, 换 key 直接作废
+
+function ctxStoreLoad(sid) {
+  try {
+    const all = JSON.parse(localStorage.getItem(CTX_STORE_KEY) || "{}");
+    return all[sid] || null;
+  } catch (e) { return null; }
+}
+
+function ctxStoreSave() {
+  if (!ctxStats.sid) return;
+  try {
+    const all = JSON.parse(localStorage.getItem(CTX_STORE_KEY) || "{}");
+    // 只保留最近 50 个会话的读数, 防无限膨胀
+    const keys = Object.keys(all);
+    if (keys.length >= 50 && !all[ctxStats.sid]) {
+      delete all[keys[0]];
+    }
+    all[ctxStats.sid] = { in: ctxStats.in, cached: ctxStats.cached,
+                          window: ctxStats.window };
+    localStorage.setItem(CTX_STORE_KEY, JSON.stringify(all));
+  } catch (e) { /* 存储失败静默: 只影响刷新后恢复 */ }
+}
+
+function ctxStoreClear() {
+  if (!ctxStats.sid) return;
+  try {
+    const all = JSON.parse(localStorage.getItem(CTX_STORE_KEY) || "{}");
+    delete all[ctxStats.sid];
+    localStorage.setItem(CTX_STORE_KEY, JSON.stringify(all));
+  } catch (e) { /* 同上 */ }
+}
+
+/* 切会话/进草稿时调用: 恢复该会话的累计读数(无则隐藏环形按钮) */
+function ctxSwitchSession(sid) {
+  ctxStats.sid = sid || null;
+  ctxStats.in = 0; ctxStats.cached = 0; ctxStats.window = 0;
+  if (sid) {
+    const saved = ctxStoreLoad(sid);
+    if (saved) {
+      ctxStats.in = saved.in || 0;
+      ctxStats.cached = saved.cached || 0;
+      ctxStats.window = saved.window || 0;
+    }
+  }
+  renderCtxCard();
+}
+window.ctxSwitchSession = ctxSwitchSession;   // app.js selectSession/startDraft 调用
+
+function updateCtxCard(usage, contextWindow, cacheInInput) {
+  if (!usage || typeof usage !== "object") return;
+  const inp = usage.input_tokens || 0;
+  const cc = usage.cache_creation_input_tokens || 0;
+  const cr = usage.cache_read_input_tokens || 0;
+  // 占用与命中率同源: turn_done.usage 是最近一次 API 调用的单次用量
+  // (后端 latest_call_usage——每次调用输入都携带全量历史, 单次才是
+  // "此刻上下文多大"; 旧版用 turn 级累加器, 多工具轮分子累加 N 次/
+  // 分母单次, 命中率曾算出 1029%)。缓存字段语义按协议区分(后端下发
+  // cache_in_input): openai 的 input(prompt_tokens)已含缓存读 →
+  // 占用 = input; anthropic 的 input 与缓存段互斥 → 占用 = input+cc+cr;
+  // 命中率 = cache_read / 输入侧(同一次请求, 分子分母同源不超 100%)
+  const inputSide = cacheInInput ? inp : inp + cc + cr;
+  if (!inputSide) return;                       // 全零轮（打断等）: 保持旧值
+  ctxStats.in = inputSide;
+  ctxStats.cached = cr;
+  if (typeof contextWindow === "number" && contextWindow > 0) {
+    ctxStats.window = contextWindow;            // 后端每轮下发, 拿到就刷新
+  }
+  ctxStoreSave();
+  renderCtxCard();
+}
+
+function resetCtxCard() {
+  ctxStats.in = 0; ctxStats.cached = 0;
+  ctxStoreClear();
+  renderCtxCard();
+}
+
+function renderCtxCard() {
+  const card = document.getElementById("ctx-card");
+  const btn = document.getElementById("btn-ctx");
+  if (!card || !btn) return;
+  const empty = document.getElementById("ctx-empty");
+  if (!ctxStats.in || !ctxStats.window) {   // 无数据: 按钮常驻(空环), 卡片显占位文案
+    card.classList.remove("open");
+    btn.setAttribute("aria-expanded", "false");
+    if (empty) empty.hidden = false;
+    card.querySelectorAll(".ctx-row, .ctx-bar").forEach(el => { el.style.display = "none"; });
+    return;
+  }
+  if (empty) empty.hidden = true;
+  card.querySelectorAll(".ctx-row, .ctx-bar").forEach(el => { el.style.display = ""; });
+  const pct = ctxStats.in / ctxStats.window;
+  const pctText = "（" + (pct * 100).toFixed(1) + "%）";
+  document.getElementById("ctx-usage").textContent =
+    fmtTokens(ctxStats.in) + "/" + fmtTokens(ctxStats.window);
+  document.getElementById("ctx-pct").textContent = pctText;
+  const fill = document.getElementById("ctx-fill");
+  fill.style.width = Math.min(pct * 100, 100).toFixed(1) + "%";
+  fill.parentElement.classList.toggle("warn", pct > CTX_WARN_RATIO);
+  const hit = ctxStats.in ? ctxStats.cached / ctxStats.in : 0;
+  document.getElementById("ctx-hit").textContent =
+    (hit * 100).toFixed(1) + "%";
+  // 环形图标: dashoffset 按占用比例减(47.1=整环), 超 75% 转警示色
+  const CIRC = 2 * Math.PI * 7.5;
+  const ring = document.getElementById("ctx-ring");
+  ring.style.strokeDashoffset =
+    (CIRC * (1 - Math.min(pct, 1))).toFixed(2);
+  btn.classList.toggle("warn", pct > CTX_WARN_RATIO);
+  btn.hidden = false;
+}
+
+/* 点环形图标开/关卡片; 卡片 fixed 定位到按钮上方(dd 弹出同款);
+ * 点卡片与图标之外的区域关闭 */
+(() => {
+  const btn = document.getElementById("btn-ctx");
+  const card = document.getElementById("ctx-card");
+  if (!btn || !card) return;
+  function place() {
+    const r = btn.getBoundingClientRect();
+    const W = card.offsetWidth, H = card.offsetHeight;
+    const left = Math.max(10, Math.min(r.right - W, window.innerWidth - W - 10));
+    card.style.left = left + "px";
+    card.style.top = Math.max(10, r.top - 8 - H) + "px";   // 按钮上方 8px
+  }
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const open = card.classList.toggle("open");
+    btn.classList.toggle("open", open);
+    btn.setAttribute("aria-expanded", String(open));
+    if (open) {
+      card.style.visibility = "hidden";       // 先隐藏量尺寸再定位, 防闪烁
+      requestAnimationFrame(() => { place(); card.style.visibility = ""; });
+    }
+  });
+  card.addEventListener("click", (e) => e.stopPropagation());
+  document.addEventListener("click", () => {
+    if (card.classList.contains("open")) {
+      card.classList.remove("open");
+      btn.classList.remove("open");
+      btn.setAttribute("aria-expanded", "false");
+    }
+  });
+  window.addEventListener("resize", () => {
+    if (card.classList.contains("open")) place();
+  });
+})();
+
 /* 轮次用量行: turn_done 带来本轮 token 消耗, 渲染成一条淡色小字。
  * 全零（断线显形/被打断在首个请求前）时不渲染——没有信息量的行是噪音。 */
 function addUsageNote(usage) {
@@ -2209,6 +2370,7 @@ function onTurnDone(msg) {
     else if (early) removeStoppedTag(run); // 停止点恰逢自然完成: 撤提前标签
     if (run) run.stopTagged = false;       // 本轮收口完毕: 去重旗复位
     addUsageNote(msg.usage);
+    updateCtxCard(msg.usage, msg.context_window, msg.cache_in_input);   // 上下文容量卡刷新
     if (!msg.interrupted && msg.budget_exhausted) addBudgetNote(msg.usage);
     else if (!msg.interrupted && msg.iterations_exhausted) {
       addNoteBubble("warn", t("ws_handlers.097", { p0: msg.iterations }));

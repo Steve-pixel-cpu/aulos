@@ -139,6 +139,21 @@ def test_created_ids_do_not_collide_within_same_second(client, isolated_store):
     assert a != b
 
 
+def test_sessions_sorted_by_last_activity_not_creation(client, isolated_store):
+    """启动恢复「上次对话」的根基: 列表按最后活跃排序, 不是创建时间。
+
+    old 会话先创建、后继续对话（mtime 最新）; new 会话后创建但从未发
+    消息（pending, mtime=0）。启动取第一条时应恢复 old 而非 new。"""
+    old = client.post("/api/sessions").json()["id"]
+    isolated_store.save_message(old, Message.user_text("旧会话继续聊"), None)
+    time.sleep(0.02)                      # 保证 last_activity 必不相同
+    new = client.post("/api/sessions").json()["id"]   # 更晚创建, 未发消息
+
+    items = client.get("/api/sessions").json()["sessions"]
+    assert [i["id"] for i in items][:2] == [old, new]
+    assert items[0]["mtime"] >= items[1]["mtime"]
+
+
 # ------------------------------------------------------------
 # WebPermissionPrompter — 阻塞等待 / 超时安全侧 / cancel / stale 响应
 # ------------------------------------------------------------
