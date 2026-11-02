@@ -88,7 +88,8 @@
 **关键设计**：
 - **白名单防套娃**：子 Agent 的工具白名单里没有「再派生」，从机制上杜绝无限递归；
 - **幽灵任务清理**：进程重启后，遗留的「运行中」子 Agent 统一标记为失败——状态不会说谎；
-- **执行层模型分层**：子 Agent 可配置便宜模型（workerProvider），Leader 保持强模型——决策质量不牺牲，执行成本大幅下降。
+- **执行层模型分层**：子 Agent 可配置便宜模型（workerProvider），Leader 保持强模型——决策质量不牺牲，执行成本大幅下降；
+- **结果收集原语从轮询演进为阻塞等待（agent_wait）**：早期 spawn 返回文案教模型「Poll agent_status to collect the result」——每次 poll 烧掉一整个 LLM 推理回合，回应往往只是「还在跑」。中间加过执行层空转护栏（同 id 第 3 次查询起提醒，`16a5873`），只是缓解症状；结构性修复是新增 `agent_wait`：spawn 时登记 `threading.Event`、终态落盘单点 set，`wait_agents` 双通道（本进程走内存 Event 切片阻塞，跨进程/重启后的 manifest 无 Event 则读盘兜底，Event 路径醒来的间隙也顺带查盘，覆盖「worker 死在别的进程」），mode all/any，超时返回 running 快照不报错（`multi_agent.py:462-526`）。演进链条：`5447f4f`（轮询）→ `16a5873`（护栏）→ `4d6dfd6`（agent_wait）。**设计洞察：工具面决定模型行为**——可用的原语只有 poll，模型就会 poll（每轮烧一个模型回合）；提供 await，等待就变成宿主层的零成本阻塞。Agent 循环的稀缺资源是模型回合，凡能在宿主语言层阻塞完成的事，都不该让模型用回合去等。
 
 **证据**：`aulos/multi_agent.py`、`aulos/agent_tools.py`。
 
@@ -117,22 +118,3 @@
 **证据**：`evals/README.md`、`evals/harness.py`、`evals/baseline.json`、`tests/test_evals_harness.py`。
 
 **设计本质**：传统测试测「函数输出对不对」，evals 测「Agent 行为对不对」——这是测试非确定性系统的一次完整实践。
-
-## 9. Leader 等待子代理：从轮询到阻塞等待（agent_wait）
-
-**是什么**：Leader 派生 subagent 后如何拿到结果。这套机制经历过一次结构性演进：
-
-**早期方案（轮询）**：spawn 立即返回，返回文案教模型「Poll agent_status to collect the result」。Leader 要么反复调 `agent_status`（每次调用 = 一整个 LLM 推理回合，回应只有「还在跑，稍后再问」），要么调 `sleep` 再查（同样一轮烧在一个 sleep 上）。等待成本全部落在模型层。
-
-**中间护栏**：runtime 加了「轮询空转」执行层护栏——同一个 id 第 3 次查询起插入提醒（把提示词约束下沉为执行层约束）。这只是缓解症状：模型还是得轮询，只是知道该收了。
-
-**结构性修复（agent_wait）**：新增阻塞等待工具，等待发生在 Python 层，**不消耗模型回合**：
-- `spawn` 时登记 `threading.Event`（必须在 worker 线程启动前登记，让 wait 一开始就拿到正主）；终态写入单点 set（放在原子落盘之后，等待者醒来即读到终态）；
-- `wait_agents` **双通道**：本进程 spawn 的走内存 `Event.wait` 切片阻塞，零轮询；跨进程/重启后的 manifest 没有 Event，退化为读盘兜底轮询——且 Event 路径醒来的间隙也顺带查一次盘，覆盖「Event 永不来」（worker 死在别的进程）的场景；
-- Event 补建安全：即使 wait 侧先建了 Event、本进程从未 spawn，set 一样送达；
-- `mode=all/any`（等全部/等第一个）；超时不报错而是返回 running 快照 + 重试指引；
-- spawn 的返回文案同步改写：从「教轮询」改为「教 wait」——工具说明书本身塑造模型行为。
-
-**证据**：`aulos/multi_agent.py:462-526`（Event 登记与双通道等待，含切片/兜底周期常量的理由注释）、`aulos/agent_tools.py`（agent_wait spec/handler）、commit `5447f4f`（旧轮询设计）→ `16a5873`（空转护栏）→ `4d6dfd6`（agent_wait，+400 行含 19 个新测试）。
-
-**设计本质**：**工具面决定模型行为**——可用的原语只有 poll，模型就会 poll（每轮烧一个模型回合）；提供 await，等待就变成零成本的阻塞调用。给 LLM 设计工具时，成本模型要对齐：Agent 循环的稀缺资源是模型回合，凡是能在宿主语言层阻塞完成的事，都不该让模型用回合去等。
