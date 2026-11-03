@@ -199,7 +199,12 @@
     display: none; position: fixed; inset: 0;
     width: 100%; height: 100%; object-fit: cover;
     z-index: -2; pointer-events: none;
+    /* 就绪(挂 data-bgv)后柔和浮现, 消除"暗底→画面"硬切换
+     * (2026-11-03 现场)。display 切换不参与过渡, 但首次 paint
+     * 时的 opacity 渐变经由 animation 生效 */
+    animation: bgv-fadein .45s ease-out;
   }
+  @keyframes bgv-fadein { from { opacity: 0; } to { opacity: 1; } }
   :root[data-bgv="1"] #bg-video { display: block; }
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -3975,6 +3980,11 @@ body.col-resizing, body.col-resizing * { cursor: col-resize !important; }
     border-radius: 0 0 calc(var(--r-lg) - 1px) 6px;
   }
   .msg.user.sa-task-open .sa-task-fade { display: none; }
+  /* 展开后按钮随 fade 一起隐藏: 折叠容器已解除限高, 悬浮胶囊此时
+   * 会正好压在全文末尾最后一行上(absolute 底对齐 .msg), 挡住文字
+   * (2026-11-03 现场)。折叠态按钮仍在, 逻辑由 bubbles.js 的
+   * open 标志恢复。 */
+  .msg.user.sa-task-open .sa-task-expand { display: none; }
   /* 展开胶囊: 底部居中, 同 .code-expand 的语言 */
   .sa-task-expand {
     position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%);
