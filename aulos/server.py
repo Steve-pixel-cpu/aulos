@@ -69,7 +69,7 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from fastapi import Body, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 import anthropic
@@ -1935,6 +1935,61 @@ def _bgv_live() -> "Path | None":
     return _video_asset_live(_BGV_LIVE, _BGV_LIVE_WEBM)
 
 
+def _bg_etag(path: "Path") -> str:
+    """壁纸/视频资产的弱 ETag: mtime-size 组合, 换文件即失效。"""
+    try:
+        st = path.stat()
+    except OSError:
+        return ""
+    return 'W/"%d-%d"' % (int(st.st_mtime), st.st_size)
+
+
+def _bg_respond_file(request: Request, path: "Path") -> "FileResponse":
+    """GET /api/bg 与 /api/bg-video 共用: 带 ETag/Last-Modified + 单区间 Range。
+
+    缓存语义: 弱 ETag 来自 mtime+size, 后端重启/文件未变时跨进程稳定;
+    带 If-None-Match/Last-Modified-Since 回 304, 命中磁盘缓存不重下全量。
+    视频 Range: 浏览器起播/seek 会带 Range, 回 206 + Content-Range +
+    Accept-Ranges——冷启动时不再等 80MB(上限) 全量到位才能出首帧。
+    """
+    etag = _bg_etag(path)
+    headers = {"Cache-Control": "no-cache", "ETag": etag, "Accept-Ranges": "bytes"}
+    inm = request.headers.get("if-none-match")
+    if inm and etag and inm == etag:
+        # 304 必须无 body(HTTP 语义), 不能用 FileResponse(status_code=304)
+        # —— starlette 的 FileResponse 仍会把文件 body 流式发出
+        return Response(status_code=304, headers=headers)
+    lm = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc).strftime("%a, %d %b %Y %H:%M:%S GMT")
+    headers["Last-Modified"] = lm
+    size = path.stat().st_size
+    rng = request.headers.get("range")
+    if rng:
+        m = re.match(r"bytes=(\d*)-(\d*)", rng)
+        if m:
+            start_s, end_s = m.group(1), m.group(2)
+            if start_s == "":
+                # suffix-range: bytes=-N → 最后 N 字节
+                n = int(end_s)
+                start = max(0, size - n)
+                end = size - 1
+            else:
+                start = int(start_s)
+                end = int(end_s) if end_s else size - 1
+                end = min(end, size - 1)
+            if start <= end and start < size:
+                return FileResponse(
+                    path,
+                    status_code=206,
+                    headers={
+                        **headers,
+                        "Content-Range": f"bytes {start}-{end}/{size}",
+                        "Content-Length": str(end - start + 1),
+                    },
+                    background=None,
+                )
+    return FileResponse(path, headers=headers)
+
+
 def _bgv_clear_files() -> None:
     _video_asset_clear(_BGV_LIVE, _BGV_LIVE_WEBM)
 
@@ -1944,12 +1999,15 @@ def _bgv_ver() -> int:
 
 
 @app.get("/api/bg-video", include_in_schema=False)
-async def api_get_bg_video():
-    """动态壁纸视频: 未设置时 404（前端以 bg_video_ver=0 为"无"口径）。"""
+async def api_get_bg_video(request: Request):
+    """动态壁纸视频: 未设置时 404（前端以 bg_video_ver=0 为"无"口径）。
+
+    带 ETag/Last-Modified + 单区间 Range(206), 冷启动避免 80MB 全量重下、
+    视频可流式起播——动态背景出首帧的延迟主因(2026-11-03 现场)。"""
     live = _bgv_live()
     if live is None:
         raise HTTPException(status_code=404, detail=t("server.058"))
-    return FileResponse(live, headers={"Cache-Control": "no-cache"})
+    return _bg_respond_file(request, live)
 
 
 @app.post("/api/bg-video")
@@ -2002,11 +2060,13 @@ async def api_post_boot_anim(request: dict):
 
 
 @app.get("/api/bg", include_in_schema=False)
-async def api_get_bg():
-    """壁纸: 未设置时 404（前端以 bg_ver=0 为"无壁纸"口径, 不会盲拉）。"""
+async def api_get_bg(request: Request):
+    """壁纸: 未设置时 404（前端以 bg_ver=0 为"无壁纸"口径, 不会盲拉）。
+
+    与 /api/bg-video 同款 ETag/Last-Modified + Range(206), 见 _bg_respond_file。"""
     if not _BG_LIVE.exists():
         raise HTTPException(status_code=404, detail=t("server.006"))
-    return FileResponse(_BG_LIVE, headers={"Cache-Control": "no-cache"})
+    return _bg_respond_file(request, _BG_LIVE)
 
 
 @app.post("/api/bg")
