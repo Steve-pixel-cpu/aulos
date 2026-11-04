@@ -14,6 +14,7 @@
   /* ---------------- i18n ---------------- */
         var I18N = {
     zh: {
+      'nav.docs': '文档',
       'nav.features': '特性',
       'nav.arch': '架构',
       'nav.shots': '界面',
@@ -88,6 +89,7 @@
       'foot.built': '✻ 本页由 Aulos 生成',
     },
     en: {
+      'nav.docs': 'Docs',
       'nav.features': 'Features',
       'nav.arch': 'Architecture',
       'nav.shots': 'Interface',
