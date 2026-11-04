@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Aulos 使用文档：安装桌面端、连接模型、开始编程任务，了解权限、MCP、Skills 与终端用法。">
+  <meta name="color-scheme" content="dark light">
+  <title>快速开始 · Aulos 文档</title>
+  <link rel="icon" type="image/png" href="../assets/icon-default.png">
+  <link rel="stylesheet" href="../css/style.css?v=89">
+  <link rel="stylesheet" href="style.css?v=1">
+  <script src="main.js?v=1" defer></script>
+</head>
+<body class="docs">
+  <a class="docs__skip" href="#docs-content">跳到正文</a>
+  <header class="nav docs__header" id="nav">
+    <div class="nav-inner">
+      <a class="brand" href="../" aria-label="Aulos 首页">
+        <img src="../assets/icon-default.png" alt="" class="brand-logo">
+        <span class="brand-name">Aulos</span>
+      </a>
+      <a class="docs__badge" href="#quickstart">文档</a>
+      <button class="docs__search-trigger" id="search-open" type="button" aria-label="搜索文档" aria-haspopup="dialog" aria-controls="docs-search" hidden>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
+        <span>搜索文档</span><kbd id="search-shortcut">⌘ K</kbd>
+      </button>
+      <div class="nav-actions">
+        <a class="nav-btn docs__home" href="../">官网</a>
+        <button class="nav-btn" id="theme-toggle" type="button" aria-label="切换为浅色主题" title="切换主题" hidden>
+          <svg class="ico-moon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M20.4 13.2A8.3 8.3 0 0 1 10.8 3.6a8.3 8.3 0 1 0 9.6 9.6Z"/></svg>
+          <svg class="ico-sun" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5L19 19M19 5l-1.5 1.5M6.5 17.5L5 19"/></svg>
+        </button>
+        <a class="nav-cta" href="../#download">获取 Aulos</a>
+      </div>
+    </div>
+  </header>
+
+  <div class="docs__mobile-bar" id="mobile-bar" hidden>
+    <button id="menu-toggle" type="button" aria-expanded="false" aria-controls="docs-sidebar">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+      文档目录
+    </button>
+    <span id="mobile-title">快速开始</span>
+  </div>
+  <button class="docs__scrim" id="menu-scrim" type="button" aria-label="关闭文档目录" hidden></button>
+
+  <div class="docs__layout">
+    <aside class="docs__sidebar" id="docs-sidebar" aria-label="文档目录">
+      <div class="docs__sidebar-top"><span>使用文档</span><span class="docs__version">v5.6.0</span></div>
+      <nav class="docs__nav" aria-label="章节导航">
+        <p class="docs__nav-group">开始使用</p>
+        <a href="#quickstart" data-page="quickstart"><span class="docs__nav-number">01</span>快速开始</a>
+        <a href="#installation" data-page="installation"><span class="docs__nav-number">02</span>安装与升级</a>
+        <a href="#models" data-page="models"><span class="docs__nav-number">03</span>连接模型</a>
+        <p class="docs__nav-group">使用指南</p>
+        <a href="#workflow" data-page="workflow"><span class="docs__nav-number">04</span>日常使用</a>
+        <a href="#permissions" data-page="permissions"><span class="docs__nav-number">05</span>权限与配置</a>
+        <a href="#extensions" data-page="extensions"><span class="docs__nav-number">06</span>扩展能力</a>
+        <a href="#terminal" data-page="terminal"><span class="docs__nav-number">07</span>终端使用</a>
+        <p class="docs__nav-group">帮助</p>
+        <a href="#troubleshooting" data-page="troubleshooting"><span class="docs__nav-number">08</span>常见问题</a>
+      </nav>
+      <div class="docs__sidebar-bottom">
+        <span class="docs__status-dot" aria-hidden="true"></span>开源 · MIT · 本地运行
+        <a href="https://github.com/Steve-pixel-cpu/aulos" target="_blank" rel="noopener">在 GitHub 上查看项目 <span aria-hidden="true">↗</span></a>
+      </div>
+    </aside>
+
+    <main class="docs__main" id="docs-content" tabindex="-1">
+      <div class="docs__breadcrumb"><a href="../">Aulos</a><span aria-hidden="true">/</span><span>文档</span><span aria-hidden="true">/</span><span id="breadcrumb-title">快速开始</span></div>
+
+      <!-- All chapters remain readable without JavaScript. Hash navigation enhances them into individual pages. -->
+      <article class="docs__article" id="quickstart" data-title="快速开始" data-group="开始使用" aria-labelledby="quickstart-title">
+        <div class="docs__eyebrow">GET STARTED</div>
+        <h1 id="quickstart-title" tabindex="-1">从第一个任务开始</h1>
+        <p class="docs__lead">连接你的模型，打开一个项目，把想完成的事情告诉 Aulos。</p>
+        <p>Aulos 是一个本地运行的开源编程 Agent。它可以阅读项目、修改文件、执行命令，并根据结果继续工作。你可以通过桌面应用、浏览器界面或终端使用它。</p>
+        <div class="docs__callout"><strong>开始前，准备两样东西</strong><p>一个支持工具调用的模型服务及其 API Key，以及一个你想了解或修改的本地项目文件夹。</p></div>
+
+        <h2 id="quickstart-install">1. 安装并打开 Aulos</h2>
+        <p>从 <a href="https://github.com/Steve-pixel-cpu/aulos/releases/latest" target="_blank" rel="noopener">GitHub Releases</a> 下载适合系统和处理器架构的桌面安装包。Windows 用户还需要安装 Git for Windows，供 Agent 执行命令。</p>
+        <p>如果希望从源码启动，参阅<a href="#installation-source">源码运行</a>。Python 环境要求只针对源码运行；使用打包好的桌面端无需自行安装 Python。</p>
+
+        <h2 id="quickstart-connect">2. 连接一个模型</h2>
+        <p>第一次打开时，在欢迎页填写 <strong>API Key、接口协议、Base URL 和默认模型</strong>，点击「保存并开始」。之后可以在「设置 → 模型」中修改或添加供应商。</p>
+        <p>这些字段应来自同一个模型服务。具体填写方式见<a href="#models">连接模型</a>。</p>
+
+        <h2 id="quickstart-project">3. 选择项目</h2>
+        <p>新建会话，选择项目文件夹作为工作目录。先确认目录正确，再发送任务；Agent 会以这个目录为基础查找文件和执行命令。</p>
+        <div class="docs__example"><span class="docs__example-label">试试这样开始</span><p>阅读这个项目，告诉我如何启动、测试入口在哪里，以及主要目录的作用。先完成说明。</p></div>
+
+        <h2 id="quickstart-task">4. 完成一次小修改</h2>
+        <p>在了解项目后，给出一个范围明确的任务，说明期望结果和验证方式。例如：</p>
+        <div class="docs__example"><span class="docs__example-label">一个可验证的任务</span><p>修复登录页邮箱为空时没有提示的问题。沿用现有表单样式，补上校验，并运行与登录表单有关的测试。完成后说明修改了哪些文件。</p></div>
+        <p>执行过程中查看工具调用、文件变更和命令结果；出现审批时核对具体操作。完成后在本地查看差异、运行项目，确认效果再提交。</p>
+        <div class="docs__next-steps"><a href="#models"><span>配置</span><strong>连接自己的模型 <span aria-hidden="true">↗</span></strong></a><a href="#workflow"><span>使用</span><strong>把任务交给 Aulos <span aria-hidden="true">↗</span></strong></a></div>
+      </article>
+
+      <article class="docs__article" id="installation" data-title="安装与升级" data-group="开始使用" aria-labelledby="installation-title">
+        <div class="docs__eyebrow">INSTALLATION</div>
+        <h1 id="installation-title" tabindex="-1">安装与升级</h1>
+        <p class="docs__lead">下载桌面应用直接使用，或通过源码运行 Web 与终端界面。</p>
+        <h2 id="installation-desktop">安装桌面端</h2>
+        <p>打开 <a href="https://github.com/Steve-pixel-cpu/aulos/releases/latest" target="_blank" rel="noopener">最新 Release</a>，展开 Assets，选择与你的系统及处理器架构匹配的安装包。以该版本实际提供的文件为准。</p>
+        <dl class="docs__definitions">
+          <div><dt>Windows</dt><dd>运行 <code>setup.exe</code> 安装包。安装 <a href="https://git-scm.com/downloads/win" target="_blank" rel="noopener">Git for Windows</a> 后重启 Aulos，确保命令执行器可以找到 Git Bash。</dd></div>
+          <div><dt>macOS</dt><dd>打开 <code>.dmg</code>，将应用拖入「应用程序」。注意安装包的架构；首次启动若被系统阻止，可参阅<a href="#troubleshooting-macos">macOS 首次打开</a>。</dd></div>
+          <div><dt>Linux</dt><dd>按 Release 提供的格式安装。使用 AppImage 时需先赋予执行权限，再运行文件；系统还需要相应的 WebKitGTK 运行库。</dd></div>
+        </dl>
+        <p>完整桌面功能由 Tauri 版本提供，包括原生窗口、自动更新、电台与桌宠。</p>
+        <h2 id="installation-source">从源码运行</h2>
+        <p>准备 Git 和 <a href="https://docs.astral.sh/uv/getting-started/installation/" target="_blank" rel="noopener">uv</a>。项目要求 <strong>Python 3.14 或更新版本</strong>，uv 可按项目要求管理 Python 和依赖。Windows 还需要 Git Bash。</p>
+        <pre data-language="Shell"><code>git clone https://github.com/Steve-pixel-cpu/aulos.git
+cd aulos
+uv sync</code></pre>
+        <h3 id="installation-web">启动 Web 界面</h3>
+        <pre data-language="Shell"><code>uv run python server.py</code></pre>
+        <p>在浏览器中访问 <a href="http://127.0.0.1:8000/" target="_blank" rel="noopener">http://127.0.0.1:8000</a>，通过欢迎页完成模型配置。服务的实际地址以终端输出为准。</p>
+        <h3 id="installation-cli">启动终端界面</h3>
+        <p>先按<a href="#terminal-config">终端配置</a>设置 API Key 和模型，再运行：</p>
+        <pre data-language="Shell"><code>uv run python main.py</code></pre>
+        <p>只有自行构建桌面安装包时，才需要额外准备 Rust 和 Node.js。开发者可阅读仓库中的 <a href="https://github.com/Steve-pixel-cpu/aulos/blob/main/PACKAGING.md" target="_blank" rel="noopener">打包说明</a>。</p>
+        <h2 id="installation-update">更新版本</h2>
+        <p>桌面端有可用更新时，可按应用中的更新提示操作，也可从 Releases 下载新安装包。更新前完成正在执行的任务。</p>
+        <p>源码用户先查看工作区状态。工作区干净且当前分支跟踪官方 <code>main</code> 时，可以快进更新，再同步依赖：</p>
+        <pre data-language="Shell"><code>git status
+git pull --ff-only
+uv sync</code></pre>
+        <p>如果存在本地修改或分支分歧，先保存和处理这些修改。用户数据默认保存在 <code>~/.aulos/</code>，与源码目录分开。</p>
+      </article>
+
+      <article class="docs__article" id="models" data-title="连接模型" data-group="开始使用" aria-labelledby="models-title">
+        <div class="docs__eyebrow">MODEL SETUP</div>
+        <h1 id="models-title" tabindex="-1">连接模型</h1>
+        <p class="docs__lead">用你自己的模型服务，为主对话、子代理和后台任务选择合适的模型。</p>
+        <h2 id="models-provider">添加供应商</h2>
+        <p>第一次启动使用欢迎页；后续进入「设置 → 模型」，点击「＋ 添加供应商」。填写连接信息，并为供应商添加可用的模型。</p>
+        <dl class="docs__definitions">
+          <div><dt>API Key</dt><dd>在模型服务商控制台生成的密钥，需要具备对应接口的调用权限。</dd></div>
+          <div><dt>接口协议</dt><dd>选择服务商支持的 Anthropic 或 OpenAI 兼容协议。协议要与所填端点匹配。</dd></div>
+          <div><dt>Base URL</dt><dd>填写服务商文档给出的 API 基础地址，通常包含所需的版本或产品路径。聊天网站首页不是 API 地址。</dd></div>
+          <div><dt>模型 ID</dt><dd>填写接口支持的确切模型标识。显示名称可以便于记忆，实际请求使用模型 ID。</dd></div>
+        </dl>
+        <p>模型需要支持工具调用，才能让 Agent 读写文件、执行命令。修改设置后，等保存状态完成，再从会话的模型菜单选择模型并发送一条简单请求。</p>
+        <div class="docs__callout"><strong>套餐与 API 地址要对应</strong><p>同一服务商的 Coding Plan 与普通 API 可能使用不同端点和额度。以所购服务的接入说明为准，不要混用地址与密钥。</p></div>
+        <h2 id="models-switch">在会话中切换</h2>
+        <p>会话中的模型菜单会列出已启用供应商的模型。选中后，后续请求使用新的模型；此前对话仍属于当前会话。服务商的工具调用、图像输入和思考能力可能不同，切换时应确认任务需要的能力。</p>
+        <h2 id="models-worker">子代理与辅助模型</h2>
+        <p>「设置 → 模型」中可以分别配置两类额外模型：</p>
+        <ul><li><strong>子代理模型</strong>：用于被主 Agent 委派出去的任务，可选择适合执行工作的模型。</li><li><strong>辅助模型</strong>：用于自动起名、摘要等后台任务。</li></ul>
+        <p>未单独配置时跟随主模型。配置前先在供应商列表中添加对应模型，避免选到没有权限调用的模型 ID。</p>
+        <h2 id="models-context">上下文容量</h2>
+        <p>根据当前接口实际支持的上下文窗口设置 <code>contextWindow</code>。第三方中转的限制可能低于模型官方标称值；设置过大可能在自动压缩前就被接口拒绝。</p>
+        <p>Aulos 会对长对话进行自动压缩。界面中的「上下文容量」可帮助观察使用情况；遇到超限时，先核对接口限制和配置，再重试。</p>
+        <h2 id="models-data">配置和数据存放在哪里</h2>
+        <p>Web 与桌面端通过界面保存供应商配置，默认存放在 <code>~/.aulos/settings.json</code>。终端入口使用环境变量或 <code>.env</code>，详见<a href="#terminal-config">终端配置</a>。</p>
+        <p>会话和设置保存在本机。使用远程模型时，任务所需的提示词、代码片段和工具结果会发送给你配置的模型服务；联网工具和 MCP 也可能访问外部服务。</p>
+      </article>
+
+      <article class="docs__article" id="workflow" data-title="日常使用" data-group="使用指南" aria-labelledby="workflow-title">
+        <div class="docs__eyebrow">WORK WITH AULOS</div>
+        <h1 id="workflow-title" tabindex="-1">把任务交给 Aulos</h1>
+        <p class="docs__lead">从明确目标到检查结果，让每一次修改都有可以核对的依据。</p>
+        <h2 id="workflow-project">选择正确的项目</h2>
+        <p>新建会话时选择工作目录。它决定文件搜索、读写和命令执行的位置，也影响项目级配置与 Skills 的发现。开始前看一眼当前目录，尤其是在多个项目之间切换时。</p>
+        <h2 id="workflow-prompt">描述目标、范围与验证方式</h2>
+        <p>一个好的任务描述通常包含：希望得到的结果、已有的相关文件或报错、需要遵守的约束，以及如何判断任务完成。</p>
+        <div class="docs__example"><span class="docs__example-label">功能开发</span><p>给订单列表增加状态筛选。复用已有筛选组件，默认显示全部；切换状态后保留其他查询条件。完成后运行订单页相关测试。</p></div>
+        <div class="docs__example"><span class="docs__example-label">定位问题</span><p>运行登录模块的测试，定位失败原因。先说明原因和修改范围，得到确认后再修改。</p></div>
+        <p>复杂任务可以先开启计划模式，让 Agent 阅读代码、整理方案，再批准执行。请参阅<a href="#permissions-plan">计划模式</a>。</p>
+        <h2 id="workflow-follow">跟进执行过程</h2>
+        <p>对话中会显示文件操作、命令执行和工具返回结果。遇到操作审批时，检查命令及目标路径，再选择批准或拒绝。需要调整方向时，可以打断当前任务并补充说明。</p>
+        <p>如果任务被分派给子代理，可以查看子代理的状态和返回结果。给互不依赖的模块分别安排任务，更容易核对每一部分的产出。</p>
+        <h2 id="workflow-review">检查修改与测试</h2>
+        <p>让 Aulos 总结修改的文件、关键行为变化和实际运行过的检查。随后查看代码差异，启动项目验证。可以在项目终端运行：</p>
+        <pre data-language="Shell"><code>git status --short
+git diff
+git diff --cached</code></pre>
+        <p>测试命令应使用项目已有的脚本。若检查没有运行或失败，继续处理这些结果，再决定是否提交修改。</p>
+        <h2 id="workflow-sessions">继续历史会话</h2>
+        <p>从侧栏打开历史会话即可继续讨论。任务跨度较大时，先补充当前目标和新的约束。终端可使用 <code>-c</code> 继续最近活跃的会话，或用 <code>--resume</code> 恢复指定会话。</p>
+        <p>会话记录默认位于 <code>~/.aulos/sessions/</code>。长对话会自动压缩；长期有效的项目偏好可以存为<a href="#extensions-memory">记忆</a>。</p>
+      </article>
+
+      <article class="docs__article" id="permissions" data-title="权限与配置" data-group="使用指南" aria-labelledby="permissions-title">
+        <div class="docs__eyebrow">PERMISSIONS & CONFIGURATION</div>
+        <h1 id="permissions-title" tabindex="-1">权限与配置</h1>
+        <p class="docs__lead">明确 Agent 可以操作的范围，并在需要时审批具体行动。</p>
+        <h2 id="permissions-modes">基础权限模式</h2>
+        <dl class="docs__definitions">
+          <div><dt><code>workspace-write</code></dt><dd>允许工作目录和附加目录内的一般文件写入。只读探查命令可以直接执行；其他命令和范围外写入按规则请求审批。</dd></div>
+          <div><dt><code>prompt</code></dt><dd>工具操作通常会询问用户。已经匹配命令白名单的操作可直接执行。</dd></div>
+          <div><dt><code>danger-full-access</code></dt><dd>允许更广泛的文件操作和命令执行。显式拒绝规则与敏感路径保护仍然生效。</dd></div>
+        </dl>
+        <p>终端用 <code>/mode</code> 查看当前状态，使用 <code>/mode workspace-write</code> 等命令切换。<code>allow</code> 是终端支持的临时运行模式，不接受通过持久配置或免交互参数启用。</p>
+        <h2 id="permissions-plan">计划模式是独立开关</h2>
+        <p>计划模式叠加在基础权限模式上，用于阅读、调研和制定方案。启用时按只读权限处理常规工具操作；关闭或批准计划后，回到原来的基础模式。</p>
+        <pre data-language="终端斜杠命令"><code>/mode
+/mode plan</code></pre>
+        <p><code>/mode plan</code> 会切换计划开关，再执行一次可关闭。计划开关与命令白名单是不同机制，已有放行规则仍需单独管理。</p>
+        <h2 id="permissions-approval">操作审批与规则</h2>
+        <p>审批面板会展示工具及其操作内容。终端通常可选择本次批准；命令支持时还可建立本会话或全局的放行规则。拒绝操作后，可以说明原因和希望采用的替代方式。</p>
+        <p>命中显式拒绝规则的命令会被拦截。对 <code>.git/</code>、Shell 配置和应用自身配置等敏感路径的写操作，以及检测到的敏感路径命令，需要单独批准；全访问模式也不会自动跳过这项检查。</p>
+        <h2 id="permissions-files">配置文件与优先级</h2>
+        <p>配置按以下顺序合并，后面的同名设置覆盖前面的设置：</p>
+        <ol><li><code>~/.aulos/settings.json</code>：用户级配置，跨项目生效。</li><li><code>&lt;项目&gt;/.claude/settings.json</code>：项目共享配置。</li><li><code>&lt;项目&gt;/.claude/settings.local.json</code>：个人在该项目中的本地配置。</li></ol>
+        <p>部分环境变量还会覆盖文件配置。以下是一份项目级示例；上下文容量应按你的模型接口调整：</p>
+        <pre data-language="JSON"><code>{
+  "permissionMode": "workspace-write",
+  "maxIterations": 128,
+  "contextWindow": 128000
+}</code></pre>
+        <p>手动修改配置文件后重启服务，确保启动时读取的设置重新生效。包含 API Key 的个人配置应保存在本地。</p>
+        <h2 id="permissions-budget">控制任务长度</h2>
+        <p><code>maxIterations</code> 限制单轮工具循环次数，<code>contextWindow</code> 决定上下文容量，<code>turnTokenBudget</code> 可约束单轮 token 预算。这些限制帮助长任务及时收束，实际费用仍由模型服务商计费规则决定。</p>
+      </article>
+
+      <article class="docs__article" id="extensions" data-title="扩展能力" data-group="使用指南" aria-labelledby="extensions-title">
+        <div class="docs__eyebrow">EXTEND YOUR WORKFLOW</div>
+        <h1 id="extensions-title" tabindex="-1">扩展能力</h1>
+        <p class="docs__lead">通过 MCP 连接工具，用 Skills 保存工作方法，用记忆保留长期偏好。</p>
+        <h2 id="extensions-mcp">MCP：连接外部工具</h2>
+        <p>桌面端设置页提供 MCP 管理。也可以在任意一层配置文件中添加 <code>mcpServers</code>。支持 <code>stdio</code>、<code>http</code> 和 <code>sse</code> 三种传输方式。</p>
+        <p>下面使用本地文件系统 MCP 服务演示配置。需要先安装 Node.js，并将示例路径替换为实际目录；Windows 路径可写成 <code>D:/projects/demo</code>。</p>
+        <pre data-language="JSON"><code>{
+  "mcpServers": {
+    "filesystem": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "/absolute/path/to/project"
+      ]
+    }
+  }
+}</code></pre>
+        <p>手动保存后重启服务。工具名称形如 <code>mcp__filesystem__工具名</code>，与内置工具一起参与权限审批。连不上时检查命令是否已安装、路径是否存在，以及服务的启动输出。</p>
+        <h2 id="extensions-skills">Skills：保存可复用的工作方法</h2>
+        <p>一个技能是包含 <code>SKILL.md</code> 的目录。Aulos 支持用户级和项目级技能，同名时项目级优先：</p>
+        <pre data-language="目录"><code>~/.aulos/skills/review-checklist/SKILL.md
+&lt;项目&gt;/.claude/skills/review-checklist/SKILL.md</code></pre>
+        <p>下面是一份简单技能内容：</p>
+        <pre data-language="Markdown"><code>---
+name: review-checklist
+description: 审查代码改动并给出可复现的问题与验证建议。
+---
+
+1. 阅读当前 diff 和相关上下文。
+2. 优先检查行为回归与边界条件。
+3. 每个问题给出文件位置、触发条件和修复建议。
+4. 总结已运行的检查和仍需验证的部分。</code></pre>
+        <p>新建会话后，用终端 <code>/skills</code> 查看发现的技能，<code>/skills review-checklist</code> 预览内容。模型平时只接收技能简介，需要时再读取全文。</p>
+        <h2 id="extensions-memory">记忆：保留跨会话偏好</h2>
+        <p>可以在对话中要求 Aulos 记住长期有效的信息，或通过终端管理：</p>
+        <pre data-language="终端斜杠命令"><code>/memory
+/memory add 本项目文案统一使用简体中文
+/memory rm 记忆ID前缀</code></pre>
+        <p>记忆保存在 <code>~/.aulos/memory.json</code>，后续会话可使用。定期清理过时约定，避免新任务继续采用旧信息。</p>
+        <h2 id="extensions-agents">多 Agent：分派独立任务</h2>
+        <p>主 Agent 可以把调研或执行工作交给子代理，并汇总结果。适合任务边界清晰、彼此依赖较少的工作，例如分别定位两个模块的问题。</p>
+        <div class="docs__example"><span class="docs__example-label">委派示例</span><p>请分别检查前端表单校验和后端接口校验，使用两个子代理进行只读调研，最后汇总不一致的地方和修复建议。</p></div>
+        <p>子代理可使用单独配置的模型，见<a href="#models-worker">子代理与辅助模型</a>。任务是否能够执行，也取决于当前权限及子代理可用工具。</p>
+      </article>
+
+      <article class="docs__article" id="terminal" data-title="终端使用" data-group="使用指南" aria-labelledby="terminal-title">
+        <div class="docs__eyebrow">COMMAND LINE</div>
+        <h1 id="terminal-title" tabindex="-1">终端使用</h1>
+        <p class="docs__lead">在终端中对话，恢复历史会话，或把单次任务接入脚本。</p>
+        <h2 id="terminal-config">配置终端模型</h2>
+        <p>先完成<a href="#installation-source">源码安装</a>。在源码目录创建 <code>.env</code>，填写下面的变量。示例中的地址、密钥和模型均需替换为服务商提供的实际值。</p>
+        <pre data-language=".env"><code>API_KEY=your-api-key
+ANTHROPIC_BASE_URL=https://api.example.com/anthropic
+CLAUDE_MODEL=your-model-id
+AULOS_PROTOCOL=anthropic</code></pre>
+        <p><code>AULOS_PROTOCOL</code> 默认是 <code>anthropic</code>，使用 OpenAI Chat Completions 兼容服务时设为 <code>openai</code>。当前终端实现仍通过 <code>ANTHROPIC_BASE_URL</code> 读取自定义地址，务必填写对应协议的基础端点。</p>
+        <p>终端入口需要 <code>API_KEY</code>。桌面端的欢迎页配置不会替代这一步；<code>.env</code> 中的真实密钥不要提交到仓库。</p>
+        <h2 id="terminal-session">新建和恢复会话</h2>
+        <pre data-language="Shell"><code># 新建会话
+uv run python main.py
+
+# 继续最近活跃的会话
+uv run python main.py -c
+
+# 列出历史会话，再用实际 ID 恢复
+uv run python main.py --list
+uv run python main.py --resume SESSION_ID</code></pre>
+        <p>工作目录取自启动进程时的当前目录。如果要操作另一个项目，请在目标项目目录中通过源码和 Python 环境的绝对路径启动入口，并确保 API 环境变量已设置。</p>
+        <h2 id="terminal-commands">常用斜杠命令</h2>
+        <dl class="docs__definitions docs__definitions--commands">
+          <div><dt><code>/help</code></dt><dd>查看可用命令。</dd></div>
+          <div><dt><code>/status</code></dt><dd>查看当前会话和运行状态。</dd></div>
+          <div><dt><code>/model</code></dt><dd>查看模型；<code>/model 模型ID</code> 切换当前服务内的模型。</dd></div>
+          <div><dt><code>/mode</code></dt><dd>查看或切换权限；<code>/mode plan</code> 切换计划开关。</dd></div>
+          <div><dt><code>/thinking</code></dt><dd>查看当前思考等级和可选值，再按显示的值设置。</dd></div>
+          <div><dt><code>/compact</code></dt><dd>手动压缩当前对话上下文。</dd></div>
+          <div><dt><code>/rename</code></dt><dd>为当前会话设置名称。</dd></div>
+          <div><dt><code>/skills</code></dt><dd>查看已发现的技能。</dd></div>
+          <div><dt><code>/memory</code></dt><dd>查看和管理跨会话记忆。</dd></div>
+          <div><dt><code>/exit</code></dt><dd>退出终端会话。</dd></div>
+        </dl>
+        <h2 id="terminal-headless">免交互执行</h2>
+        <p>使用 <code>-p</code> 传入一个完整任务，完成后退出。<code>--output-format json</code> 输出包含结果、会话 ID、用量和错误状态的 JSON，便于脚本处理。</p>
+        <pre data-language="Shell"><code>uv run python main.py -p "阅读项目并说明测试入口" --output-format json</code></pre>
+        <p><code>--model</code> 和 <code>--permission-mode</code> 是 <code>-p</code> 模式下的覆盖参数。例如：</p>
+        <pre data-language="Shell"><code>uv run python main.py -p "阅读 README 并总结启动步骤" --permission-mode plan --output-format json</code></pre>
+        <p>无交互终端无法回答临时审批。自动化任务应预先设置适当的权限与命令规则；不要把需要审批时产生的失败当作任务已完成。</p>
+      </article>
+
+      <article class="docs__article" id="troubleshooting" data-title="常见问题" data-group="帮助" aria-labelledby="troubleshooting-title">
+        <div class="docs__eyebrow">TROUBLESHOOTING</div>
+        <h1 id="troubleshooting-title" tabindex="-1">遇到问题时</h1>
+        <p class="docs__lead">从报错信息出发，先检查连接、配置和运行环境。</p>
+        <h2 id="troubleshooting-key">提示 API_KEY not set</h2>
+        <p>这是终端入口缺少 <code>API_KEY</code>。检查启动环境或 <code>.env</code>，设置后重新运行。Web 与桌面端请使用「设置 → 模型」，它们的配置入口与终端不同。</p>
+        <h2 id="troubleshooting-connection">401、403、404 或模型不可用</h2>
+        <ul><li><strong>401 / 403</strong>：检查密钥是否有效、账户是否有权限，以及套餐与 API 端点是否匹配。</li><li><strong>404</strong>：检查 Base URL、接口协议及版本路径，确认没有填写网页地址。</li><li><strong>模型不存在</strong>：核对模型 ID 的拼写和当前账户的可用模型。</li><li><strong>超时或连接失败</strong>：检查网络、代理和服务商状态；先用一条简单任务验证连接。</li></ul>
+        <p>配置说明见<a href="#models-provider">添加供应商</a>。</p>
+        <h2 id="troubleshooting-context">上下文超限或任务一直不能结束</h2>
+        <p>先核对 <code>contextWindow</code> 是否超过当前端点实际支持的容量，特别是第三方中转服务。终端可用 <code>/compact</code> 手动压缩；必要时新建会话，并提供简短的任务总结和关键文件。</p>
+        <p>对于范围过大的任务，拆成可以分别验证的小步骤；达到迭代或 token 上限时，检查已经完成的工作，再继续剩余部分。</p>
+        <h2 id="troubleshooting-windows">Windows 提示找不到 Git Bash</h2>
+        <p>安装 <a href="https://git-scm.com/downloads/win" target="_blank" rel="noopener">Git for Windows</a> 后，关闭并重新打开 Aulos 或终端。仅安装 Git 的编辑器插件不能替代 Git Bash。</p>
+        <h2 id="troubleshooting-macos">macOS 首次打开被阻止</h2>
+        <p>当前项目的打包说明注明 macOS 应用未做 Apple 公证。确认安装包来自项目官方 Releases 后，在 Finder 中右键应用并选择「打开」，或按系统「隐私与安全性」中的提示允许打开。</p>
+        <h2 id="troubleshooting-mcp">MCP 或技能没有出现</h2>
+        <p>MCP：检查 JSON 格式、服务命令、参数路径和运行依赖；手动改配置后重启。Skills：检查目录中是否存在 <code>SKILL.md</code>、文件头部格式是否正确，并新建会话后用 <code>/skills</code> 查看。具体位置见<a href="#extensions">扩展能力</a>。</p>
+        <h2 id="troubleshooting-linux">Linux 电台无声或桌宠异常</h2>
+        <p>音频依赖 GStreamer；部分 AppImage 环境缺少兼容插件时，电台会停用。Wayland 的置顶与窗口移动限制也可能影响桌宠。可查看项目维护的 <a href="https://github.com/Steve-pixel-cpu/aulos/blob/main/docs/desktop-release-notes.md" target="_blank" rel="noopener">Linux 与桌面端排障说明</a>。</p>
+        <h2 id="troubleshooting-report">提交可复现的问题</h2>
+        <p>到 <a href="https://github.com/Steve-pixel-cpu/aulos/issues" target="_blank" rel="noopener">GitHub Issues</a> 提供 Aulos 版本、系统、使用入口（桌面 / Web / 终端）、复现步骤、预期行为和实际报错。粘贴日志前移除密钥、令牌和私人文件内容。</p>
+      </article>
+
+      <nav class="docs__pager" id="docs-pager" aria-label="上一篇和下一篇" hidden></nav>
+      <footer class="docs__footer"><span>Aulos 文档 · 简体中文 · v5.6.0</span><a href="https://github.com/Steve-pixel-cpu/aulos/issues" target="_blank" rel="noopener">反馈文档问题 <span aria-hidden="true">↗</span></a></footer>
+    </main>
+    <aside class="docs__toc" id="docs-toc" aria-label="本页目录" hidden><p>本页内容</p><nav id="toc-links"></nav><a class="docs__back-top" href="#quickstart" id="back-top">回到顶部 ↑</a></aside>
+  </div>
+
+  <dialog class="docs__search" id="docs-search" aria-labelledby="search-label">
+    <div class="docs__search-head"><label id="search-label" for="search-input">搜索文档</label><button class="nav-btn" id="search-close" type="button" aria-label="关闭搜索">Esc</button></div>
+    <input id="search-input" type="search" placeholder="搜索安装、API Key、MCP…" autocomplete="off" spellcheck="false">
+    <p class="docs__search-hint" id="search-status" role="status" aria-live="polite">输入关键词，查找使用方法与配置说明。</p>
+    <div class="docs__search-results" id="search-results" aria-label="搜索结果"></div>
+    <div class="docs__search-foot"><span>↑ ↓ 选择 · Enter 打开</span><span>本地搜索</span></div>
+  </dialog>
+  <p class="docs__sr-only" id="copy-status" role="status" aria-live="polite"></p>
+</body>
+</html>
