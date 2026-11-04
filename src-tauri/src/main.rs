@@ -1666,6 +1666,18 @@ fn bootstrap(token: &str) -> Result<(), String> {
     ))
 }
 
+/// 从外观镜像取云母偏好: (style=="fluent-mica", dark)。
+/// 镜像键与 static/app.js mirrorAppearance 同一套(localStorage 是页面级,
+/// 壳侧冷启动只能读 settings.json 的 appearance 镜像)。
+fn mica_pref_from_appearance() -> (bool, bool) {
+    let v = serde_json::from_str::<serde_json::Value>(&APPEARANCE_JSON)
+        .ok()
+        .unwrap_or_default();
+    let style = v.get("style").and_then(|s| s.as_str()).unwrap_or("");
+    let dark = v.get("dark").and_then(|d| d.as_bool()).unwrap_or(false);
+    (style == "fluent-mica", dark)
+}
+
 fn create_main_window(app: &AppHandle) -> Result<(), String> {
     // 首屏 = 内嵌 loading 页（tauri:// 资产协议, 不依赖后端进程）。
     // 此前窗口要等后端就绪才创建——Python 冷启动约 3s, 用户对着空白。
@@ -1749,10 +1761,19 @@ fn create_main_window(app: &AppHandle) -> Result<(), String> {
         .build()
         .map_err(|e| e.to_string())?;
 
-    // Win11 原生圆角(Win10 失败无妨, 前端 CSS 兜底) + 初始最大化状态
+    // 冷启动即按镜像偏好开系统云母: loading 页确认制会在页面帧里 invoke
+    // set_mica 重申(幂等), 这里先行开启确保窗口一显示就有 DWM 垫底——
+    // 否则 loading 页确认成功前窗口/WebView2/body 三层全透明(2026-11-03 现场 bug)
+    let (want_mica, dark) = mica_pref_from_appearance();
     if let Some(win) = app.get_webview_window("main") {
         #[cfg(windows)]
         apply_win11_rounding(&win);
+        #[cfg(windows)]
+        {
+            let (on, dark) = (want_mica, dark);
+            let ok = apply_win11_mica(&win, on, dark);
+            boot_log("shell", &format!("冷启动窗口云母(镜像): want={want_mica} ok={ok}"));
+        }
         push_max_state(&win);
     }
 

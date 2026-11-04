@@ -29,9 +29,24 @@
    var p;try{p=localStorage.getItem("xc-theme")||"system";}catch(e){p="system";}
    var d=p==="dark"||(p==="system"&&window.matchMedia("(prefers-color-scheme: dark)").matches);
    document.documentElement.classList.toggle("dark",d);
-   /* 云母模式: 挂 html.fluent-mica → CSS body 透明让出 DWM 壁纸采样底
-    * (主界面 syncMica 已向壳确认过开启, backdrop 窗口属性跨导航持久) */
-   try{if(localStorage.getItem("xc-style")==="fluent-mica")document.documentElement.classList.add("fluent-mica","data-mica");}catch(e){}
+   /* 云母模式: 与主界面 syncMica 同款确认制——向壳 invoke set_mica 拿确认,
+    * 确认成功才挂 html.fluent-mica → CSS body 透明让出 DWM 壁纸采样垫底。
+    * 冷启动时 DWM backdrop 尚未开启(DWM 属性是 per-HWND, 新窗口不继承),
+    * 无确认直接挂类 = 窗口/WebView2/body 三层全透明 → 开机动画整个消失
+    * (2026-11-03 现场 bug)。确认失败/无壳(浏览器/老系统)保持实底不裸透;
+    * 壳侧 create_main_window 已同步先行开启, 此处确认基本立即成功, 幂等重申 */
+   try{
+     var __micaP=(function(){
+       var want=localStorage.getItem("xc-style")==="fluent-mica";
+       if(!want)return Promise.resolve(false);
+       var dark=document.documentElement.classList.contains("dark");
+       var inv=window.__TAURI_INTERNALS__&&window.__TAURI_INTERNALS__.invoke;
+       var confirmP=inv?inv("set_mica",{on:true,dark:dark}).catch(function(){return false;}):Promise.resolve(false);
+       return confirmP;
+     })();
+     window.__micaConfirmed=__micaP;
+     __micaP.then(function(ok){if(ok)document.documentElement.classList.add("fluent-mica","data-mica");});
+   }catch(e){}
    /* 强调色跟随设置(xc-accent 预设挂 data-accent 走 CSS; custom/壁纸自动色
     * 取 hex 直接内联 --accent, 进度条/光晕即随用户强调色变化)。
     * de = documentElement, 本 IIFE 此前未定义过——2026-11-01 实测: 未定义
@@ -66,9 +81,9 @@
     user-select: none;
   }
   html.dark body { background: #191919; color: #d7d3cc; }
-  /* 云母模式让位(xc-style=fluent-mica, 预置脚本挂 html.fluent-mica):
-   * DWM backdrop 是窗口属性, 主界面开启后跨导航持久——启动页只需把
-   * 实底让透明, 壁纸采样即透上来, 与主界面风格连续 */
+  /* 云母模式让位(xc-style=fluent-mica 且壳确认成功才挂 html.fluent-mica,
+   * 见 head 预置脚本的确认制): 壳侧 DWM 云母已垫底, body 让透明把壁纸采样
+   * 透上来, 与主界面风格连续。确认失败时类不挂, 保持上面实底, 绝不裸透 */
   html.fluent-mica body { background: transparent; }
   .spin {
     width: 34px; height: 34px; border-radius: 50%;
@@ -165,7 +180,7 @@
     display: none; position: fixed; top: 0; left: 0; right: 0;
     height: 42px; align-items: center; gap: 9px; padding-left: 14px;
     z-index: 2;
-    background: #efedeb; border-bottom: 1px solid #ddd6cb;
+    background: #151519; border-bottom: 1px solid #2b2b31;
   }
   html.aulos-desktop #titlebar { display: flex; }
   html.aulos-desktop body { padding-top: 42px; box-sizing: border-box; }
@@ -173,18 +188,32 @@
      此裁切与其重合不可见; Win10 由它兜底。最大化回方角(dataset.max 由壳推) */
   html.aulos-desktop { clip-path: inset(0 round 8px); }
   html.aulos-desktop[data-max="1"] { clip-path: inset(0 round 0); }
-  html.dark #titlebar { background: #232323; border-bottom-color: #333; }
+  /* 浅色实底(rgb 与 app.css --bg-side/--border 浅色档同值): 与原 .tb-bg 分离 */
+  html:not(.dark) #titlebar { background: #f5f6f8; border-bottom-color: #e8e8ec; }
+  /* 与主界面一致的主题变量令牌(loading 页无 app.css, 直接内联同值):
+   * --text-2/#5f6068 浅·#a0a1ab 深, --hover/#efeff2 浅·#24242a 深,
+   * --err/#cf3a2c 浅·#f87171 深 */
   .tb-icon { width: 17px; height: 17px; pointer-events: none; }
-  .tb-name { font-size: 12.5px; font-weight: 600; color: #78716c; flex: 1; }
-  html.dark .tb-name { color: #a8a29e; }
+  .tb-name { font-size: 12.5px; font-weight: 600; color: #5f6068; letter-spacing: .2px; flex: 1; }
+  html.dark .tb-name { color: #a0a1ab; }
   .tb-controls { display: flex; height: 100%; }
   .tb-btn {
-    width: 46px; border: none; background: none; color: #78716c;
+    width: 46px; border: none; background: none; color: #5f6068;
     display: flex; align-items: center; justify-content: center; cursor: default;
+    transition: background .1s, color .1s;
   }
-  .tb-btn:hover { background: #e2dfda; color: #44403c; }
-  html.dark .tb-btn:hover { background: #2e2e2e; color: #e7e5e4; }
-  .tb-btn.tb-close:hover { background: #dc2626; color: #fff; }
+  .tb-btn:hover { background: #efeff2; color: #44403c; }
+  html.dark .tb-btn:hover { background: #24242a; color: #e7e5e4; }
+  .tb-btn.tb-close:hover { background: #cf3a2c; color: #fff; }
+  html.dark .tb-btn.tb-close:hover { background: #f87171; }
+  /* 云母模式(xc-style=fluent-mica 封面): 与主界面 :root[data-mica] 同款坐裸云母,
+   * 标题栏不叠实底——DWM 壁纸采样直接透上来。html.fluent-mica 双类压过实底 */
+  html.fluent-mica body #titlebar {
+    background: transparent;
+    -webkit-backdrop-filter: none; backdrop-filter: none;
+    border-bottom-color: rgb(0 0 0 / .08);
+  }
+  html.dark html.fluent-mica body #titlebar { border-bottom-color: rgb(255 255 255 / .1); }
 </style>
 </head>
 <body>

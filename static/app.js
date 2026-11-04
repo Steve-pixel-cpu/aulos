@@ -1567,7 +1567,7 @@ async function loadSettings() {
     refreshWorkdirTag();
     if (s.icon_ver) { iconVer = s.icon_ver; applyIconEverywhere(iconUrl()); }
     if (s.bg_ver) { bgVer = s.bg_ver; syncBgLayers(); }
-    else syncBgLayers();   // 服务端无壁纸: 走一遍以清掉本地残留标记的效果
+    else { bgVer = 0; syncBgLayers(); }   // 服务端无壁纸: 重置(预取可能已设过残留版本号)
     if (s.bg_video_ver != null) { bgvVer = s.bg_video_ver; syncVideoLayer(); }
     else syncVideoLayer();   // 同上: 清掉本地标记残留的效果
     // 标题栏版本徽标: 桌面壳优先（打包后的后端不带 pyproject.toml, 服务端读不到）,
@@ -1927,8 +1927,60 @@ function syncVideoLayer() {
     delete document.documentElement.dataset.bgv;   // 回落: 视频坏则露静态壁纸
     if (!(bgvPref() && bgvVer > 0) && !(bgPref() && bgVer > 0)) delete document.documentElement.dataset.bg;
   };
-  vid.src = bgvUrl();
+  const url = bgvUrl();
+  // 预取(prefetchBg)已挂同一 URL 时跳过重设: 重新 load() 会打断
+  // 缓冲/播放, 造成一帧黑闪(2026-11-03 同版本冷启动场景)。URL 不同
+  // (版本更新)才换源。oncanplay 仍会被下面的 handler 覆盖(幂等)。
+  if (vid.getAttribute("src") === url) return;
+  vid.src = url;
   vid.load();
+}
+
+/* 启动预取: 不等 /api/settings —— 用上次持久化的版本号(xc-bg-ver /
+ * xc-bgv-ver, 上传时写入)提前并行拉取壁纸/视频, 下载与 settings RTT +
+ * 列表加载并行, 首帧后背景尽早出现, 消除「切动态背景」的明显等待
+ * (2026-11-03 现场)。settings 返回后 loadSettings 里的校准流程照常
+ * (syncBgLayers/syncVideoLayer) —— 版本号变了就换新 URL 重载, 没变则
+ * 缓冲复用, 无缝; 预取期间挂的 oncanplay 会被 syncVideoLayer 的新
+ * handler(_bgvSeq 门控)替换, 无串扰。 */
+const _bgPreloads = [];   // 持引用防 GC 中止请求(Image 无引用会被回收)
+function prefetchBg() {
+  try {
+    const bv = localStorage.getItem("xc-bg-ver");
+    if (bgPref() && bv && bgVer === 0 && bgvVer === 0) {
+      bgVer = Number(bv) || 0;
+      document.documentElement.dataset.bg = "1";
+      const img = new Image();
+      _bgPreloads.push(img);
+      img.onload = () => {   // 下载完立即上背景, 不等 settings 校准
+        if (!bgPref()) return;
+        document.body.style.backgroundImage = `url("${bgUrl()}")`;
+        document.body.style.backgroundSize = "cover";
+        document.body.style.backgroundPosition = "center";
+      };
+      img.src = bgUrl();
+    }
+    const vv = localStorage.getItem("xc-bgv-ver");
+    if (bgvPref() && vv && bgvVer === 0) {
+      bgvVer = Number(vv) || 0;
+      // 半透明体系立即就绪: data-bg 不再等 canplay 才挂, 否则 UI 会
+      // 先以实底显示、视频就绪瞬间翻成半透明 —— 即用户能看到的
+      // 「切背景」硬切换(2026-11-03 现场)。此处先挂, canplay 只补
+      // data-bgv(视频层浮现, 已有 fadein 动画), 视觉连续。
+      // 纯视频壁纸(无静态图)同样要挂 data-bg: UI 半透明化体系只认 data-bg
+      document.documentElement.dataset.bg = "1";
+      const vid = $("bg-video");
+      if (vid) {
+        vid.oncanplay = () => {
+          document.documentElement.dataset.bgv = "1";
+          if (!document.documentElement.dataset.bg) document.documentElement.dataset.bg = "1";
+          vid.play().catch(() => {});
+        };
+        vid.src = bgvUrl();
+        vid.load();
+      }
+    }
+  } catch (e) { /* 本地无持久化版本(首次/被清)或不满足: 静默走原等待路径 */ }
 }
 
 function syncBgLayers() {
@@ -1950,9 +2002,14 @@ function syncBgLayers() {
   img.src = bgUrl();
 }
 /* 启动装载: 本地标记开启才发请求拿壁纸（版本号稍后由 /api/settings 校准,
- * 校准值若不同, loadSettings 里会再跑一遍本函数换新地址） */
-syncBgLayers();
-syncVideoLayer();
+ * 校准值若不同, loadSettings 里会再跑一遍本函数换新地址）。
+ * 注意此处不再直接 syncBgLayers()/syncVideoLayer(): 首帧预绘脚本已按
+ * localStorage 挂好 data-bg, 模块求值期再 sync 会因为 bgVer=0 先把它
+ * 删掉——制造一次"半透明→实底"翻转, 叠加 canplay 后"实底→半透明"
+ * 就是用户看到的切背景硬切换(2026-11-03 现场根因)。预取(prefetchBg)
+ * 已负责视频 src 与 data-bg; settings 校准由 loadSettings 触发。
+ * 唯一例外: 纯视频壁纸(无静态图)首帧没有 data-bg, 但 canplay 分支
+ * 里已补挂, 不依赖此处。 */
 /* 自动取色: localStorage 只有 hex 无图（持久化的原始图不落前端）,
  * 开关开启且缺 hex 时拉一次壁纸现算。setTimeout 延到脚本求值完成后:
  * ACCENT_AUTO_* 常量声明在文件后部, 此处直接引用会踩 TDZ */
@@ -1995,6 +2052,7 @@ $("bg-file").addEventListener("change", () => {
       if (!r.ok) throw new Error((await r.json()).detail || "HTTP " + r.status);
       bgVer = (await r.json()).ver;
       localStorage.setItem(BG_KEY, "1");   // 上传即启用
+      try { localStorage.setItem("xc-bg-ver", String(bgVer)); } catch (e) {}   // 启动预取用
       syncBgLayers();
       if (accentAutoOn()) refreshAutoAccent(data);   // 壁纸自动取色
       toast(t("app.102"));
@@ -2040,6 +2098,7 @@ $("bgv-file").addEventListener("change", () => {
       if (!r.ok) throw new Error((await r.json()).detail || "HTTP " + r.status);
       bgvVer = (await r.json()).ver;
       localStorage.setItem(BGV_KEY, "1");   // 上传即启用
+      try { localStorage.setItem("xc-bgv-ver", String(bgvVer)); } catch (e) {}   // 启动预取用
       syncVideoLayer();
       toast(t("app.163"));
     } catch (e) { toast(t("app.164") + e.message); }
@@ -2775,6 +2834,7 @@ window.addEventListener("storage", (e) => {
  * 启动
  * ============================================================ */
 (async function init() {
+  prefetchBg();   // 先于 settings: 用本地版本号并行预取壁纸/视频, 消除切换等待
   await loadSettings();
   await loadSessions();
   refreshSkillCache();   // 斜杠补全数据源: 预取一次（cwd 视图; 切会话后按需重拉）

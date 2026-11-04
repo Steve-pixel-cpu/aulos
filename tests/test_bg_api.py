@@ -145,6 +145,36 @@ def test_bgv_get_serves_upload_and_404_when_unset(client, iso):
     assert r.headers["content-type"].startswith("video/mp4")
 
 
+def test_bgv_etag_304(client, iso):
+    """冷启动缓存关键: 第二次带 If-None-Match 必须 304, 不再全量重下。"""
+    client.post("/api/bg-video", json={"data": "data:video/mp4;base64," + _b64(b"0" * 512)})
+    r1 = client.get("/api/bg-video")
+    etag = r1.headers.get("etag")
+    assert etag and etag.startswith("W/"), f"应有弱 ETag, 实际 {etag!r}"
+    r2 = client.get("/api/bg-video", headers={"If-None-Match": etag})
+    assert r2.status_code == 304
+    assert r2.content == b""
+
+
+def test_bgv_range_206(client, iso):
+    """视频流式起播关键: Range → 206 + Content-Range + Accept-Ranges, 不全量。"""
+    client.post("/api/bg-video", json={"data": "data:video/mp4;base64," + _b64(b"0" * 1024)})
+    r = client.get("/api/bg-video", headers={"Range": "bytes=0-99"})
+    assert r.status_code == 206
+    assert r.content == b"0" * 100
+    assert r.headers["content-range"] == "bytes 0-99/1024"
+    assert r.headers["accept-ranges"] == "bytes"
+
+
+def test_bgv_range_suffix(client, iso):
+    """浏览器 seek 常发 suffix-range(bytes=-N): 返回末尾 N 字节。"""
+    client.post("/api/bg-video", json={"data": "data:video/mp4;base64," + _b64(b"ab" * 200)})
+    r = client.get("/api/bg-video", headers={"Range": "bytes=-50"})
+    assert r.status_code == 206
+    assert r.content == b"ab" * 25
+    assert r.headers["content-range"] == "bytes 350-399/400"
+
+
 def test_bgv_replace_switches_extension(client, iso):
     # mp4 换 webm: 旧文件删除, 不留双份（GET 永远指向最新一份）
     client.post("/api/bg-video", json={"data": "data:video/mp4;base64," + _b64(b"m" * 4)})
