@@ -138,7 +138,15 @@ SUMMARY_INSTRUCTION = (
     "one updated summary; otherwise summarize the whole conversation. "
     "Be specific and factual: preserve exact file paths, line numbers, "
     "commands, error messages and code identifiers — anything you omit is "
-    "lost forever, but do not pad. Use these sections (skip empty ones):\n"
+    "lost forever, but do not pad. When the user refers to earlier content "
+    "with a pronoun or shorthand (it / this / that file / the previous "
+    "version), resolve it from the conversation and write the concrete "
+    "name (path, function, identifier) — the summary replaces that "
+    "context, so an unresolved reference leaves the successor guessing. "
+    "Never invent a resolution: if the conversation does not settle what a "
+    "reference points to, keep the user's wording and mark it with "
+    "'Unresolved: <original wording> — unclear what it refers to'.\n"
+    "Use these sections (skip empty ones):\n"
     "1. Primary request and intent (the user's ask, key phrases verbatim)\n"
     "2. Key technical context (project layout, stack, constraints)\n"
     "3. Files and code (path + what matters in each, with line numbers)\n"
@@ -353,10 +361,16 @@ def continuation_message(formatted_summary: str, preserved: bool) -> Message:
     )
     if preserved:
         text += "\n\nRecent messages are preserved verbatim."
-    text += (
-        "\nContinue the conversation from where it left off without "
-        "asking the user any further questions."
-    )
+    text += "\nContinue the conversation from where it left off."
+    if preserved:
+        text += (
+            "\nThe summary paraphrases the user's requests rather than "
+            "quoting them, so a reference in it (it / this / that file / "
+            "the previous version) may not be pinned down. Before acting "
+            "on such a request, look up the original wording with the "
+            "session_recall tool; if it is still ambiguous, ask the user "
+            "which one they mean instead of guessing."
+        )
     return Message(role="user", content=[TextContentBlock(text=text)])
 
 

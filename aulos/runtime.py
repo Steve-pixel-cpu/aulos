@@ -93,6 +93,13 @@ PURE_READ_TOOLS = frozenset({"read_file", "grep", "glob"})
 REPEAT_WARN_ON = 2       # 第 2 次: 照常执行, 结果附加警告
 REPEAT_DENY_FROM = 3     # 第 3 次起: 拒绝执行
 
+# session_recall 的数据源: 当前会话的完整原始消息列表。_model_view 每次
+# 构建视图前 set——工具永远读到压缩前的全量历史而非压缩视图, 模型才能
+# 据此解开摘要里失去锚点的指代。定义在这里（而非 agent_tools）是因为
+# agent_tools → multi_agent → runtime 已有依赖, 反向导入会成环。
+SESSION_MESSAGES: contextvars.ContextVar = contextvars.ContextVar(
+    "aulos_session_messages", default=None)
+
 # shell 只读判定已下沉到 permissions.py: 权限放行（plan/workspace-write
 # 下只读探查不再硬拒）与护栏变异序号共用同一套保守判定。
 
@@ -1793,6 +1800,9 @@ class ConversationRuntime:
         摘要按切割点缓存), 否则原样返回全量历史。展示层永远读全量——
         压缩只影响模型。两个分支出口都过 microcompact（旧工具结果清除）。"""
         msgs = self._session.messages
+        # session_recall 的数据源: 无论是否压缩, 工具看到的永远是完整原始
+        # 历史（而非压缩视图）, 模型才能据此解开摘要里失去锚点的指代。
+        SESSION_MESSAGES.set(msgs)
         if not self._compact_active:
             return self._microcompact_view(msgs)
         config = CompactionConfig(max_estimated_tokens=0)
