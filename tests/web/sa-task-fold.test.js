@@ -6,7 +6,13 @@
 //      .sa-task-fade 渐隐 + .sa-task-expand 胶囊;
 //   2. 短提示不折叠（无类、无按钮、无内联限高）;
 //   3. 点「展开」→ .sa-task-open + maxHeight 释放 + 文案变「收起」;
-//      再点 → 还原。
+//      再点 → 还原;
+//   4. CSS 守卫: 展开态(.sa-task-open)不得隐藏 .sa-task-expand——
+//      回归背景: 2026-11-03 为治"胶囊压住全文末行"直接 display:none,
+//      连「收起」入口一起藏掉, 展开后永远收不回去; 现解法是展开态
+//      .bubble 底部留白 44px, 按钮悬在留白里不再压字。jsdom 不加载
+//      样式表, 行为测试抓不住这类纯 CSS 回归, 只能对 app.css 原文
+//      做静态断言。
 //
 // 回归背景: 旧实现 rAF 里量 uText.scrollHeight 定折叠——但事件到达时
 // 气泡写在游离列（card._saStream, 面板没开就不挂 DOM）, 无布局盒的
@@ -95,4 +101,15 @@ test("展开/收起: 点击翻转限高与文案", () => {
   assert.ok(!msg.classList.contains("sa-task-open"), "收起后类摘掉");
   assert.equal(uText.style.maxHeight, "176px", "限高恢复");
   assert.match(btn.textContent, /展开/, "文案还原「展开」");
+});
+
+test("CSS 守卫: 展开态不得隐藏展开/收起按钮（8c99015 回归）", () => {
+  const css = fs.readFileSync(path.join(STATIC, "app.css"), "utf-8");
+  // 禁止: 在 .sa-task-open 上下文里对 .sa-task-expand 做 display:none
+  const banned = /\.sa-task-open[^{}]*\.sa-task-expand[^{}]*\{[^}]*display:\s*none/i;
+  assert.doesNotMatch(css, banned,
+    "展开态隐藏按钮 = 收起入口丢失(2026-11-03 回归), 禁止重现");
+  // 现行解法必须在: 展开态 .bubble 底部留白, 给悬浮胶囊腾位
+  assert.match(css, /\.msg\.user\.sa-task-open \.bubble \{[^}]*padding-bottom:\s*44px/,
+    "展开态 .bubble 底部留白 44px, 按钮悬在留白里不压字");
 });
