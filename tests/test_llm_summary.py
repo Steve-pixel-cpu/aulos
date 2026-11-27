@@ -202,3 +202,48 @@ def test_resumary_passes_previous_summary_and_increment_only():
     assert len(second["messages"]) == 1 + (26 - first_cut) + 1
     # 新视图 = [续接摘要] + 保留 8 条
     assert len(view) == 9
+
+
+# ------------------------------------------------------------
+# 压缩后的指代: 摘要尽量展开, 续接说明明示"先查后问"而非禁止追问
+# ------------------------------------------------------------
+
+def test_summary_instruction_resolves_references_and_marks_unresolved():
+    from aulos.compact import SUMMARY_INSTRUCTION
+    text = SUMMARY_INSTRUCTION
+    # 要求把指代展开成具体名称（路径/函数/标识符）
+    assert "resolve it from the conversation" in text
+    assert "write the concrete" in text
+    # 不许编造: 无法确定的指代要原样保留并标记
+    assert "Never invent a resolution" in text
+    assert "Unresolved:" in text
+    # 六段式结构不变
+    for section in ("Primary request and intent",):
+        assert section in text
+
+
+def test_continuation_message_says_lookup_then_ask_not_forbidden():
+    from aulos.compact import continuation_message
+    text = continuation_message("摘要正文", preserved=True).content[0].text
+    # 旧的"不要再追问"禁令已移除
+    assert "without asking the user any further questions" not in text
+    assert "further questions" not in text
+    # 明示: 先用 session_recall 查原话, 仍不明确再问用户, 不要猜
+    assert "session_recall" in text
+    assert "ask the user" in text
+    assert "instead of guessing" in text
+    assert "Continue the conversation from where it left off." in text
+
+
+def test_model_view_exposes_full_history_to_session_recall():
+    """session_recall 读到的必须是完整原始历史, 而非压缩视图——这正是
+    它能解开摘要里失去锚点的指代的前提。"""
+    client = SummaryFakeClient()
+    runtime = make_runtime(make_session(), client)
+    runtime._compact_active = True
+
+    view = runtime._model_view()
+
+    from aulos.runtime import SESSION_MESSAGES
+    assert len(view) == 9                                  # 模型看到的是压缩视图
+    assert len(SESSION_MESSAGES.get()) == 12               # 工具拿到的是全量

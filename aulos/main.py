@@ -49,7 +49,9 @@ from aulos.tools import (ToolRegistry, bash_tool, edit_file_tool, glob_tool,
                    task_output_tool, task_stop_tool, todo_tool,
                    web_fetch_tool, web_search_tool,
                    git_bash_unavailable_reason)
-from aulos.agent_tools import AGENT_TOOL_SPECS, get_orchestrator, register_agent_tools
+from aulos.agent_tools import (AGENT_TOOL_SPECS, SESSION_TOOL_SPECS,
+                               get_orchestrator, register_agent_tools,
+                               register_session_tools)
 from aulos.browser_tools import BROWSER_TOOL_SPECS, register_browser_tools
 from aulos.radio.music import MUSIC_PLAY_SPEC, music_play_tool
 from aulos.memory.tools import (MEMORY_TOOL_SPECS, memory_write_tool,
@@ -437,7 +439,7 @@ _TOOLS_BASE = [bash_spec, read_file_spec, write_file_spec, edit_file_spec,
                web_search_spec, web_fetch_spec, MUSIC_PLAY_SPEC]
 
 TOOLS = (_TOOLS_BASE + [powershell_spec] if _ON_WINDOWS else _TOOLS_BASE) \
-    + MEMORY_TOOL_SPECS + BROWSER_TOOL_SPECS + AGENT_TOOL_SPECS
+    + MEMORY_TOOL_SPECS + BROWSER_TOOL_SPECS + SESSION_TOOL_SPECS + AGENT_TOOL_SPECS
 
 
 # --- 终端视觉规范: 调色板移至 aulos/render.py(单一来源), 这里只 re-export ---
@@ -1316,6 +1318,7 @@ TOOL_REQUIREMENTS = {
     "agent_wait": READ_ONLY_MODE,       # 阻塞等 subagent 终态（纯读, 不写状态; 结果注入仍由 agent_reap 负责）
     "agent_list": READ_ONLY_MODE,       # 列 subagent
     "agent_reap": READ_ONLY_MODE,       # 收割 subagent 结果（写 agents 状态目录的 delivered 标记, 与 todo/memory 同口径）
+    "session_recall": READ_ONLY_MODE,   # 回看压缩前的原始消息, 纯内存读
     "task_output": READ_ONLY_MODE,      # 读后台任务日志, 只读
     "grep": READ_ONLY_MODE,             # 纯只读搜索
     "glob": READ_ONLY_MODE,             # 纯只读列文件
@@ -1375,6 +1378,7 @@ def build_registry(mcp_servers: Optional[list] = None,
         name="memory_update", handler=memory_update_tool).register(
         name="memory_delete", handler=memory_delete_tool)
     registry = register_agent_tools(registry)
+    registry = register_session_tools(registry)
     registry = register_browser_tools(registry)
 
     if mcp_servers:

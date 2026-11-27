@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from aulos.multi_agent import AgentOrchestrator
+from aulos.runtime import SESSION_MESSAGES
 
 # 状态字段在 spec 的 enum 里写死（pydantic 枚举不进 schema）
 _AGENT_STATUSES = ("pending", "running", "completed", "failed")
@@ -462,3 +463,167 @@ def register_agent_tools(registry):
             .register(name="agent_wait", handler=agent_wait_tool)
             .register(name="agent_reap", handler=reap_ready_tool)
             .register(name="agent_list", handler=agent_list_tool))
+
+
+# ---------------------------------------------------------------------------
+# session_recall: 压缩后按需取回压缩前的原始消息
+#
+# 压缩视图只带 [摘要] + 保留区, 摘要对用户请求是转述而非原话, "它 / 这个 /
+# 那个文件"这类指代在摘要里失去了锚点。原始历史仍完整保留在会话对象里,
+# 这里让模型按关键词搜、再按命中序号读附近区间——纯内存读, 无副作用。
+# 消息列表由 runtime 在构建模型视图前写入 ContextVar（SESSION_MESSAGES,
+# 定义在 runtime.py——避免 agent_tools → multi_agent → runtime 成环）,
+# CLI / Web 共用。
+# ---------------------------------------------------------------------------
+
+_RECALL_MAX_HITS = 20            # query 模式最多返回的命中条数
+_RECALL_SNIPPET_CHARS = 200      # 命中行前后各取多少字符
+_RECALL_MAX_OUTPUT = 4000        # 输出字符上限
+_RECALL_MAX_AROUND = 20          # around 参数钳制上限
+
+
+def _recall_render_block(block) -> str:
+    """单个内容块的文本表示。tool_result 只给首行 + 字符数——体积大且可
+    重新调用工具获取, 回看时只需要知道"当时拿到了什么"。"""
+    btype = getattr(block, "type", None)
+    if btype == "text":
+        return block.text
+    if btype == "tool_use":
+        return f"[tool_use {block.name} input={block.input}]"
+    if btype == "tool_result":
+        first_line = (block.output or "").strip().split("\n", 1)[0]
+        n = len(block.output or "")
+        return f"[tool_result {block.name}: {first_line} ({n} chars)]"
+    if btype == "image":
+        return "[image]"
+    if btype == "file":
+        return f"[file {block.name}]"
+    return ""
+
+
+def _recall_render_body(msg) -> str:
+    """消息正文（不含 "[i] role:" 前缀）——query 模式在正文上搜索与切片,
+    前缀由输出层统一加, 避免重复。"""
+    parts = [_recall_render_block(b) for b in msg.content]
+    sep = " " if msg.role == "tool" else "\n"
+    return sep.join(p for p in parts if p)
+
+
+def _recall_render_message(index: int, msg) -> str:
+    return f"[{index}] {msg.role}: {_recall_render_body(msg)}"
+
+
+def session_recall_tool(params: dict, workdir: Optional[str] = None) -> str:
+    """按关键词搜 / 按序号读压缩前的原始消息。两种模式:
+    query  — 大小写不敏感关键词搜索, 返回命中列表, 最多 _RECALL_MAX_HITS 条;
+    index  — 返回以该序号为中心、前后各 around 条原文。
+    两者都不给 → 用法 + 合法序号范围。"""
+    msgs = SESSION_MESSAGES.get()
+    if not msgs:
+        return "No session history to recall (empty session)."
+    last = len(msgs) - 1
+
+    query = (params.get("query") or "").strip()
+    raw_index = params.get("index")
+    if query and raw_index is not None:
+        return "ERROR: pass either query or index, not both"
+
+    if not query and raw_index is None:
+        return (
+            "Usage: session_recall with either\n"
+            "  query=<keywords>            — search all original messages\n"
+            "  index=<n> [around=<k>]      — read messages around index n\n"
+            f"Valid index range: 0..{last} (original, pre-compaction history)."
+        )
+
+    if query:
+        needle = query.lower()
+        hits = []
+        for i, m in enumerate(msgs):
+            body = _recall_render_body(m)
+            pos = body.lower().find(needle)
+            if pos < 0:
+                continue
+            start = max(0, pos - _RECALL_SNIPPET_CHARS)
+            end = min(len(body), pos + len(needle) + _RECALL_SNIPPET_CHARS)
+            hits.append((i, m.role, body[start:end], start > 0))
+            if len(hits) >= _RECALL_MAX_HITS:
+                break
+        if not hits:
+            return f"No messages match '{query}'."
+        lines = []
+        for i, role, snippet, truncated_head in hits:
+            prefix = "…" if truncated_head else ""
+            lines.append(f"[{i}] {role}: {prefix}{snippet}")
+        body = "\n\n".join(lines)
+        note = (f"\n\n(Showing up to {_RECALL_MAX_HITS} hits; narrow the query "
+                f"or use index=<n> to read a message in full.)"
+                if len(hits) >= _RECALL_MAX_HITS else "")
+        body += note
+        return _recall_clip(body)
+
+    # index 模式
+    try:
+        idx = int(raw_index)
+    except (TypeError, ValueError):
+        return "ERROR: index must be an integer"
+    if idx < 0 or idx > last:
+        return f"ERROR: index {idx} out of range 0..{last}"
+    around_raw = params.get("around")
+    try:
+        around = 3 if around_raw is None else int(around_raw)
+    except (TypeError, ValueError):
+        return "ERROR: around must be an integer"
+    around = max(0, min(_RECALL_MAX_AROUND, around))
+    lo, hi = max(0, idx - around), min(last, idx + around)
+    lines = [_recall_render_message(i, msgs[i]) for i in range(lo, hi + 1)]
+    body = "\n\n".join(lines)
+    if lo > 0 or hi < last:
+        body += (f"\n\n(Message range shown: {lo}..{hi} of 0..{last}.)")
+    return _recall_clip(body)
+
+
+def _recall_clip(body: str) -> str:
+    if len(body) <= _RECALL_MAX_OUTPUT:
+        return body
+    return (body[:_RECALL_MAX_OUTPUT]
+            + f"\n\n(Truncated at {_RECALL_MAX_OUTPUT} chars — use a smaller "
+              f"range or a narrower query.)")
+
+
+session_recall_spec = {
+    "name": "session_recall",
+    "description": (
+        "Read original messages from earlier in this session, before they were "
+        "compressed into a summary. Use when a request refers to something the "
+        "summary does not pin down (it / this / that file / the previous "
+        "version): first search with query=<keywords>, then read a hit in full "
+        "with index=<n> (optionally around=<k> to include neighbouring "
+        "messages). If the reference is still ambiguous afterwards, ask the "
+        "user instead of guessing."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "Case-insensitive keyword search over all original messages.",
+            },
+            "index": {
+                "type": "integer",
+                "description": "Message index to read, taken from a query hit.",
+            },
+            "around": {
+                "type": "integer",
+                "description": "How many neighbouring messages to include on each side (default 3, max 20).",
+            },
+        },
+    },
+}
+
+SESSION_TOOL_SPECS = [session_recall_spec]
+
+
+def register_session_tools(registry):
+    """把 session_recall 注册进 ToolRegistry（供 main.build_registry 调用）。"""
+    return registry.register(name="session_recall", handler=session_recall_tool)
